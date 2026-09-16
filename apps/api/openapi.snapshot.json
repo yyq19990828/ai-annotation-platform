@@ -52565,7 +52565,7 @@
     },
     "/api/v1/projects/{project_id}/batches/{batch_id}/submit-review": {
       "post": {
-        "description": "整批送审：把批次内所有未送审任务（pending / in_progress）提交质检。\n\n与单任务提交共用 `perform_task_submit`，因此审核轮次、任务锁释放、Mask QC\n自动运行与 contributor 快照语义完全一致；结束后由 `check_auto_transitions`\n把批次推进到 reviewing。`rejected` 任务需先 accept-rejection 重做，不在此\n批量集合内（会通过 remaining_tasks 暴露）。",
+        "description": "整批送审：把批次内所有未送审任务（pending / in_progress）提交质检。\n\n与单任务提交共用 `perform_task_submit`，因此审核轮次、任务锁释放、Mask QC\n自动运行与 contributor 快照语义完全一致；结束后由 `check_auto_transitions`\n把批次推进到 reviewing。`rejected` 任务需先 accept-rejection 重做，不在此\n批量集合内（会通过 remaining_tasks 暴露）。\n\n只接受 `annotating` / `reviewing` 两种来源状态（与 Web 入口一致），并按固定\n分块提交/提交，避免大批次一次性物化全部 task 行锁与事务。",
         "operationId": "submit_batch_review_api_v1_projects__project_id__batches__batch_id__submit_review_post",
         "parameters": [
           {

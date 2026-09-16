@@ -578,9 +578,13 @@ async def perform_task_submit(
 
     now = now or datetime.now(timezone.utc)
     if task.assignee_id is None:
-        task.assignee_id = actor.id
+        # Preserve the effective assignee (task-level, else the batch annotator)
+        # instead of overwriting it with an owner/admin actor; fall back to the
+        # actor only for genuinely unassigned open-pool tasks.
+        assignee_id = await _effective_task_assignee_id(db, task) or actor.id
+        task.assignee_id = assignee_id
         task.assigned_at = await _submission_assignment_start(
-            db, task.id, actor.id, now
+            db, task.id, assignee_id, now
         )
 
     review_round_id = _start_review_round(task)

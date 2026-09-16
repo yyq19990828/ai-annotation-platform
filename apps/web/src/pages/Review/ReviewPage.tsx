@@ -246,7 +246,9 @@ export function ReviewPage() {
 
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   const [rejectingIds, setRejectingIds] = useState<string[] | null>(null);
-  const [rejectBatchOpen, setRejectBatchOpen] = useState(false);
+  // Snapshot the batch identity when opening the reject dialog so a URL change
+  // while it is open cannot retarget the submission to a different batch.
+  const [rejectTarget, setRejectTarget] = useState<{ id: string; display_id: string } | null>(null);
   const queueUrlRef = useRef({
     project: searchParams.get("project") ?? "",
     batch: searchParams.get("batch") ?? "",
@@ -286,6 +288,7 @@ export function ReviewPage() {
     ) {
       setCheckedIds(new Set());
       setRejectingIds(null);
+      setRejectTarget(null);
       rejectingActionRef.current = null;
     }
   }, [authOwnerKey, queueSearch]);
@@ -311,6 +314,7 @@ export function ReviewPage() {
     setSearchParams(next);
     setCheckedIds(new Set());
     setRejectingIds(null);
+    setRejectTarget(null);
     rejectingActionRef.current = null;
   };
 
@@ -320,6 +324,7 @@ export function ReviewPage() {
     setSearchParams(next);
     setCheckedIds(new Set());
     setRejectingIds(null);
+    setRejectTarget(null);
     rejectingActionRef.current = null;
   };
 
@@ -332,6 +337,7 @@ export function ReviewPage() {
     setSearchParams(next);
     setCheckedIds(new Set());
     setRejectingIds(null);
+    setRejectTarget(null);
     rejectingActionRef.current = null;
   };
 
@@ -550,7 +556,16 @@ export function ReviewPage() {
                 <Icon name="target" size={11} />
                 打开画布
               </Button>
-              <Button size="sm" variant="danger" onClick={() => setRejectBatchOpen(true)}>
+              <Button
+                size="sm"
+                variant="danger"
+                onClick={() =>
+                  setRejectTarget({
+                    id: selectedBatchId,
+                    display_id: selectedBatch?.batch_display_id ?? selectedBatchId,
+                  })
+                }
+              >
                 <Icon name="x" size={11} />
                 整批退回
               </Button>
@@ -722,14 +737,11 @@ export function ReviewPage() {
         )}
       </section>
 
-      {rejectBatchOpen && selectedBatchId && (
+      {rejectTarget && (
         <RejectBatchModal
           projectId={projectId ?? ""}
-          batch={{
-            id: selectedBatchId,
-            display_id: selectedBatch?.batch_display_id ?? selectedBatchId,
-          }}
-          onClose={() => setRejectBatchOpen(false)}
+          batch={rejectTarget}
+          onClose={() => setRejectTarget(null)}
         />
       )}
 

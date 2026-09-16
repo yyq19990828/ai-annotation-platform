@@ -134,6 +134,8 @@ export function MyBatchesCard() {
       qc.invalidateQueries({ queryKey: ["dashboard", "annotator"] });
       qc.invalidateQueries({ queryKey: ["batches"] });
       qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["task"] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
     },
     onError: (e) => {
       const msg = e instanceof Error ? e.message : "提交失败";
@@ -243,6 +245,8 @@ export function MyBatchesCard() {
     qc.invalidateQueries({ queryKey: ["dashboard", "annotator"] });
     qc.invalidateQueries({ queryKey: ["batches"] });
     qc.invalidateQueries({ queryKey: ["tasks"] });
+    qc.invalidateQueries({ queryKey: ["task"] });
+    qc.invalidateQueries({ queryKey: ["projects"] });
     if (errors.length === 0) {
       pushToast({
         msg: `已批量提交 ${okCount} 个批次 / ${taskCount} 个任务`,

@@ -108,6 +108,18 @@ const BULK_LABEL: Record<BulkActionKind, string> = {
   reject: "驳回",
 };
 
+/** 未送审任务 = pending + in_progress（rejected 需先重做，不计入整批送审）。 */
+function hasUnsubmittedTasks(batch: BatchResponse): boolean {
+  return batch.total_tasks - batch.review_tasks - batch.completed_tasks - batch.rejected_tasks > 0;
+}
+
+/** 与标注页一致：annotating / reviewing 且仍有未送审任务时才提供整批送审。 */
+function canSubmitReview(batch: BatchResponse): boolean {
+  return (
+    hasUnsubmittedTasks(batch) && (batch.status === "annotating" || batch.status === "reviewing")
+  );
+}
+
 export function BatchesSection({ project }: { project: ProjectResponse }) {
   const pushToast = useToastStore((s) => s.push);
   // v0.9.13 · 后端 batch 状态变更 (transition / auto_transition) 实时刷新本页列表
@@ -743,12 +755,16 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                             }
                           />
                         )}
-                        {b.status === "annotating" && (
+                        {canSubmitReview(b) && (
                           <BatchActionButton
                             icon="check"
                             label="提交质检"
                             onClick={() => handleSubmitReview(b)}
-                            title="整批提交质检（owner / 被分派标注员）"
+                            title={
+                              b.status === "reviewing"
+                                ? "批次审核中但仍有未送审任务，整批补交质检"
+                                : "整批提交质检（owner / 被分派标注员）"
+                            }
                           />
                         )}
                         {b.status === "reviewing" && (

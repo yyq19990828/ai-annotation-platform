@@ -1680,6 +1680,70 @@ class TestBatchSubmitReview:
         assert resp.status_code == 403
 
     @pytest.mark.asyncio
+    async def test_rejects_batch_in_incompatible_status(
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
+    ):
+        """draft / rejected 等无法归一化的状态拒绝整批送审，且不改任务。"""
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batch, tasks = await _seed(
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="draft",
+            n_tasks=2,
+            task_status="pending",
+        )
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/submit-review",
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 409, resp.text
+        for t in tasks:
+            await db_session.refresh(t)
+            assert t.status == "pending"
+
+    @pytest.mark.asyncio
+    async def test_owner_submission_preserves_effective_assignee(
+        self,
+        httpx_client_bound,
+        db_session,
+        super_admin,
+        annotator,
+    ):
+        """owner 整批送审时，task.assignee_id 为空应按批次标注员归属，而不是 owner。"""
+        owner, owner_token = super_admin
+        user, _ = annotator
+        p, batch, tasks = await _seed(
+            db_session,
+            owner.id,
+            user.id,
+            batch_status="annotating",
+            n_tasks=2,
+            task_status="pending",
+        )
+        for t in tasks:
+            assert t.assignee_id is None
+        await db_session.commit()
+
+        resp = await httpx_client_bound.post(
+            f"/api/v1/projects/{p.id}/batches/{batch.id}/submit-review",
+            headers=_bearer(owner_token),
+        )
+        assert resp.status_code == 200, resp.text
+        for t in tasks:
+            await db_session.refresh(t)
+            assert t.status == "review"
+            assert t.assignee_id == user.id
+            assert t.assignee_id != owner.id
+
+    @pytest.mark.asyncio
     async def test_owner_can_submit_partial_reviewing_batch(
         self,
         httpx_client_bound,
