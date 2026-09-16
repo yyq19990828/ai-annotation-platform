@@ -96,6 +96,7 @@ Late results remain cache-writable (per the issue's suggested pattern: "过期�
 
 - Landed changes:
   - `useVideoPlaybackController.ts`：`handleFrameClockChange` 增加暂停态单调栅栏（只接受最新导航目标 `frameNavigationTargetRef` 或当前帧回声，播放态豁免）；`seekFrameAsync` 在发起媒体 seek 前登记导航目标。
+  - PR #118 评审跟进：导航目标改为渲染期收敛到已提交帧——原实现里目标仅由 `seekFrameAsync` 更新，「seek A → 播放推进到 B → 暂停」或宿主外部改写受控帧（章节/段落/任务恢复）后，A 的迟到回报仍能过栅栏拽回旧帧；现随 `frameIndexRef` 一同镜像最新帧，仅 `seekFrameAsync` 赋值与其乐观写之间的同步栈窗口内保留在途目标。配套对抗测试（播放后暂停、受控帧外部跳转）均已在未修复代码上验证为红。
   - `useVideoPreciseFrame.ts`：`markFramePainted` 改用 `liveFrameIndexRef` 校验最新帧，迟到的 Konva 绘制回执不再发布过期 painted 帧。
   - `VideoKonvaStage.tsx`：时间轴 `onSeek` 的 `pausePlayback` 改为 `snapToGrid: false`，消除点击时的双重 seek 竞态窗口。
   - 新增 `useVideoPlaybackController.stale-seek.test.ts`（真实 `useFrameClock` × 真实控制器集成 harness，三个迟到媒体事件交错场景）；`useVideoPlaybackController.test.ts` 新增汇聚点栅栏对抗测试（未修复代码上验证为红，修复后绿）。

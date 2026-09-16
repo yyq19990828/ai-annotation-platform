@@ -271,6 +271,11 @@ export function useVideoPlaybackController({
 
   const frameIndex = controlledFrameIndex ?? uncontrolledFrameIndex;
   frameIndexRef.current = frameIndex;
+  // PR #118 评审跟进:导航目标在渲染期收敛到已提交帧——播放逐帧推进与宿主外部改写受控帧
+  // (章节/段落/任务恢复)都不经 seekFrameAsync,若沿用旧目标,「seek A → 播放到 B →
+  // 暂停」后 A 的迟到回报仍能过栅栏拽回旧帧。seekFrameAsync 对目标的赋值与其乐观写
+  // 在同一同步栈内完成,不会在提交前被此收敛覆盖。
+  frameNavigationTargetRef.current = frameIndex;
   jogPlaybackRef.current = jogPlayback;
   const isJogPlaying = jogPlayback.direction !== 0;
   const isPlaybackActive = isPlaying || isJogPlaying;
