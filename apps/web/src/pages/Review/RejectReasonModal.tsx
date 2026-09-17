@@ -4,13 +4,13 @@ import { Button } from "@/components/ui/Button";
 import {
   REJECT_REASON_TYPE_LABELS,
   REJECT_REASON_TYPE_ORDER,
+  type RejectPayload,
   type RejectReasonType,
 } from "./rejectReasonTypes";
 
-export interface RejectPayload {
-  reason_type: RejectReasonType;
-  reason?: string;
-}
+// plan 1789527942 · T2：Projects/Review 调用点已迁移到 rejectReasonDialog 两步流；
+// 本 modal 仍由 Workbench（WorkbenchLayout rejectModal 槽位）渲染，类型沿用 rejectReasonTypes 单点。
+export type { RejectPayload };
 
 interface RejectReasonModalProps {
   open: boolean;

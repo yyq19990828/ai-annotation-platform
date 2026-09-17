@@ -21,8 +21,10 @@ import type { TaskResponse } from "@/types";
 import type { ReviewingBatchItem } from "@/api/dashboard";
 import { buildReviewWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { useAuthStore } from "@/stores/authStore";
-import { RejectReasonModal } from "./RejectReasonModal";
-import { RejectBatchModal } from "@/pages/Projects/sections/RejectBatchModal";
+import { useRejectBatch } from "@/hooks/useBatches";
+import { inputDialog } from "@/components/ui/decisionDialog";
+import { promptRejectReason } from "./rejectReasonDialog";
+import type { RejectPayload } from "./rejectReasonTypes";
 import { ReviewSidebar } from "./ReviewSidebar";
 import { ReviewBatchCardGrid } from "./ReviewBatchCardGrid";
 import {
@@ -240,15 +242,15 @@ export function ReviewPage() {
 
   const approveMut = useApproveTask();
   const rejectMut = useRejectTask();
+  // 整批退回的批次驳回 mutation（原 RejectBatchModal 内联 hook，plan T2 迁移到调用方）
+  const rejectBatchMut = useRejectBatch(projectId ?? "");
   const authOwnerKey = useAuthStore(
     (state) => `${state.user?.id ?? "anonymous"}:${state.token ?? "none"}`,
   );
 
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
-  const [rejectingIds, setRejectingIds] = useState<string[] | null>(null);
-  // Snapshot the batch identity when opening the reject dialog so a URL change
-  // while it is open cannot retarget the submission to a different batch.
-  const [rejectTarget, setRejectTarget] = useState<{ id: string; display_id: string } | null>(null);
+  // plan 1789527942 · T2：批次驳回 / 任务退回已迁移 decisionDialog；弹窗期间 URL 作用域可能漂移，
+  // 各 async 流程在 await 后重查 queueScopeKeyRef 再提交（快照 + 复查取代原 open state 关闭逻辑）。
   const queueUrlRef = useRef({
     project: searchParams.get("project") ?? "",
     batch: searchParams.get("batch") ?? "",
@@ -266,7 +268,6 @@ export function ReviewPage() {
   const checkedIdsKey = JSON.stringify([...checkedIds].sort());
   const checkedIdsKeyRef = useRef(checkedIdsKey);
   checkedIdsKeyRef.current = checkedIdsKey;
-  const rejectingActionRef = useRef<{ scopeKey: string; selectionKey: string } | null>(null);
   const queueSearch = searchParams.toString();
 
   // Clear cross-page selections when a URL-owned queue scope changes.
@@ -287,9 +288,6 @@ export function ReviewPage() {
       previous.authOwnerKey !== next.authOwnerKey
     ) {
       setCheckedIds(new Set());
-      setRejectingIds(null);
-      setRejectTarget(null);
-      rejectingActionRef.current = null;
     }
   }, [authOwnerKey, queueSearch]);
 
@@ -313,9 +311,6 @@ export function ReviewPage() {
     }
     setSearchParams(next);
     setCheckedIds(new Set());
-    setRejectingIds(null);
-    setRejectTarget(null);
-    rejectingActionRef.current = null;
   };
 
   const clearAssigneeFilter = () => {
@@ -323,9 +318,6 @@ export function ReviewPage() {
     next.delete("assignee");
     setSearchParams(next);
     setCheckedIds(new Set());
-    setRejectingIds(null);
-    setRejectTarget(null);
-    rejectingActionRef.current = null;
   };
 
   // 返回卡片网格概览：清掉 batch / project / assignee 三类选择。
@@ -336,9 +328,6 @@ export function ReviewPage() {
     next.delete("assignee");
     setSearchParams(next);
     setCheckedIds(new Set());
-    setRejectingIds(null);
-    setRejectTarget(null);
-    rejectingActionRef.current = null;
   };
 
   const openTaskId = searchParams.get("taskId");
@@ -390,10 +379,7 @@ export function ReviewPage() {
   };
   const runBatchReject = (
     ids: string[],
-    payload: {
-      reason_type: "missing" | "extra" | "wrong_label" | "wrong_geometry";
-      reason?: string;
-    },
+    payload: RejectPayload,
     actionScopeKey: string,
     actionSelectionKey: string,
   ) => {
@@ -425,13 +411,60 @@ export function ReviewPage() {
                 kind: failed ? "error" : "success",
               });
               setCheckedIds(new Set());
-              setRejectingIds(null);
-              rejectingActionRef.current = null;
             }
           },
         },
       );
     });
+  };
+
+  // 整批退回：应用内决策弹窗填必填原因（原 RejectBatchModal，plan T2 迁移 inputDialog，copy 保留）。
+  const handleBatchReject = async () => {
+    if (rejectBatchMut.isPending) return;
+    const batchId = selectedBatchId;
+    const scopeKey = queueScopeKeyRef.current;
+    const feedback = await inputDialog({
+      title: `驳回批次 ${selectedBatch?.batch_display_id ?? batchId}`,
+      description:
+        "驳回后批次状态变为「已退回」，被分派的标注员会收到通知。已提交质检 / 已通过的任务回退到待标注，**已有标注内容会保留**，标注员可在 reviewer 留言指引下继续修改。",
+      label: "驳回原因 / 留言",
+      placeholder: "请说明需要标注员重做的具体问题…",
+      required: true,
+      maxLength: 500,
+      tone: "danger",
+      confirmLabel: "确认驳回",
+    });
+    if (!feedback) return;
+    // async-await gap：弹窗期间 URL 作用域被切换时放弃，避免误驳回当前批次之外的批次。
+    if (queueScopeKeyRef.current !== scopeKey) return;
+    rejectBatchMut.mutate(
+      { batchId, feedback },
+      {
+        onSuccess: () => pushToast({ msg: "批次已驳回，已通知被分派的标注员", kind: "success" }),
+        onError: (e) => pushToast({ msg: "驳回失败", sub: (e as Error).message, kind: "warning" }),
+      },
+    );
+  };
+
+  // 批量退回：两步决策弹窗（原 RejectReasonModal，plan T2 迁移 choiceDialog + inputDialog）。
+  const handleTasksReject = async () => {
+    const ids = [...checkedIds];
+    if (ids.length === 0) return;
+    const actionScopeKey = queueScopeKeyRef.current;
+    const actionSelectionKey = checkedIdsKeyRef.current;
+    // v0.8.8 · 单任务退回且该任务被跳过时透传 skip_reason 到第一步提示
+    const skipReasonHint =
+      ids.length === 1 ? (tasks.find((t) => t.id === ids[0])?.skip_reason ?? null) : null;
+    const payload = await promptRejectReason({ count: ids.length, skipReasonHint });
+    if (!payload) return;
+    // async-await gap：弹窗期间队列作用域或选择集合变化时放弃。
+    if (
+      queueScopeKeyRef.current !== actionScopeKey ||
+      checkedIdsKeyRef.current !== actionSelectionKey
+    ) {
+      return;
+    }
+    runBatchReject(ids, payload, actionScopeKey, actionSelectionKey);
   };
 
   const runBatchApprove = (actionScopeKey: string, actionSelectionKey: string) => {
@@ -559,12 +592,8 @@ export function ReviewPage() {
               <Button
                 size="sm"
                 variant="danger"
-                onClick={() =>
-                  setRejectTarget({
-                    id: selectedBatchId,
-                    display_id: selectedBatch?.batch_display_id ?? selectedBatchId,
-                  })
-                }
+                onClick={() => void handleBatchReject()}
+                disabled={rejectBatchMut.isPending}
               >
                 <Icon name="x" size={11} />
                 整批退回
@@ -689,17 +718,7 @@ export function ReviewPage() {
                     <Icon name="check" size={11} />
                     批量通过 ({checkedIds.size})
                   </Button>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    onClick={() => {
-                      rejectingActionRef.current = {
-                        scopeKey: queueScopeKeyRef.current,
-                        selectionKey: checkedIdsKeyRef.current,
-                      };
-                      setRejectingIds([...checkedIds]);
-                    }}
-                  >
+                  <Button variant="danger" size="sm" onClick={() => void handleTasksReject()}>
                     <Icon name="x" size={11} />
                     批量退回 ({checkedIds.size})
                   </Button>
@@ -736,43 +755,6 @@ export function ReviewPage() {
           </>
         )}
       </section>
-
-      {rejectTarget && (
-        <RejectBatchModal
-          projectId={projectId ?? ""}
-          batch={rejectTarget}
-          onClose={() => setRejectTarget(null)}
-        />
-      )}
-
-      <RejectReasonModal
-        open={!!rejectingIds}
-        count={rejectingIds?.length ?? 0}
-        onClose={() => {
-          setRejectingIds(null);
-          rejectingActionRef.current = null;
-        }}
-        onConfirm={(payload) => {
-          if (!rejectingIds) return;
-          const action = rejectingActionRef.current;
-          if (
-            !action ||
-            action.scopeKey !== queueScopeKeyRef.current ||
-            action.selectionKey !== checkedIdsKeyRef.current
-          ) {
-            setRejectingIds(null);
-            rejectingActionRef.current = null;
-            return;
-          }
-          runBatchReject(rejectingIds, payload, action.scopeKey, action.selectionKey);
-        }}
-        // v0.8.8 · 单任务退回且该任务被跳过时透传 skip_reason 到 modal
-        skipReasonHint={
-          rejectingIds?.length === 1
-            ? (tasks.find((t) => t.id === rejectingIds[0])?.skip_reason ?? null)
-            : null
-        }
-      />
     </div>
   );
 }

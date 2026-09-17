@@ -22,15 +22,14 @@ import {
   useAdminUnlockBatch,
   useBulkApproveBatches,
   useBulkRejectBatches,
+  useRejectBatch,
+  useResetBatch,
 } from "@/hooks/useBatches";
 import { useBatchEventsSocket } from "@/hooks/useBatchEventsSocket";
 import { useIsProjectOwner } from "@/hooks/useIsProjectOwner";
+import { inputDialog } from "@/components/ui/decisionDialog";
 import { BatchAssignmentModal } from "@/components/projects/BatchAssignmentModal";
 import { ProjectDistributeBatchesModal } from "@/components/projects/ProjectDistributeBatchesModal";
-import { RejectBatchModal } from "./RejectBatchModal";
-import { ReverseTransitionModal, type ReverseKind } from "./ReverseTransitionModal";
-import { ResetBatchModal } from "./ResetBatchModal";
-import { AdminLockModal } from "./AdminLockModal";
 import { BulkRejectModal } from "./BulkRejectModal";
 import { BatchesKanbanView } from "./BatchesKanbanView";
 import { BatchAuditLogDrawer } from "./BatchAuditLogDrawer";
@@ -108,6 +107,41 @@ const BULK_LABEL: Record<BulkActionKind, string> = {
   reject: "驳回",
 };
 
+// v0.7.3 · 逆向迁移（owner 专属）。原 ReverseTransitionModal 的文案随 plan T2 迁移 inputDialog 一并收编。
+type ReverseKind = "unarchive" | "reopen_from_approved" | "reopen_from_rejected";
+
+const REVERSE_COPY: Record<
+  ReverseKind,
+  {
+    title: (b: BatchResponse) => string;
+    description: string;
+    targetStatus: string;
+    success: string;
+  }
+> = {
+  unarchive: {
+    title: (b) => `撤销归档 · ${b.display_id}`,
+    description:
+      "批次状态会回到「激活」，由调度器在下一次任务操作时自动推进到正确阶段。被分派的标注员 / 审核员会收到通知。",
+    targetStatus: "active",
+    success: "已撤销归档",
+  },
+  reopen_from_approved: {
+    title: (b) => `重开审核 · ${b.display_id}`,
+    description:
+      "批次会从「已通过」回到「审核中」。原审核元数据（通过时间 / 审核人 / 反馈）会被清空，审核员需重新评估。",
+    targetStatus: "reviewing",
+    success: "已重开审核",
+  },
+  reopen_from_rejected: {
+    title: (b) => `直接复审 · ${b.display_id}`,
+    description:
+      "批次从「已退回」直接进入「审核中」，跳过标注员重做。上一次的退回原因会保留，审核员可重新评估。",
+    targetStatus: "reviewing",
+    success: "已直接复审",
+  },
+};
+
 /** 未送审任务 = pending + in_progress（rejected 需先重做，不计入整批送审）。 */
 function hasUnsubmittedTasks(batch: BatchResponse): boolean {
   return batch.total_tasks - batch.review_tasks - batch.completed_tasks - batch.rejected_tasks > 0;
@@ -134,6 +168,8 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   const bulkActivate = useBulkActivateBatches(project.id);
   const bulkApprove = useBulkApproveBatches(project.id);
   const bulkReject = useBulkRejectBatches(project.id);
+  const rejectBatch = useRejectBatch(project.id);
+  const resetBatch = useResetBatch(project.id);
   const adminLock = useAdminLockBatch(project.id);
   const adminUnlock = useAdminUnlockBatch(project.id);
   const isOwner = useIsProjectOwner(project);
@@ -154,7 +190,6 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
     affected: number;
   } | null>(null);
   const [assignTarget, setAssignTarget] = useState<BatchResponse | null>(null);
-  const [rejectTarget, setRejectTarget] = useState<BatchResponse | null>(null);
   const [distributeOpen, setDistributeOpen] = useState(false);
   // v0.12.0 · P2 · 浏览未归类任务池
   const [browseUnbatched, setBrowseUnbatched] = useState(false);
@@ -169,16 +204,9 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
   } | null>(null);
   const [resultExpanded, setResultExpanded] = useState(false);
 
-  // v0.7.3 · 逆向迁移 + 操作历史
-  const [reverseTarget, setReverseTarget] = useState<{
-    batch: BatchResponse;
-    kind: ReverseKind;
-  } | null>(null);
+  // v0.7.3 · 操作历史抽屉（逆向迁移 / 重置 / 驳回 / 锁定在 plan T2 已迁移 inputDialog，
+  // 目标批次以点击时的局部快照传入 async handler，不再需要 open state）
   const [auditTarget, setAuditTarget] = useState<BatchResponse | null>(null);
-  // v0.7.6 · 终极重置到 draft
-  const [resetTarget, setResetTarget] = useState<BatchResponse | null>(null);
-  // v0.9.15 · ADR-0008 admin-lock
-  const [lockTarget, setLockTarget] = useState<BatchResponse | null>(null);
 
   // v0.7.6 · view toggle [list | kanban] + URL ?batch_view=kanban 持久化
   const [searchParams, setSearchParams] = useSearchParams();
@@ -291,7 +319,6 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
       {
         onSuccess: () => {
           pushToast({ msg: `批次 ${batch.display_id} 已锁定`, kind: "success" });
-          setLockTarget(null);
         },
         onError: (e) => pushToast({ msg: "锁定失败", sub: (e as Error).message }),
       },
@@ -383,6 +410,97 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
         onError: (e) => pushToast({ msg: "状态转移失败", sub: (e as Error).message }),
       },
     );
+  };
+
+  // v0.7.0 · 批次驳回（原 RejectBatchModal，plan T2 迁移 inputDialog，copy 原样保留）。
+  const handleRejectBatch = async (batch: BatchResponse) => {
+    if (rejectBatch.isPending) return;
+    const feedback = await inputDialog({
+      title: `驳回批次 ${batch.display_id}`,
+      description:
+        "驳回后批次状态变为「已退回」，被分派的标注员会收到通知。已提交质检 / 已通过的任务回退到待标注，**已有标注内容会保留**，标注员可在 reviewer 留言指引下继续修改。",
+      label: "驳回原因 / 留言",
+      placeholder: "请说明需要标注员重做的具体问题…",
+      required: true,
+      maxLength: 500,
+      tone: "danger",
+      confirmLabel: "确认驳回",
+    });
+    if (!feedback) return;
+    // batch 为点击时的快照，async-await gap 后提交目标不变
+    rejectBatch.mutate(
+      { batchId: batch.id, feedback },
+      {
+        onSuccess: () => pushToast({ msg: "批次已驳回，已通知被分派的标注员", kind: "success" }),
+        onError: (e) => pushToast({ msg: "驳回失败", sub: (e as Error).message, kind: "warning" }),
+      },
+    );
+  };
+
+  // v0.7.3 · owner 逆向迁移（原 ReverseTransitionModal，plan T2 迁移 inputDialog）。
+  const handleReverseTransition = async (batch: BatchResponse, kind: ReverseKind) => {
+    if (transitionBatch.isPending) return;
+    const copy = REVERSE_COPY[kind];
+    const reason = await inputDialog({
+      title: copy.title(batch),
+      description: copy.description,
+      label: "操作原因 · 会写入审计日志",
+      placeholder: "请简要说明操作原因（运维需要 / 误判修正 / …）",
+      required: true,
+      maxLength: 500,
+      confirmLabel: "确认",
+    });
+    if (!reason) return;
+    transitionBatch.mutate(
+      { batchId: batch.id, targetStatus: copy.targetStatus, reason },
+      {
+        onSuccess: () => pushToast({ msg: copy.success, kind: "success" }),
+        onError: (e) => pushToast({ msg: "操作失败", sub: (e as Error).message, kind: "warning" }),
+      },
+    );
+  };
+
+  // v0.7.6 · owner 终极重置到 draft（原 ResetBatchModal，plan T2 迁移 inputDialog；
+  // 原警告块的列表文案并入 description，≥10 字下限走 validate）。
+  const handleResetBatch = async (batch: BatchResponse) => {
+    if (resetBatch.isPending) return;
+    const reason = await inputDialog({
+      title: `重置到草稿 · ${batch.display_id}`,
+      description: `这是 owner 兜底操作。批次将从 ${batch.status} 强制回到 draft：批次内 ${batch.total_tasks} 个 task 全部回 pending；已有标注记录保留（不删 annotation，不改 is_active）；会释放所有标注员锁，原审核反馈 / 审核人会被清空。`,
+      label: "重置原因 · 会写入审计日志",
+      placeholder: "说明为什么要把批次回退到草稿（迁移错误数据 / 整体重做 / …）",
+      required: true,
+      maxLength: 500,
+      tone: "danger",
+      confirmLabel: "确认重置",
+      validate: (value) => (value.length >= 10 ? null : "至少 10 字"),
+    });
+    if (!reason) return;
+    resetBatch.mutate(
+      { batchId: batch.id, reason },
+      {
+        onSuccess: () => pushToast({ msg: "已重置到草稿", kind: "success" }),
+        onError: (e) => pushToast({ msg: "重置失败", sub: (e as Error).message, kind: "warning" }),
+      },
+    );
+  };
+
+  // v0.9.15 · ADR-0008 admin-lock（原 AdminLockModal，plan T2 迁移 inputDialog）。
+  const handleAdminLockPrompt = async (batch: BatchResponse) => {
+    if (adminLock.isPending) return;
+    const reason = await inputDialog({
+      title: `锁定批次 ${batch.display_id}`,
+      description:
+        "锁定后，自动状态推进将被冻结，不再向该批次派发新任务。锁定原因将记录在审计日志中，并通知被分派的标注员 / 审核员。",
+      label: "锁定原因",
+      placeholder: "请说明锁定原因，例如：发现数据质量问题，暂停标注，待确认后解锁…",
+      required: true,
+      maxLength: 500,
+      tone: "danger",
+      confirmLabel: "确认锁定",
+    });
+    if (!reason) return;
+    handleAdminLock(batch, reason);
   };
 
   // 整批送审与标注页共用同一端点：提交批次内所有未送审任务，而不是只改批次状态。
@@ -780,7 +898,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                               icon="x"
                               label="驳回"
                               variant="danger"
-                              onClick={() => setRejectTarget(b)}
+                              onClick={() => void handleRejectBatch(b)}
                               title="批次驳回（reviewer / owner）"
                             />
                           </>
@@ -798,9 +916,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                           <BatchActionButton
                             icon="refresh"
                             label="直接复审"
-                            onClick={() =>
-                              setReverseTarget({ batch: b, kind: "reopen_from_rejected" })
-                            }
+                            onClick={() => void handleReverseTransition(b, "reopen_from_rejected")}
                             title="跳过重标，直接复审"
                           />
                         )}
@@ -808,9 +924,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                           <BatchActionButton
                             icon="refresh"
                             label="重开审核"
-                            onClick={() =>
-                              setReverseTarget({ batch: b, kind: "reopen_from_approved" })
-                            }
+                            onClick={() => void handleReverseTransition(b, "reopen_from_approved")}
                             title="重开审核"
                           />
                         )}
@@ -818,7 +932,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                           <BatchActionButton
                             icon="refresh"
                             label="撤销归档"
-                            onClick={() => setReverseTarget({ batch: b, kind: "unarchive" })}
+                            onClick={() => void handleReverseTransition(b, "unarchive")}
                             title="撤销归档"
                           />
                         )}
@@ -827,7 +941,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                           <BatchActionButton
                             icon="refresh"
                             label="重置"
-                            onClick={() => setResetTarget(b)}
+                            onClick={() => void handleResetBatch(b)}
                             title="重置到草稿（owner 兜底）"
                           />
                         )}
@@ -859,7 +973,7 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
                           <BatchActionButton
                             icon="lock"
                             label="锁定批次"
-                            onClick={() => setLockTarget(b)}
+                            onClick={() => void handleAdminLockPrompt(b)}
                             title="锁定批次（冻结自动推进，阻止新派单）"
                             className="text-status-caution"
                           />
@@ -1011,15 +1125,6 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
         />
       )}
 
-      {/* v0.7.0：批次驳回 Modal */}
-      {rejectTarget && (
-        <RejectBatchModal
-          projectId={project.id}
-          batch={rejectTarget}
-          onClose={() => setRejectTarget(null)}
-        />
-      )}
-
       {/* v0.7.2：项目级 batch 分派 Modal */}
       {distributeOpen && (
         <ProjectDistributeBatchesModal
@@ -1097,41 +1202,12 @@ export function BatchesSection({ project }: { project: ProjectResponse }) {
         />
       )}
 
-      {/* v0.7.3：逆向迁移 Modal */}
-      {reverseTarget && (
-        <ReverseTransitionModal
-          projectId={project.id}
-          batch={reverseTarget.batch}
-          kind={reverseTarget.kind}
-          onClose={() => setReverseTarget(null)}
-        />
-      )}
-
       {/* v0.7.3：操作历史抽屉 */}
       {auditTarget && (
         <BatchAuditLogDrawer
           projectId={project.id}
           batch={auditTarget}
           onClose={() => setAuditTarget(null)}
-        />
-      )}
-
-      {/* v0.7.6：终极重置到 draft */}
-      {resetTarget && (
-        <ResetBatchModal
-          projectId={project.id}
-          batch={resetTarget}
-          onClose={() => setResetTarget(null)}
-        />
-      )}
-
-      {/* v0.9.15：管理员锁定 Modal */}
-      {lockTarget && (
-        <AdminLockModal
-          batch={lockTarget}
-          onClose={() => setLockTarget(null)}
-          onSubmit={(reason) => handleAdminLock(lockTarget, reason)}
-          pending={adminLock.isPending}
         />
       )}
 
