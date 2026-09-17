@@ -1,4 +1,5 @@
 import { isVideoLifecycleCancellation } from "../helpers/video-request-errors";
+import { invalidSeekTarget, rangeValueForFrame } from "../helpers/video-timeline-seek";
 import { layoutCommand } from "../helpers/workbench-layout";
 import type { APIRequestContext, APIResponse, Browser, Page, Route } from "@playwright/test";
 import { randomUUID } from "node:crypto";
@@ -390,31 +391,114 @@ async function expectPaintSettled(page: Page) {
     .toBe(true);
 }
 
+async function seekNavigationSnapshot(page: Page, frame: number, value: number, phase: string) {
+  // 只读快照（计划 D）：不改变事件传播、焦点或播放器状态，仅在导航失败时作为
+  // 附件帮助区分「目标未写入 / 事件未处理 / 呈现未完成」。收集自身异常降级为
+  // 字段占位，绝不覆盖原始断言错误。
+  const info = test.info();
+  const snapshot: Record<string, unknown> = {
+    phase,
+    test: info.title,
+    retry: info.retry,
+    repeatEachIndex: info.repeatEachIndex,
+    workerIndex: info.workerIndex,
+    shard: info.config.shard,
+    targetFrame: frame,
+    requestedRangeValue: value,
+  };
+  const capture = async (name: string, read: () => Promise<unknown>) => {
+    try {
+      snapshot[name] = await read();
+    } catch (error) {
+      snapshot[name] = `unavailable: ${String(error)}`;
+    }
+  };
+  await capture("selectedFrame", () => stage(page).getAttribute("data-video-frame-index"));
+  await capture("paintedFrame", () => stage(page).getAttribute("data-video-painted-frame-index"));
+  await capture("frameSource", () => stage(page).getAttribute("data-video-frame-source"));
+  await capture("preciseState", () => stage(page).getAttribute("data-video-precise-state"));
+  await capture("timelineWindow", () => readTimeline(page));
+  await capture("rangeInput", () =>
+    page.getByLabel("视频帧时间轴", { exact: true }).evaluate((node) => {
+      const rect = node.getBoundingClientRect();
+      return {
+        value: (node as HTMLInputElement).value,
+        pointerEvents: getComputedStyle(node).pointerEvents,
+        rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      };
+    }),
+  );
+  return snapshot;
+}
+
 async function seek(page: Page, frame: number) {
-  await key(page, "k");
-  let window = await readTimeline(page);
-  if (frame < window.from || frame > window.to) {
-    await expandTimeline(page);
-    await page.getByTestId("video-timeline-zoom-reset").click();
-    window = await readTimeline(page);
-  }
-  const input = page.getByLabel("视频帧时间轴", { exact: true });
-  await input.scrollIntoViewIfNeeded();
-  const rect = (await input.boundingBox())!;
-  const ratio = Math.max(0, Math.min(1, (frame - window.from) / (window.to - window.from)));
-  await page.mouse.click(rect.x + 1 + ratio * (rect.width - 2), rect.y + rect.height / 2);
-  // 应用层已在帧号写入处加单调栅栏（Issue #114），迟到的取帧结果不会再覆盖步进帧号；
-  // 此处串行化保留为冗余防护，等绘制帧号追上再继续仍最稳妥。
-  await expectPaintSettled(page);
-  let current = Number(await stage(page).getAttribute("data-video-frame-index"));
-  for (let steps = 0; current !== frame && steps < 10; steps += 1) {
-    const forward = frame > current;
-    current += forward ? 1 : -1;
-    await key(page, forward ? "Shift+ArrowRight" : "Shift+ArrowLeft");
-    await expect(stage(page)).toHaveAttribute("data-video-frame-index", String(current));
-  }
-  await expectPaintSettled(page);
-  await expect(stage(page)).toHaveAttribute("data-video-frame-index", String(frame));
+  const invalid = invalidSeekTarget(frame);
+  if (invalid) throw new Error(invalid);
+  await test.step(`定位视频时间轴到 F${frame}`, async () => {
+    await key(page, "k");
+    // 建立包含目标的有效窗口；缩放复位后等窗口状态实际更新再复用，
+    // 不沿用更新之前的窗口数据。零跨度（单帧素材）显式拒绝。
+    const ensureWindow = async (forceReset = false) => {
+      let current = await readTimeline(page);
+      if (!forceReset && frame >= current.from && frame <= current.to) return current;
+      await expandTimeline(page);
+      await page.getByTestId("video-timeline-zoom-reset").click();
+      await expect
+        .poll(
+          async () => {
+            current = await readTimeline(page);
+            return frame >= current.from && frame <= current.to;
+          },
+          { timeout: 10_000 },
+        )
+        .toBe(true);
+      return current;
+    };
+    let window = await ensureWindow();
+    if (window.to - window.from <= 0)
+      throw new Error(`时间轴窗口 [${window.from}, ${window.to}] 退化；本辅助函数只服务多帧素材`);
+    // range 0..10000 的归一化粒度必须能精确还原目标帧（与 pctToFrame 反向映射
+    // 一致）；本套件 180 帧素材在任意合法窗口下逐帧可表达，长素材不可表达时
+    // 回全窗口复核，仍不可表达则立即失败，不静默接受近似帧。
+    let mapping = rangeValueForFrame(frame, window);
+    if (!mapping.expressible) {
+      window = await ensureWindow(true);
+      mapping = rangeValueForFrame(frame, window);
+    }
+    if (!mapping.expressible)
+      throw new Error(
+        `目标帧 ${frame} 在时间轴窗口 [${window.from}, ${window.to}] 无法经 range 归一化` +
+          `精确表达（value=${mapping.value} 反解为 ${mapping.representedFrame}）；请缩小时间轴窗口后重试`,
+      );
+    const input = page.getByLabel("视频帧时间轴", { exact: true });
+    await input.scrollIntoViewIfNeeded();
+    let phase = "request-target";
+    try {
+      await test.step(`经 range 输入通路写入 value=${mapping.value}`, async () => {
+        // 应用既有输入路径：range onChange → onSeek。不写内部状态，也不依赖
+        // 播放浮层可交互（fill 无命中检查，浮层隐藏时裸坐标点击会被静默吞掉）。
+        await input.fill(String(mapping.value));
+        await expect(stage(page)).toHaveAttribute("data-video-frame-index", String(frame));
+      });
+      phase = "paint-settled";
+      // 先断言选择帧到达目标（上一步），再等绘制帧追上；最后复核选择帧未被
+      // 迟到结果覆盖——应用层 Issue #114 单调栅栏保留为冗余防护。
+      await test.step("确认呈现完成且选择帧未被迟到结果覆盖", async () => {
+        await expectPaintSettled(page);
+        await expect(stage(page)).toHaveAttribute("data-video-frame-index", String(frame));
+      });
+    } catch (error) {
+      await test.info().attach("seek-navigation-state", {
+        contentType: "application/json",
+        body: JSON.stringify(
+          await seekNavigationSnapshot(page, frame, mapping.value, phase),
+          null,
+          2,
+        ),
+      });
+      throw error;
+    }
+  });
 }
 
 async function revealFab(page: Page) {
