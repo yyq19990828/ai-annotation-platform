@@ -669,11 +669,7 @@ test.describe("F3-4 故障注入：延迟真实 API 响应交付", () => {
       await open(page, fixture);
       await chooseJob(page, oldJob.job_id);
       await setScope(page, ["A"], 16, 16);
-      const dialogs: string[] = [];
-      page.on("dialog", async (dialog) => {
-        dialogs.push(dialog.message());
-        await dialog.dismiss();
-      });
+      // 覆盖确认已迁至应用内决策对话框;409 到达时上下文已切换,不应弹出任何对话框。
       const decisions: unknown[] = [];
       page.on("request", (item) => {
         if (item.method() === "POST" && path(item.url()) === decisionPath(oldJob.job_id)) {
@@ -710,7 +706,7 @@ test.describe("F3-4 故障注入：延迟真实 API 响应交付", () => {
         await refresh(page, currentJob.job_id);
         await expectScope(page, currentJob.job_id, ["B"], 12, 15, 4);
         await expect.poll(() => frame(page)).toBe(14);
-        expect(dialogs).toEqual([]);
+        await expect(page.getByRole("alertdialog")).toHaveCount(0);
         expect(decisions).toHaveLength(1);
         expect(decisions[0]).toMatchObject({
           instance_ids: ["A"],
@@ -743,7 +739,7 @@ test.describe("F3-4 故障注入：延迟真实 API 响应交付", () => {
           faultInjection: `delayed real manual 409 after ${destination} switch`,
           fetched,
           decisions,
-          dialogs,
+          noOverrideConfirm: true,
           remaining,
         });
       } finally {

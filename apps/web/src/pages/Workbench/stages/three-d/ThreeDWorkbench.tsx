@@ -6,6 +6,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties, ReactNode } from "react";
+import { confirmDialog } from "@/components/ui/decisionDialog";
 import { viewportRegionClipPath } from "../../layout/workbenchViewportRegions";
 import { createPortal } from "react-dom";
 import { useWorkbench3DLayout } from "../../layout/Workbench3DLayoutContext";
@@ -2156,7 +2157,15 @@ export function ThreeDWorkbench({
   const handleDeleteManualBbox = useCallback(async () => {
     if (!writeAllowedRef.current) return;
     if (!enlargedCameraMember || !cameraMembers.data?.track_revision) return;
-    if (!window.confirm(`删除 ${enlargedCam?.name ?? "当前相机"} 的 2D 成员？`)) return;
+    const confirmed = await confirmDialog({
+      tone: "danger",
+      title: `删除 ${enlargedCam?.name ?? "当前相机"} 的 2D 成员？`,
+      confirmLabel: "删除",
+    });
+    if (!confirmed) return;
+    // 等待决定期间成员/轨迹修订可能已变化;重验后仍以乐观锁提交,不匹配由服务端拒绝。
+    if (!writeAllowedRef.current) return;
+    if (!enlargedCameraMember || !cameraMembers.data?.track_revision) return;
     try {
       await cameraMembers.remove.mutateAsync({
         memberId: enlargedCameraMember.id,

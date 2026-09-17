@@ -91,7 +91,7 @@ import { MANUAL_IMAGE_TOOLS, manualImageTool, continuousIntentError } from "./ma
 import { ManualCreationPopover } from "../shell/ManualCreationPopover";
 import { videoToolUnit, videoToolEnabled, type VideoToolSelection } from "../stage/videoToolUnits";
 import type { ToolUnitId } from "@/constants/toolUnits";
-import type { AttributeField, ToolBinding, ToolBindings } from "@/api/projects";
+import type { AttributeField, ProjectResponse, ToolBinding, ToolBindings } from "@/api/projects";
 import { useViewportTransform } from "./useViewportTransform";
 import { useIssuePins } from "./useIssuePins";
 import { useVideoIssueNavigation } from "./useVideoIssueNavigation";
@@ -252,6 +252,7 @@ import {
 } from "./offlineQueue";
 import { useWorkbenchOfflineQueue } from "./useWorkbenchOfflineQueue";
 import { useImageAnnotationActions } from "../stages/image/useImageAnnotationActions";
+import { confirmDialog } from "@/components/ui/decisionDialog";
 import {
   promptMaskLeaveChoice,
   useMaskEditorSession,
@@ -2628,11 +2629,11 @@ export function useWorkbenchShellModel({
   );
   // v0.20.2 · 「采纳后该属性将丢失」警告的一键补全: 把 active model 自报的属性字段 (warning.fillable)
   // 补进项目「所有启用工具单位」的 attribute_schema.fields (同 key 覆盖、新 key 追加), 立即落库。
-  // 写项目配置是有副作用操作, 故先 window.confirm 确认 (plan 风险项)。补完后 enabledToolUnits 派生
-  // 收敛, useCapabilityValidation 重算, 该条警告自动消失。
+  // 写项目配置是有副作用操作, 故先经应用内 confirmDialog 确认 (plan 风险项)。补完后 enabledToolUnits
+  // 派生收敛, useCapabilityValidation 重算, 该条警告自动消失。
   // v0.20.12 · 抽出批量核心, 供单框二次推理 (SecondaryInferenceBar) 一次补多字段复用。
   const applyAttributeFields = useCallback(
-    (fields: AttributeField[], confirmMsg: string) => {
+    async (fields: AttributeField[], confirmMsg: string) => {
       if (fields.length === 0) return;
       const tb = currentProject?.tool_bindings;
       if (!tb) return;
@@ -2641,10 +2642,19 @@ export function useWorkbenchShellModel({
         pushToast({ msg: "当前项目没有启用的工具单位, 无法补全属性", kind: "warning" });
         return;
       }
-      if (!window.confirm(confirmMsg)) return;
+      const confirmed = await confirmDialog({
+        title: "补全属性字段到项目",
+        description: confirmMsg,
+        confirmLabel: "继续",
+      });
+      if (!confirmed) return;
+      // 等待用户决定期间项目配置可能被并行修改: 以缓存中的最新 tool_bindings 重算写入载荷,
+      // 避免覆盖 await 窗口内的变更 (plan「Async await gap」缓解)。
+      const latestTb =
+        queryClient.getQueryData<ProjectResponse>(["project", routeId])?.tool_bindings ?? tb;
       // 仅改启用单位的 attribute_schema; 其余单位 (禁用/未配) 原样保留, 避免误丢配置。
       const nextTb: ToolBindings = {};
-      for (const [unit, binding] of Object.entries(tb) as [ToolUnitId, ToolBinding][]) {
+      for (const [unit, binding] of Object.entries(latestTb) as [ToolUnitId, ToolBinding][]) {
         if (!binding) continue;
         if (!binding.enabled) {
           nextTb[unit] = binding;
@@ -2668,7 +2678,7 @@ export function useWorkbenchShellModel({
         },
       );
     },
-    [currentProject?.tool_bindings, updateProjectMu, pushToast],
+    [currentProject?.tool_bindings, pushToast, queryClient, routeId, updateProjectMu],
   );
   const handleFillAttribute = useCallback(
     (field: AttributeField) =>
@@ -3136,7 +3146,7 @@ export function useWorkbenchShellModel({
         applyContext(previous);
         return "continue" as const;
       }
-      const choice = promptMaskLeaveChoice((message) => window.confirm(message));
+      const choice = await promptMaskLeaveChoice();
       if (choice === "save") {
         // 先回到旧上下文再提交，避免把旧 Buffer 落到新 task/frame/selection。
         applyContext(previous);
@@ -3194,7 +3204,10 @@ export function useWorkbenchShellModel({
       pushToast({ msg: "Mask 正在保存", sub: "保存完成后再离开", kind: "warning" });
       return false;
     }
-    const choice = promptMaskLeaveChoice((message) => window.confirm(message));
+    const choice = await promptMaskLeaveChoice();
+    // 对话框打开期间会话可能已被其他流程推进 (切题/切帧/rebase);guard 持有的是旧
+    // generation 的决定,此时放弃执行,避免把旧 Buffer cancel 到新会话上。
+    if (maskSessionContextRef.current.generation !== maskEditor.generation) return false;
     if (choice === "continue") return false;
     if (choice === "save") return commitCurrentMaskRef.current();
     if (maskInstanceTransitionInFlightRef.current) return false;
@@ -4508,20 +4521,24 @@ export function useWorkbenchShellModel({
   );
 
   const pasteVideoMaskSameTrack = useCallback(
-    (annotation: AnnotationResponse) => {
+    async (annotation: AnnotationResponse) => {
       if (annotation.geometry.type !== "video_track_mask") return;
       const { reason } = validateMaskPaste(annotation);
       if (reason || !videoMaskClipboard || !taskId) {
         pushToast({ msg: "无法粘贴 Mask", sub: reason ?? undefined, kind: "warning" });
         return;
       }
-      if (
-        maskEditor.dirty &&
-        s.selectedId === annotation.id &&
-        s.videoTool === "mask-track" &&
-        !window.confirm("当前 Mask 稿件尚未保存，是否用剪贴板内容覆盖？")
-      )
-        return;
+      if (maskEditor.dirty && s.selectedId === annotation.id && s.videoTool === "mask-track") {
+        const overwrite = await confirmDialog({
+          tone: "danger",
+          title: "用剪贴板内容覆盖未保存的 Mask 稿件？",
+          confirmLabel: "覆盖",
+        });
+        if (!overwrite) return;
+        // 等待决定期间目标可能已被删除;粘贴意图要求目标仍存在 (generation 隔离由
+        // pendingVideoMaskIntent 加载流程自理)。
+        if (!annotationsRef.current.some((ann) => ann.id === annotation.id)) return;
+      }
       setPendingVideoMaskIntent({
         id: randomId(),
         taskId,
@@ -6950,8 +6967,19 @@ export function useWorkbenchShellModel({
               handleVideoComposeTracks({ operation: "join_tracks", annotationIds: ids, gapMode })
             }
             onDelete={() => {
-              if (window.confirm(`确定删除 ${videoBatchTracks.length} 条轨迹？`))
-                handleVideoBatchDelete(videoBatchTracks);
+              void (async () => {
+                const confirmed = await confirmDialog({
+                  tone: "danger",
+                  title: `删除 ${videoBatchTracks.length} 条轨迹？`,
+                  confirmLabel: "删除",
+                });
+                if (!confirmed) return;
+                // 等待决定期间部分轨迹可能已被删除;过滤后仍非空才提交 (删除已消失项只会报错)。
+                const stillPresent = videoBatchTracks.filter((t) =>
+                  annotationsRef.current.some((ann) => ann.id === t.id),
+                );
+                if (stillPresent.length > 0) handleVideoBatchDelete(stillPresent);
+              })();
             }}
             onClear={() => handleSelectBox(null)}
           />

@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { Button } from "@/components/ui/Button";
+import { confirmDialog } from "@/components/ui/decisionDialog";
 import { Icon } from "@/components/ui/Icon";
 import type { AnnotationResponse, VideoTrackKeyframe } from "@/types";
 import type { DiffMode } from "../modes/types";
@@ -455,17 +456,33 @@ export function VideoTrackSidebar({
 
   const deleteSelectedTracks = useCallback(() => {
     if (selectedTracks.length <= 1 || !onDeleteTracks) return;
-    if (!window.confirm(`确定删除 ${selectedTracks.length} 条轨迹？`)) return;
-    onDeleteTracks(selectedTracks);
-    setSelectedTrackIds(new Set());
+    // 删除确认走应用内对话框;确认期间轨迹可能被并行删除,由上层 handleVideoBatchDelete
+    // 过滤兜底,这里不重复判定。
+    void (async () => {
+      const confirmed = await confirmDialog({
+        tone: "danger",
+        title: `删除 ${selectedTracks.length} 条轨迹？`,
+        confirmLabel: "删除",
+      });
+      if (!confirmed) return;
+      onDeleteTracks(selectedTracks);
+      setSelectedTrackIds(new Set());
+    })();
   }, [onDeleteTracks, selectedTracks]);
 
   // 单条轨迹删除:右栏每行 + 选中卡底部操作栏共用;删整条 = onDeleteTracks([ann])。
   const deleteTrack = useCallback(
     (ann: VideoTrackAnnotation) => {
       if (readOnly || lockedTrackIds.has(ann.geometry.track_id) || !onDeleteTracks) return;
-      if (!window.confirm("确定删除这条轨迹？")) return;
-      onDeleteTracks([ann]);
+      void (async () => {
+        const confirmed = await confirmDialog({
+          tone: "danger",
+          title: "删除这条轨迹？",
+          confirmLabel: "删除",
+        });
+        if (!confirmed) return;
+        onDeleteTracks([ann]);
+      })();
     },
     [lockedTrackIds, onDeleteTracks, readOnly],
   );
@@ -772,8 +789,14 @@ export function VideoTrackSidebar({
                     title="删除 Mask 轨迹"
                     disabled={readOnly || locked || !onDeleteTracks}
                     onClick={() => {
-                      if (window.confirm("确定删除这条 Mask 轨迹？"))
-                        onDeleteTracks?.([annotation]);
+                      void (async () => {
+                        const confirmed = await confirmDialog({
+                          tone: "danger",
+                          title: "删除这条 Mask 轨迹？",
+                          confirmLabel: "删除",
+                        });
+                        if (confirmed) onDeleteTracks?.([annotation]);
+                      })();
                     }}
                   >
                     <Icon name="trash" size={13} />

@@ -141,12 +141,16 @@ test.describe("mask editor (I11)", () => {
     await page.mouse.move(cx - 20, cy, { steps: 4 });
     await page.mouse.up();
 
-    // commit 触发：确认转换报告后创建带 prediction lineage 的原生 Mask。
+    // commit 触发：确认转换报告（可能追加 lossy 警告）后创建带 prediction lineage 的原生 Mask。
     let confirmCount = 0;
-    page.on("dialog", (dialog) => {
+    const decision = page.getByRole("alertdialog");
+    const acceptDecision = async () => {
+      await expect(decision).toBeVisible();
+      await decision.locator('[data-slot="alert-dialog-action"]').click();
       confirmCount += 1;
-      void dialog.accept();
-    });
+      // 等退场完毕,避免下一轮 waitFor 命中仍在播放退场动画的旧对话框。
+      await expect(decision).toBeHidden();
+    };
     const annoPost = page
       .waitForResponse(
         (resp) =>
@@ -158,6 +162,12 @@ test.describe("mask editor (I11)", () => {
       .catch(() => null);
     await openMaskSettings(page);
     await page.getByTestId("mask-toolbar").getByTestId("mask-primary-action").click();
+    await acceptDecision();
+    // lossy 警告视转换报告而定;短暂等待出现则再确认一轮,未出现则直接等落库。
+    await decision
+      .waitFor({ state: "visible", timeout: 3_000 })
+      .then(() => acceptDecision())
+      .catch(() => undefined);
     const resp = await annoPost;
     expect(resp).not.toBeNull();
     expect(confirmCount).toBeGreaterThan(0);

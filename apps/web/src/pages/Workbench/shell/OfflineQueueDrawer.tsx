@@ -1,6 +1,7 @@
 import { FilterGroup, FilterToggle } from "@/components/filters/FilterControls";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { createPortal } from "react-dom";
+import { confirmDialog } from "@/components/ui/decisionDialog";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import {
@@ -172,7 +173,13 @@ export function OfflineQueueDrawer({
 
   const handleClearAll = useCallback(async () => {
     if (items.length === 0) return;
-    if (!window.confirm(`确认丢弃全部 ${items.length} 条离线操作？此操作不可撤销。`)) return;
+    const confirmed = await confirmDialog({
+      tone: "danger",
+      title: `丢弃全部 ${items.length} 条离线操作？`,
+      description: "此操作不可撤销。",
+      confirmLabel: "丢弃全部",
+    });
+    if (!confirmed) return;
     await clearAll(queueScope);
     pushToast({ msg: "队列已清空", kind: "warning" });
   }, [items.length, pushToast, queueScope]);
