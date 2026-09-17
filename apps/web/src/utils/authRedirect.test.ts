@@ -43,6 +43,15 @@ describe("sanitizeLoginRedirect", () => {
     expect(sanitizeLoginRedirect("/verify-email")).toBeNull();
   });
 
+  it("保留带 token 的邀请注册页,登录后仍能确认加入", () => {
+    expect(sanitizeLoginRedirect("/register?token=invite-token")).toBe(
+      "/register?token=invite-token",
+    );
+    // 无 token 的注册页仍不作为返回目标(现有账号误入注册页不应成为落点)。
+    expect(sanitizeLoginRedirect("/register?token=")).toBeNull();
+    expect(sanitizeLoginRedirect("/register?foo=bar")).toBeNull();
+  });
+
   it("拒绝错误页 /unauthorized", () => {
     expect(sanitizeLoginRedirect("/unauthorized")).toBeNull();
     expect(sanitizeLoginRedirect("/unauthorized?from=/users")).toBeNull();

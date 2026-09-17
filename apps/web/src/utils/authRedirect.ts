@@ -28,8 +28,13 @@ const NON_RETURNABLE_PATHS = new Set([
  */
 export function sanitizeLoginRedirect(candidate: string | null | undefined): string | null {
   if (!candidate || !candidate.startsWith("/") || candidate.startsWith("//")) return null;
-  const { pathname } = new URL(candidate, "http://localhost");
-  if (NON_RETURNABLE_PATHS.has(pathname)) return null;
+  const { pathname, searchParams } = new URL(candidate, "http://localhost");
+  if (NON_RETURNABLE_PATHS.has(pathname)) {
+    // 邀请链接的「登录后确认加入」以 /register?token=… 作为 next,是既有账号
+    // 登录后接受邀请的合法落点;仅放行带 token 的邀请注册页,其余认证流程页
+    // (含无 token 的 /register)仍不作为返回目标。
+    if (pathname !== "/register" || !searchParams.get("token")) return null;
+  }
   return candidate;
 }
 
