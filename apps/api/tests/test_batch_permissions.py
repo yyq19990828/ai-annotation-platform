@@ -184,3 +184,57 @@ class TestAssertCanTransitionReverse:
     def test_reverse_allowed_for_super_admin(self, src, dst):
         user = _user(UserRole.SUPER_ADMIN)
         _assert_allowed(user, _project(uuid.uuid4()), _batch(src), dst)
+
+
+class TestAllowsBulkPreannotation:
+    """issue #124 · 批量预标注批次准入: active 或未分派人员的 draft。"""
+
+    @staticmethod
+    def _batch(status: str, *, annotator_id=None, reviewer_id=None) -> TaskBatch:
+        return TaskBatch(
+            status=status, annotator_id=annotator_id, reviewer_id=reviewer_id
+        )
+
+    def test_active_always_allowed(self):
+        from app.services.batch_permissions import allows_bulk_preannotation
+
+        assert allows_bulk_preannotation(self._batch(BatchStatus.ACTIVE))
+        assert allows_bulk_preannotation(
+            self._batch(BatchStatus.ACTIVE, annotator_id=uuid.uuid4())
+        )
+
+    def test_unassigned_draft_allowed(self):
+        from app.services.batch_permissions import allows_bulk_preannotation
+
+        assert allows_bulk_preannotation(self._batch(BatchStatus.DRAFT))
+
+    @pytest.mark.parametrize(
+        "kwargs",
+        [
+            {"annotator_id": "annotator"},
+            {"reviewer_id": "reviewer"},
+            {"annotator_id": "annotator", "reviewer_id": "reviewer"},
+        ],
+    )
+    def test_assigned_draft_denied(self, kwargs):
+        from app.services.batch_permissions import allows_bulk_preannotation
+
+        ids = {"annotator": uuid.uuid4(), "reviewer": uuid.uuid4()}
+        resolved = {k: ids[v] for k, v in kwargs.items()}
+        assert not allows_bulk_preannotation(self._batch(BatchStatus.DRAFT, **resolved))
+
+    @pytest.mark.parametrize(
+        "status",
+        [
+            BatchStatus.PRE_ANNOTATED,
+            BatchStatus.ANNOTATING,
+            BatchStatus.REVIEWING,
+            BatchStatus.APPROVED,
+            BatchStatus.REJECTED,
+            BatchStatus.ARCHIVED,
+        ],
+    )
+    def test_manual_lifecycle_statuses_denied(self, status):
+        from app.services.batch_permissions import allows_bulk_preannotation
+
+        assert not allows_bulk_preannotation(self._batch(status))

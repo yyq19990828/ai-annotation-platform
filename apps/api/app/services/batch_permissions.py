@@ -9,6 +9,7 @@ REVERSE_TRANSITIONS 与角色门禁函数。语法层(VALID_TRANSITIONS)仍由 b
 from __future__ import annotations
 
 from fastapi import HTTPException
+from sqlalchemy import and_, or_
 
 from app.db.enums import BatchStatus, UserRole
 from app.db.models.project import Project
@@ -23,6 +24,37 @@ REVERSE_TRANSITIONS: set[tuple[str, str]] = {
     # v0.9.5：丢弃 AI 预标 predictions 重置（owner 兜底，需 reason）
     (BatchStatus.PRE_ANNOTATED, BatchStatus.ACTIVE),
 }
+
+
+def allows_bulk_preannotation(batch: TaskBatch) -> bool:
+    """issue #124 · 批量预标注的批次准入规则（API 与 worker 复校验共用）。
+
+    active 批次照旧放行；另放行「尚未分派标注员与质检员」的 draft 批次，
+    让管理员在分派人工前先跑 AI。已分派人员的 draft 与已进入人工流程的
+    批次（annotating / reviewing / ...）一律拒绝：分派即代表人工工作已定，
+    不允许绕过任务锁与生命周期往进行中的工作灌预测。
+    """
+    if batch.status == BatchStatus.ACTIVE:
+        return True
+    if batch.status == BatchStatus.DRAFT:
+        return batch.annotator_id is None and batch.reviewer_id is None
+    return False
+
+
+def bulk_preannotation_eligible_condition():
+    """SQL 侧等价于 `allows_bulk_preannotation` 的过滤条件（聚合 / 列表查询复用）。
+
+    与纯函数判定必须同源：`active` 或「未分派标注员与质检员」的 `draft`。管理员
+    从「先跑 AI 再分派」改为「先分派再跑 AI」时，两处都要同步修改。
+    """
+    return or_(
+        TaskBatch.status == BatchStatus.ACTIVE,
+        and_(
+            TaskBatch.status == BatchStatus.DRAFT,
+            TaskBatch.annotator_id.is_(None),
+            TaskBatch.reviewer_id.is_(None),
+        ),
+    )
 
 
 # v0.7.0：transition 鉴权矩阵 — (from, to) 元组 → 允许角色集合 / 特殊判定

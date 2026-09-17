@@ -420,8 +420,8 @@ export function DataManagerTaskActions({
       if (scopeRef.current !== requestScope) return;
       const message = error instanceof Error ? error.message : "";
       setActionError(
-        message.includes("must belong to active batches")
-          ? "所选任务的批次已进入标注或审核，不能运行预标。请改选活动批次中的待标注任务。"
+        message.includes("must belong to active or unassigned draft batches")
+          ? "所选任务的批次已进入人工流程或已分派人员，不能运行预标。请改选活动批次或未分派人员的草稿批次中的待标注任务。"
           : message
             ? `无法创建预标注任务：${message}`
             : "无法创建预标注任务，请检查任务状态和模型能力",
