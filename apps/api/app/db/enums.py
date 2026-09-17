@@ -25,6 +25,18 @@ class TaskStatus(str, Enum):
     REJECTED = "rejected"
 
 
+# issue #121 · 工作台单题交互 AI 允许的任务状态 (与标注写入口径一致)。
+# 排除 uploading (对象尚未校验) 与终态 review/completed; 批量预标另按 pending-only 校验。
+# API 校验与 worker 复校验共用, 避免两处状态集合漂移。
+WORKBENCH_AI_EDITABLE_TASK_STATUSES = frozenset(
+    {
+        TaskStatus.PENDING.value,
+        TaskStatus.IN_PROGRESS.value,
+        TaskStatus.REJECTED.value,
+    }
+)
+
+
 class BatchStatus(str, Enum):
     DRAFT = "draft"
     ACTIVE = "active"

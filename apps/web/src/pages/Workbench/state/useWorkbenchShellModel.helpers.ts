@@ -324,6 +324,8 @@ export function buildPipelineRunPayload(
   return {
     ml_backend_id: rootBackendId,
     task_ids: [taskId],
+    // Issue #121 · 工作台当前题执行语义 (允许 in_progress / draft 批次)。
+    execution_scope: "workbench",
     pipeline_stages: stages,
     predict_mode: "overwrite",
     on_key_conflict: "last_wins",

@@ -24450,6 +24450,15 @@
             ],
             "title": "Class Filter"
           },
+          "execution_scope": {
+            "default": "bulk",
+            "enum": [
+              "bulk",
+              "workbench"
+            ],
+            "title": "Execution Scope",
+            "type": "string"
+          },
           "ml_backend_id": {
             "anyOf": [
               {

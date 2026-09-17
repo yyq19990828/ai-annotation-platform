@@ -16,7 +16,7 @@ from app.deps import (
     require_project_owner,
     assert_project_visible,
 )
-from app.db.enums import UserRole
+from app.db.enums import TaskStatus, UserRole, WORKBENCH_AI_EDITABLE_TASK_STATUSES
 from app.db.models.user import User
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
@@ -1902,6 +1902,10 @@ class PreannotateRequest(BaseModel):
     prompt: str | None = None
     output_mode: Literal["box", "mask", "both"] = "mask"
     batch_id: uuid.UUID | None = None
+    # 执行场景 (issue #121): bulk=数据管理批量预标 (缺省, 保留 pending + active 批次 +
+    # 无有效编辑锁的批量前置条件); workbench=工作台「当前题 AI」单题交互执行, 按当前用户
+    # 对该题的编辑语义校验 (允许 in_progress 任务与 draft 批次, 保留管理员锁 / 他人锁 / 终态保护)。
+    execution_scope: Literal["bulk", "workbench"] = "bulk"
     # v0.10.38 · 按后端参数面板 (epic 阶段 2): 选中 backend 的 /setup.params 值,
     # 由前端按 backend 分桶解析后显式带上, worker 合并进 /predict context (覆盖项目级阈值兜底).
     params: dict | None = None
@@ -2246,6 +2250,69 @@ async def _validate_preannotate_task_scope(
     return requested
 
 
+# 终态任务: 先撤回 / 重开后再运行; 其它不可编辑状态 (如 uploading) 单独提示。
+_WORKBENCH_AI_TERMINAL_STATUSES = {
+    TaskStatus.REVIEW.value,
+    TaskStatus.COMPLETED.value,
+}
+
+
+async def _validate_workbench_task_scope(
+    db: AsyncSession,
+    *,
+    project: Project,
+    task_ids: list[uuid.UUID],
+    actor: User,
+) -> list[uuid.UUID]:
+    """校验工作台「当前题 AI」的单题执行范围 (issue #121)。
+
+    与数据管理批量路径不同, 交互式执行只针对调用者正在编辑的那道题, 因此允许
+    in_progress 任务与 draft 批次; 任务归属、批次管理员锁、他人编辑锁与终态任务
+    仍然受保护。拒绝原因用中文, 因为工作台面板会原样展示 API detail。
+    """
+
+    requested = sorted(set(task_ids), key=str)
+    if len(requested) != 1:
+        raise HTTPException(
+            status_code=422,
+            detail="工作台当前题 AI 一次仅支持一个任务",
+        )
+    row = (
+        await db.execute(
+            select(Task, TaskBatch)
+            .outerjoin(TaskBatch, TaskBatch.id == Task.batch_id)
+            .where(Task.project_id == project.id, Task.id == requested[0])
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="任务不存在或不属于当前项目")
+    task, batch = row
+    if batch is not None and batch.admin_locked:
+        raise HTTPException(
+            status_code=409,
+            detail="任务所属批次已被管理员锁定，无法运行 AI",
+        )
+    # 白名单而非黑名单: 只有明确可编辑的 pending / in_progress / rejected 放行,
+    # uploading (对象未校验) 与未来新增/非法状态一律拒绝 (issue #121 review)。
+    if task.status not in WORKBENCH_AI_EDITABLE_TASK_STATUSES:
+        if task.status in _WORKBENCH_AI_TERMINAL_STATUSES:
+            detail = "当前任务已提交审核或已完成，请先撤回或重开后再运行 AI"
+        else:
+            detail = "当前任务尚未就绪，请等待上传完成后再运行 AI"
+        raise HTTPException(status_code=409, detail=detail)
+    from app.services.task_lock import TaskLockService
+
+    # 同一 task 可能存在多行残留锁 (unique 仅在 (task_id, user_id) 上), 必须逐行判断,
+    # 不能只看 active_lock() 的第一行, 否则他人持锁时可能被本人锁掩盖 (issue #121 review)。
+    locks = await TaskLockService(db).active_locks(task.id)
+    if any(lock.user_id != actor.id for lock in locks):
+        raise HTTPException(
+            status_code=409,
+            detail="当前任务正由其他成员编辑，无法运行 AI",
+        )
+    return requested
+
+
 @router.post("/{project_id}/preannotate")
 async def trigger_preannotation(
     body: PreannotateRequest,
@@ -2388,14 +2455,35 @@ async def trigger_preannotation(
                 raise HTTPException(status_code=422, detail=geo_violations[0].detail)
         pipeline_stages_payload = norm
 
+    if body.execution_scope == "workbench":
+        if not body.task_ids:
+            raise HTTPException(
+                status_code=422,
+                detail="工作台当前题 AI 必须指定当前任务",
+            )
+        # 工作台单题语义由任务推导批次, 不接受 batch_id: 否则会落入下方「批次须 active」
+        # 的批量校验 (draft 批次误报 400) 或放行无关 active 批次 (issue #121 review)。
+        if body.batch_id is not None:
+            raise HTTPException(
+                status_code=422,
+                detail="工作台当前题 AI 不支持指定批次",
+            )
     explicit_task_ids: list[uuid.UUID] | None = None
     if body.task_ids:
-        explicit_task_ids = await _validate_preannotate_task_scope(
-            db,
-            project=project,
-            task_ids=body.task_ids,
-            batch_id=body.batch_id,
-        )
+        if body.execution_scope == "workbench":
+            explicit_task_ids = await _validate_workbench_task_scope(
+                db,
+                project=project,
+                task_ids=body.task_ids,
+                actor=current_user,
+            )
+        else:
+            explicit_task_ids = await _validate_preannotate_task_scope(
+                db,
+                project=project,
+                task_ids=body.task_ids,
+                batch_id=body.batch_id,
+            )
 
     # v0.9.5 · 指定 batch 时校验归属本项目 + 状态在 active
     total_tasks_hint: int | None = None
@@ -2451,10 +2539,10 @@ async def trigger_preannotation(
         if src_stage is not None and src_stage.source:
             execution_unit = (src_stage.source or {}).get("execution_unit")
 
-    # Data Manager retries can carry a durable key. Create the async job before
-    # dispatch so the client can poll the same job and a concurrent retry can
-    # return it without enqueueing another prediction run. Calls from the
-    # existing Workbench omit the key and retain their historical Celery id.
+    # 派发前预建持久作业, 让客户端可轮询同一 job、并发重试不会重复入队。
+    # - 数据管理重试可带幂等键 (复用/去重)。
+    # - 工作台单题请求 (无幂等键) 也预建, 使 worker 在派发前的范围复校验失败时
+    #   on_failure 能按 celery_task_id 落一条 failed 作业 (issue #121 review)。
     from app.services import async_job as async_job_svc
     from app.services.data_management.actions import (
         assert_idempotent_request_matches,
@@ -2465,7 +2553,7 @@ async def trigger_preannotation(
     )
 
     idempotency_key = normalize_idempotency_key(idempotency_key)
-    idempotent_job: AsyncJob | None = None
+    precreated_job: AsyncJob | None = None
     if idempotency_key is not None:
         canonical_body = body.model_dump(mode="json")
         canonical_body["task_ids"] = (
@@ -2501,7 +2589,7 @@ async def trigger_preannotation(
             # A request may have crashed after committing this pending row but
             # before publishing to Celery. Reuse the row and safely republish;
             # the worker's row lock makes a duplicate delivery a no-op.
-            idempotent_job = existing
+            precreated_job = existing
         else:
             scoped_ids = (
                 [str(task_id) for task_id in explicit_task_ids]
@@ -2522,7 +2610,7 @@ async def trigger_preannotation(
             if scoped_ids is not None:
                 precreated_payload["scope"] = {"task_ids": scoped_ids}
                 precreated_payload["task_ids"] = scoped_ids
-            idempotent_job = await async_job_svc.create_job(
+            precreated_job = await async_job_svc.create_job(
                 db,
                 kind="batch_predict",
                 user_id=current_user.id,
@@ -2532,14 +2620,36 @@ async def trigger_preannotation(
         # Use the durable async job id as the Celery task id. The failure hook
         # can therefore resolve a job even if the worker fails before the API
         # request reaches its post-dispatch commit.
-        idempotent_job.celery_task_id = str(idempotent_job.id)
+        precreated_job.celery_task_id = str(precreated_job.id)
+        await db.commit()
+    elif body.execution_scope == "workbench" and explicit_task_ids is not None:
+        # issue #121 review · 工作台单题请求 (无幂等键) 同样预建持久作业: worker 在派发
+        # 前的范围复校验失败时, on_failure 能按 celery_task_id 落一条 failed 作业,
+        # 工作台面板不会因找不到终态记录而无限轮询。
+        scoped_ids = [str(task_id) for task_id in explicit_task_ids]
+        precreated_job = await async_job_svc.create_job(
+            db,
+            kind="batch_predict",
+            user_id=current_user.id,
+            project_id=project.id,
+            payload={
+                "batch_id": None,
+                "ml_backend_id": str(source_backend_id),
+                "total_tasks": len(scoped_ids),
+                "project_display_id": project.display_id,
+                "project_name": project.name,
+                "scope": {"task_ids": scoped_ids},
+                "task_ids": scoped_ids,
+            },
+        )
+        precreated_job.celery_task_id = str(precreated_job.id)
         await db.commit()
 
     apply_opts: dict = {"queue": queue}
     if has_tracker_stage:
         apply_opts["soft_time_limit"] = settings.tracker_soft_time_limit_seconds
-    if idempotent_job is not None:
-        apply_opts["task_id"] = str(idempotent_job.id)
+    if precreated_job is not None:
+        apply_opts["task_id"] = str(precreated_job.id)
     try:
         job = batch_predict.apply_async(
             args=[
@@ -2564,27 +2674,30 @@ async def trigger_preannotation(
                 "pipeline_stages": pipeline_stages_payload,
                 # v0.21.7 · 执行单位 (video/frame/scene): frame → 逐帧 fan-out。缺省=整段/逐题。
                 "execution_unit": execution_unit,
+                # issue #121 · 执行场景透传 worker: workbench 单题允许 in_progress / draft,
+                # bulk 保持 pending + active 批次前置条件。
+                "execution_scope": body.execution_scope,
                 **(
-                    {"async_job_id": str(idempotent_job.id)}
-                    if idempotent_job is not None
+                    {"async_job_id": str(precreated_job.id)}
+                    if precreated_job is not None
                     else {}
                 ),
             },
             **apply_opts,
         )
     except Exception as exc:
-        if idempotent_job is not None:
+        if precreated_job is not None:
             await async_job_svc.mark_failed(
                 db,
-                idempotent_job.id,
+                precreated_job.id,
                 error=f"dispatch failed: {type(exc).__name__}: {exc}",
             )
             await db.commit()
         raise
-    if idempotent_job is not None:
+    if precreated_job is not None:
         # ``task_id`` above is the durable async job id; keep that identity even
         # if a test broker returns a different result wrapper id.
-        idempotent_job.celery_task_id = str(idempotent_job.id)
+        precreated_job.celery_task_id = str(precreated_job.id)
     # B-5 · AI 预标注触发审计 — 让超管在 /audit 看到 谁/何时/对哪个 batch 跑了 AI
     await AuditService.log(
         db,
@@ -2595,7 +2708,7 @@ async def trigger_preannotation(
         request=request,
         status_code=200,
         detail={
-            "job_id": str(idempotent_job.id) if idempotent_job else job.id,
+            "job_id": str(precreated_job.id) if precreated_job else job.id,
             "ml_backend_id": str(source_backend_id),
             "batch_id": str(body.batch_id) if body.batch_id else None,
             "task_count": (
@@ -2624,11 +2737,11 @@ async def trigger_preannotation(
         warnings.append(msg)
         logger.warning("[ai-pre] %s", msg)
     return {
-        "job_id": str(idempotent_job.id) if idempotent_job else job.id,
+        "job_id": str(precreated_job.id) if precreated_job else job.id,
         "status": "queued",
         "total_tasks": total_tasks_hint,
         "channel": f"project:{project.id}:preannotate",
-        **({"celery_task_id": job.id} if idempotent_job else {}),
+        **({"celery_task_id": job.id} if precreated_job else {}),
         "warnings": warnings,
     }
 
