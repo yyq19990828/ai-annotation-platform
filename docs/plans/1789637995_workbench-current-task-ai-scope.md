@@ -37,13 +37,33 @@ Issue: [工作台「当前题 AI」被批量预标注状态校验拒绝（409）
 
 ## Outcome
 
-Landed on branch `fix/issue-121-workbench-current-task-ai` (awaiting maintainer review/merge).
+Landed commit `f8ab7191` on branch `feat/ai-409` (awaiting maintainer review/merge).
 
 - Backend: `apps/api/app/api/v1/projects.py` (`execution_scope`, `_validate_workbench_task_scope`),
   `apps/api/app/workers/tasks.py` (`batch_predict` / `_run_batch` workbench scope).
 - Web: `apps/web/src/hooks/usePreannotation.ts`, `apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx`,
   `apps/web/src/pages/Workbench/state/useWorkbenchShellModel.helpers.ts`.
-- Tests: `apps/api/tests/test_preannotate_workbench_scope.py`.
-- User documentation: `docs-site/user-guide/ai/current-task-inference.md`.
+- Tests: `apps/api/tests/test_preannotate_workbench_scope.py` (endpoint + validator), new
+  `_run_batch` cases in `apps/api/tests/test_prediction_jobs_worker.py`.
+- User documentation: `docs-site/user-guide/ai/current-task-inference.md`; API guide
+  `docs-site/api/guides/projects.md`.
 - CHANGELOG: Unreleased → Fixed.
-- Remaining work: live workbench verification after maintainer confirms environment.
+
+### Live workbench verification (isolated worktree dev stack)
+
+Verified end to end on `pnpm dev:worktree` (isolated DB/Redis/buckets, current checkout) with a
+seeded image project: enabled backend, `draft` batch, one `in_progress` task, and the workbench's
+own edit lock.
+
+- Logged in via browser, opened the task, ran **当前题 AI** with prompt `Drivable Area`.
+- `POST /api/v1/projects/.../preannotate` returned **200 OK** (audit `ai.preannotate.triggered`),
+  instead of the previous `409 explicit preannotation tasks must be pending`.
+- The worker consumed the job and selected the `in_progress` task: async job `failed_count=1`
+  with a `FailedPrediction` for `T-WBVERIFY`, i.e. the pending-only filter no longer drops it.
+  Its failure was the seeded backend routing (`ml_backend_pool_not_enabled`), unrelated to #121.
+
+The running worktree stack was stopped afterwards; no repository files were changed by the
+verification (the `PREANNOTATE_GPU_QUEUE=ml.cpu` override was process-scoped only, because the
+worktree does not start a GPU worker).
+
+- Remaining work: none for this issue; merge is a maintainer decision.
