@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/Card";
 import { DropdownMenu, type DropdownItem } from "@/components/ui/DropdownMenu";
 import { Icon } from "@/components/ui/Icon";
 import { Switch } from "@/components/ui/Switch";
+import { confirmDialog } from "@/components/ui/decisionDialog";
 import { useToastStore } from "@/components/ui/Toast";
 import { useUpdateProject, useRenameClass } from "@/hooks/useProjects";
 import { useUnsavedWarning } from "@/hooks/useUnsavedWarning";
@@ -182,11 +183,16 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
     try {
       const usage = await projectsApi.classUsage(project.id);
       const count = usage.classes[row.name] ?? 0;
-      const message =
-        count > 0
-          ? `类别「${row.name}」已被 ${count} 条标注使用。\n\n删除后这些标注将变为孤儿；暂不影响标注数据，加回同名类别即可恢复。工作台可隐藏孤儿标注，如需彻底清除请运维执行清理。\n\n确认删除？`
-          : `类别「${row.name}」暂无标注引用，可放心删除。\n\n确认删除？`;
-      return window.confirm(message);
+      return await confirmDialog({
+        tone: "danger",
+        title: `删除类别「${row.name}」`,
+        description:
+          count > 0
+            ? "删除后引用该类别的标注将变为孤儿；暂不影响标注数据，加回同名类别即可恢复。工作台可隐藏孤儿标注，如需彻底清除请运维执行清理。"
+            : "该类别暂无标注引用，可放心删除。",
+        details: count > 0 ? `已被 ${count} 条标注使用` : undefined,
+        confirmLabel: "删除",
+      });
     } catch (err) {
       pushToast({
         msg: "删除前用量统计失败",
@@ -203,11 +209,16 @@ export function ClassesSection({ project }: { project: ProjectResponse }) {
     try {
       const usage = await projectsApi.classUsage(project.id);
       const count = usage.attributes[key] ?? 0;
-      const message =
-        count > 0
-          ? `属性「${key}」已被 ${count} 条标注使用。\n\n删除后这些属性值将变为孤儿；暂不影响标注数据，加回同 key 属性即可恢复。工作台可隐藏孤儿标注，如需彻底清除请运维执行清理。\n\n确认删除？`
-          : `属性「${key}」暂无标注引用，可放心删除。\n\n确认删除？`;
-      return window.confirm(message);
+      return await confirmDialog({
+        tone: "danger",
+        title: `删除属性「${key}」`,
+        description:
+          count > 0
+            ? "删除后引用该属性的标注值将变为孤儿；暂不影响标注数据，加回同 key 属性即可恢复。工作台可隐藏孤儿标注，如需彻底清除请运维执行清理。"
+            : "该属性暂无标注引用，可放心删除。",
+        details: count > 0 ? `已被 ${count} 条标注使用` : undefined,
+        confirmLabel: "删除",
+      });
     } catch (err) {
       pushToast({
         msg: "删除前用量统计失败",
