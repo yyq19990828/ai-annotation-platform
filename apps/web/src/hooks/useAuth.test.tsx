@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { act, renderHook, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
+import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { MeResponse } from "../api/auth";
 import type { OfflineOp } from "../pages/Workbench/state/offlineQueue";
@@ -68,7 +69,28 @@ function wrapper({ children }: { children: ReactNode }) {
       mutations: { retry: false },
     },
   });
-  return <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>;
+  // useLogout 主动退出后会 navigate("/login"),hook 需要 Router 上下文。
+  return (
+    <QueryClientProvider client={queryClient}>
+      <MemoryRouter initialEntries={["/"]}>{children}</MemoryRouter>
+    </QueryClientProvider>
+  );
+}
+
+function wrapperWithLocation(initialPathname: string) {
+  const queryClient = new QueryClient({
+    defaultOptions: {
+      queries: { retry: false },
+      mutations: { retry: false },
+    },
+  });
+  return function Wrapper({ children }: { children: ReactNode }) {
+    return (
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={[initialPathname]}>{children}</MemoryRouter>
+      </QueryClientProvider>
+    );
+  };
 }
 
 describe("useLogoutAll", () => {
@@ -351,5 +373,38 @@ describe("useLogout", () => {
     expect(mockOfflineQueue.drain).not.toHaveBeenCalled();
     expect(mockAuthApi.logout).not.toHaveBeenCalled();
     expect(localStorage.getItem("token")).toBe("other-tab-token");
+  });
+
+  function LogoutLocationProbe() {
+    const logout = useLogout();
+    const location = useLocation();
+    return (
+      <div>
+        <span data-testid="probe-loc">{location.pathname}</span>
+        <span data-testid="probe-state">{JSON.stringify(location.state ?? null)}</span>
+        <button type="button" onClick={() => void logout.requestLogout()}>
+          退出
+        </button>
+      </div>
+    );
+  }
+
+  it("主动退出后回到 /login,不携带旧页面作为登录返回地址 (Issue #123)", async () => {
+    const { container } = render(
+      <Routes>
+        <Route path="*" element={<LogoutLocationProbe />} />
+      </Routes>,
+      { wrapper: wrapperWithLocation("/unauthorized") },
+    );
+    expect(container.querySelector("[data-testid='probe-loc']")?.textContent).toBe("/unauthorized");
+
+    fireEvent.click(screen.getByRole("button", { name: "退出" }));
+
+    await waitFor(() =>
+      expect(container.querySelector("[data-testid='probe-loc']")?.textContent).toBe("/login"),
+    );
+    // 不带 state.from,登录页不再把 /unauthorized 当作返回目标。
+    expect(container.querySelector("[data-testid='probe-state']")?.textContent).toBe("null");
+    expect(useAuthStore.getState().user).toBeNull();
   });
 });

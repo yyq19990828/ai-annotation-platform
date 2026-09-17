@@ -105,6 +105,7 @@ import { useFabAutoHideDriver } from "@/stores/fabRevealStore";
 import { initBugReportCapture, patchFetchForBugCapture } from "@/utils/bugReportCapture";
 import { PageLoader } from "@/components/PageLoader";
 import { useBugDrawerStore } from "@/stores/bugDrawerStore";
+import { defaultHomePath } from "@/utils/authRedirect";
 import { DiscussionDraftProvider } from "@/pages/Workbench/state/DiscussionDraftProvider";
 import { useAuthenticatedDiscussionSession } from "@/pages/Workbench/state/useAuthenticatedDiscussionSession";
 import styles from "./App.module.css";
@@ -143,7 +144,7 @@ function RedirectWithSearch({ to }: { to: string }) {
 // super_admin 默认主页是「平台概览」(/overview);其余角色进 /dashboard。
 function DefaultLandingRedirect() {
   const { role } = usePermissions();
-  return <Navigate to={role === "super_admin" ? "/overview" : "/dashboard"} replace />;
+  return <Navigate to={defaultHomePath(role)} replace />;
 }
 
 function AppShell() {
