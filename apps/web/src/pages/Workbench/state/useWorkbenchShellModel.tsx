@@ -8556,15 +8556,7 @@ export function useWorkbenchShellModel({
       onOverwrite: handleConflictOverwrite,
       onClose: () => setConflictOpen(false),
     },
-    rejectModal: modeState.rejectModal
-      ? {
-          open: modeState.rejectModal.open,
-          count: 1,
-          onClose: modeState.rejectModal.onClose,
-          onConfirm: modeState.rejectModal.onConfirm,
-          skipReasonHint: modeState.rejectModal.skipReasonHint,
-        }
-      : undefined,
+    // 退回不再走 rejectModal 槽位（plan T3.5：useReviewMode 直接调 rejectReasonDialog 两步流）
     deleteConfirm: deleteConfirm
       ? {
           open: true,
