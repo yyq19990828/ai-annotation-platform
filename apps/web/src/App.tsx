@@ -1,4 +1,4 @@
-import { useState, useEffect, lazy, Suspense } from "react";
+import { useState, useEffect, lazy, useRef, Suspense } from "react";
 import { Navigate, Outlet, Route, Routes, useLocation } from "react-router-dom";
 import { TopBar } from "@/components/shell/TopBar";
 import { WhatsNewDialog } from "@/components/shell/WhatsNewDialog";
@@ -9,6 +9,7 @@ import { Sidebar } from "@/components/shell/Sidebar";
 import { SidebarDrawer } from "@/components/shell/SidebarDrawer";
 import { ToastRack, useToastStore } from "@/components/ui/Toast";
 import { DecisionDialogHost } from "@/components/ui/DecisionDialogHost";
+import { useDecisionDialogStore } from "@/components/ui/decisionDialog";
 // 仪表盘 / 登录 类首屏关键路径：保持同步加载（避免 Suspense 闪烁）
 import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { AdminDashboard } from "@/pages/Dashboard/AdminDashboard";
@@ -95,6 +96,7 @@ const MyPerformancePage = lazy(() =>
 import { RequireAuth } from "@/components/routing/RequireAuth";
 import { RequirePagePermission } from "@/components/routing/RequirePagePermission";
 import { RequireProjectMember } from "@/components/routing/RequireProjectMember";
+import { useAuthStore } from "@/stores/authStore";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAppStore } from "@/stores/appStore";
 import { useMediaQuery } from "@/hooks/useMediaQuery";
@@ -229,6 +231,23 @@ function PlaceholderPage({ title }: { title: string }) {
   );
 }
 
+/**
+ * decisionDialog 队列的认证归属边界:队列是全局 Zustand,而挂载 Host 的壳在登出时
+ * 会被 RequireAuth 拆掉,排队中的请求却残留下来;换账号再登录后旧对话框会重新出现,
+ * 确认它可能用新凭据执行旧调用方捕获的变更。这里在认证归属变化(登出/换人)时
+ * 以取消值结算并清空整条队列(plan 1789527942 评审意见,Codex P1)。
+ */
+function DecisionQueueAuthBoundary() {
+  const ownerId = useAuthStore((s) => s.user?.id ?? null);
+  const prevOwnerRef = useRef(ownerId);
+  useEffect(() => {
+    if (prevOwnerRef.current === ownerId) return;
+    prevOwnerRef.current = ownerId;
+    useDecisionDialogStore.getState().cancelAll();
+  }, [ownerId]);
+  return null;
+}
+
 function FullScreenWorkbench({ mode }: { mode?: "annotate" | "review" }) {
   const tooNarrow = useMediaQuery("(max-width: 767px)");
   const bugDrawerOpen = useBugDrawerStore((s) => s.open);
@@ -285,6 +304,7 @@ export function App() {
   useNotificationSocket();
   return (
     <DiscussionDraftProvider {...discussionSession}>
+      <DecisionQueueAuthBoundary />
       {/* 版本更新提醒:登录/会话恢复后每版本弹一次,内部按账号已读版本(服务端)gate。 */}
       <WhatsNewDialog />
       <Routes>

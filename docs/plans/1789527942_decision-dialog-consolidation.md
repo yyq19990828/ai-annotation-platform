@@ -262,13 +262,13 @@ Resolved 2026-09-17 when the plan was approved:
 
 Orchestrated waves (isolated worktrees per modifying worker; integration and validation on the originating branch between waves):
 
-| Task | Scope | Wave | Model |
-| ---- | ----- | ---- | ----- |
-| T0 | Phase 0 — capability (service, host, dual mount, unit tests) | 1 | glm-5.3 (max) |
-| T1 | Phase 1 — Group A alerts + Group B management confirms | 2 (after T0) | glm-5.3-flash |
-| T2 | Phase 2 — Group C Projects/Review modal consolidation | 2 (after T0) | glm-5.3 (max) |
-| T3 | Phases 2–3 — Workbench `prompt*Choice` + Group D guards + Settings deferred navigation | 2 (after T0) | glm-5.3 (max) |
-| T4 | Phase 4 — eslint guardrail, e2e dialog-spec updates, design-system docs | 3 (after T1–T3) | glm-5.3-flash |
+| Task | Scope                                                                                  | Wave            | Model         |
+| ---- | -------------------------------------------------------------------------------------- | --------------- | ------------- |
+| T0   | Phase 0 — capability (service, host, dual mount, unit tests)                           | 1               | glm-5.3 (max) |
+| T1   | Phase 1 — Group A alerts + Group B management confirms                                 | 2 (after T0)    | glm-5.3-flash |
+| T2   | Phase 2 — Group C Projects/Review modal consolidation                                  | 2 (after T0)    | glm-5.3 (max) |
+| T3   | Phases 2–3 — Workbench `prompt*Choice` + Group D guards + Settings deferred navigation | 2 (after T0)    | glm-5.3 (max) |
+| T4   | Phase 4 — eslint guardrail, e2e dialog-spec updates, design-system docs                | 3 (after T1–T3) | glm-5.3-flash |
 
 T3 additionally updates the eight e2e specs that sniff `page.on("dialog")` for the flows it migrates; T4 covers any remainder.
 

@@ -54,6 +54,8 @@ export interface InputDialogOptions {
   description?: string;
   label: string;
   placeholder?: string;
+  /** 预填初始值(如退回补充说明预填「标注员跳过：…」),仍可编辑、计入必填/maxLength。 */
+  initialValue?: string;
   required?: boolean;
   maxLength?: number;
   confirmLabel: string;
@@ -90,6 +92,7 @@ export interface DecisionDialogRequest {
   options?: ChoiceOption[];
   label?: string;
   placeholder?: string;
+  initialValue?: string;
   required: boolean;
   maxLength?: number;
   validate?: (value: string) => string | null;
@@ -111,6 +114,12 @@ interface DecisionDialogStore {
   settle: (value: boolean | string | null) => void;
   /** 队首退场完毕(内容已卸载)后出队,下一条接管 */
   dispose: () => void;
+  /**
+   * 清空整条队列并按各 kind 的取消值结算未决请求(confirm → false,其余 → null)。
+   * 认证归属变更(登出/换账号)时由 App 层调用:排队中的请求属于旧会话的调用方,
+   * 不能带着新凭据继续执行其捕获的变更(Codex P1,plan 1789527942 评审意见)。
+   */
+  cancelAll: () => void;
 }
 
 let nextUid = 0;
@@ -128,6 +137,15 @@ export const useDecisionDialogStore = create<DecisionDialogStore>((set, get) => 
     head.request.resolve(value);
   },
   dispose: () => set((s) => (s.queue[0]?.settled ? { queue: s.queue.slice(1) } : s)),
+  cancelAll: () =>
+    set((s) => {
+      for (const item of s.queue) {
+        if (item.settled) continue;
+        // confirm 取消 = false;choice/input 取消 = null;alert 的 resolve 忽略入参。
+        item.request.resolve(item.request.kind === "confirm" ? false : null);
+      }
+      return { queue: [] };
+    }),
 }));
 
 export function confirmDialog(options: ConfirmDialogOptions): Promise<boolean> {
@@ -178,6 +196,7 @@ export function inputDialog(options: InputDialogOptions): Promise<string | null>
       description: options.description,
       label: options.label,
       placeholder: options.placeholder,
+      initialValue: options.initialValue,
       required: options.required ?? false,
       maxLength: options.maxLength,
       confirmLabel: options.confirmLabel,

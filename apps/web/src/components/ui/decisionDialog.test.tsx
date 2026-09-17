@@ -1,8 +1,8 @@
 /**
  * decisionDialog 服务 + <DecisionDialogHost /> 单测(docs/plans/1789527942 Phase 0 验收):
  * Promise 结算(确认/取消/Esc/点遮罩)、危险态默认聚焦取消 vs 普通态聚焦确认、
- * 危险态语义 token、input 必填/maxLength/validate 行内报错、choice 取消为 null、
- * 队列一次只显示一条。
+ * 危险态语义 token、input 必填/maxLength/validate/initialValue 行为、choice 取消为 null、
+ * 队列一次只显示一条、data-modal 模态标记、cancelAll 认证归属变更兜底。
  */
 import { afterEach, describe, expect, it } from "vitest";
 import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
@@ -279,5 +279,52 @@ describe("decisionDialog 服务", () => {
     fireEvent.click(within(secondDialog).getByRole("button", { name: "继续" }));
     await flushTeardown();
     await expect(second).resolves.toBe(true);
+  });
+
+  it("对话框内容带 data-modal 标记,供 isWorkbenchInteractionBlocked 识别", async () => {
+    renderHost();
+    openDialog(() => confirmDialog({ title: "删除数据集", confirmLabel: "删除" }));
+    const dialog = await screen.findByRole("alertdialog", { name: "删除数据集" });
+    // Workbench 的窗口级快捷键守卫靠 [data-modal] 拦截,缺标记时 A/R 键会穿透对话框。
+    expect(dialog).toHaveAttribute("data-modal", "");
+  });
+
+  it("inputDialog:initialValue 预填可改写,提交返回改写值", async () => {
+    renderHost();
+    const promise = openDialog(() =>
+      inputDialog({
+        title: "补充说明",
+        label: "补充说明（可选）",
+        initialValue: "标注员跳过：目标不在画面内",
+        confirmLabel: "确认退回",
+      }),
+    );
+    const dialog = await screen.findByRole("alertdialog", { name: "补充说明" });
+    const textarea = within(dialog).getByLabelText(/补充说明/);
+    expect(textarea).toHaveValue("标注员跳过：目标不在画面内");
+
+    fireEvent.change(textarea, { target: { value: "标注员跳过：目标不可见" } });
+    fireEvent.click(within(dialog).getByRole("button", { name: "确认退回" }));
+    await flushTeardown();
+    await expect(promise).resolves.toBe("标注员跳过：目标不可见");
+  });
+
+  it("cancelAll:按各 kind 的取消值结算整条队列并清空(认证归属变更兜底)", async () => {
+    renderHost();
+    const confirmed = openDialog(() =>
+      confirmDialog({ title: "删除数据集", confirmLabel: "删除" }),
+    );
+    const commented = openDialog(() =>
+      inputDialog({ title: "补充说明", label: "补充说明", confirmLabel: "提交" }),
+    );
+    await screen.findByRole("alertdialog", { name: "删除数据集" });
+
+    act(() => {
+      useDecisionDialogStore.getState().cancelAll();
+    });
+    await expect(confirmed).resolves.toBe(false);
+    await expect(commented).resolves.toBeNull();
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).toBeNull());
+    expect(useDecisionDialogStore.getState().queue).toHaveLength(0);
   });
 });

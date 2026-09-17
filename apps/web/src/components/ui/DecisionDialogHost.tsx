@@ -42,7 +42,8 @@ function ActiveDecisionDialog({ entry }: { entry: QueuedDecisionDialog }) {
   const settle = useDecisionDialogStore((s) => s.settle);
   const dispose = useDecisionDialogStore((s) => s.dispose);
   const contentRef = useRef<HTMLElement | null>(null);
-  const [value, setValue] = useState("");
+  // input 预填(如退回补充说明预填「标注员跳过：…」);key=uid 换头时随本地 state 一并重建。
+  const [value, setValue] = useState(request.initialValue ?? "");
   const [error, setError] = useState<string | null>(null);
   const inputId = useId();
   const errorId = useId();
@@ -110,6 +111,9 @@ function ActiveDecisionDialog({ entry }: { entry: QueuedDecisionDialog }) {
       <AlertDialogContent
         size={request.kind === "input" ? "default" : "sm"}
         className="border-border bg-card"
+        // 决策对话框是模态:挂上 isWorkbenchInteractionBlocked 识别的 [data-modal] 标记,
+        // 否则 Workbench 的窗口级快捷键(如 review 流的 A/R)会穿透对话框误触后台操作。
+        data-modal=""
         onOpenAutoFocus={handleOpenAutoFocus}
         onCloseAutoFocus={handleCloseAutoFocus}
       >

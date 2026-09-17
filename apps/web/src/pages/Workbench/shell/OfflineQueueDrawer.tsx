@@ -6,7 +6,6 @@ import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import {
   type OfflineOp,
-  clearAll,
   getAll,
   removeById,
   drain,
@@ -173,16 +172,19 @@ export function OfflineQueueDrawer({
 
   const handleClearAll = useCallback(async () => {
     if (items.length === 0) return;
+    // 确认对话框是异步的:等待期间失败的保存可能把新操作入队。
+    // 只丢弃用户确认时看到的那批 ID,新入队的未保存编辑不经同意不得清除。
+    const confirmedIds = items.map((op) => op.id);
     const confirmed = await confirmDialog({
       tone: "danger",
-      title: `丢弃全部 ${items.length} 条离线操作？`,
+      title: `丢弃全部 ${confirmedIds.length} 条离线操作？`,
       description: "此操作不可撤销。",
       confirmLabel: "丢弃全部",
     });
     if (!confirmed) return;
-    await clearAll(queueScope);
+    await Promise.all(confirmedIds.map((id) => removeById(id, queueScope)));
     pushToast({ msg: "队列已清空", kind: "warning" });
-  }, [items.length, pushToast, queueScope]);
+  }, [items, pushToast, queueScope]);
 
   const handleFlushAll = useCallback(async () => {
     setFlushAllBusy(true);

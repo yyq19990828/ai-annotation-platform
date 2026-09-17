@@ -146,10 +146,17 @@ test.describe("mask editor (I11)", () => {
     const decision = page.getByRole("alertdialog");
     const acceptDecision = async () => {
       await expect(decision).toBeVisible();
+      // 钉住「这一条」对话框:确认后 app 可能在旧对话框退场动画期间立刻入队下一条
+      // (如 lossy 警告),按 role 定位会命中新对话框导致 toBeHidden 永不通过。
+      // ElementHandle 指向旧 DOM 节点,等它脱离文档即退场完毕,与后续入队无关。
+      const current = await decision.elementHandle();
       await decision.locator('[data-slot="alert-dialog-action"]').click();
       confirmCount += 1;
-      // 等退场完毕,避免下一轮 waitFor 命中仍在播放退场动画的旧对话框。
-      await expect(decision).toBeHidden();
+      if (current) {
+        await current.waitForElementState("detached", { timeout: 10_000 }).catch(() => {
+          throw new Error("确认后对话框未退场(decision dialog did not unmount)");
+        });
+      }
     };
     const annoPost = page
       .waitForResponse(

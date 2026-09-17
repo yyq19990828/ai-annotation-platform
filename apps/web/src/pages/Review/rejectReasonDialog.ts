@@ -30,10 +30,13 @@ export async function promptRejectReason(options: {
     })),
   });
   if (!reasonType) return null;
+  // 原 modal 的行为:被跳过任务的补充说明预填「标注员跳过：…」,标注员可直接改写;
+  // 不预填的话,直接确认会得到 reason: undefined,指派方收不到跳过原因。
   const comment = await inputDialog({
     title: "补充说明",
     label: "补充说明（可选）",
     placeholder: "（可选）补充说明，例如具体目标 / 帧号 …",
+    initialValue: options.skipReasonHint ? `标注员跳过：${options.skipReasonHint}` : undefined,
     confirmLabel: "确认退回",
     tone: "danger",
   });
