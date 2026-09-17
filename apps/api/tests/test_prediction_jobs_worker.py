@@ -961,6 +961,101 @@ async def test_run_batch_workbench_scope_runs_in_progress_task(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["uploading", "review", "completed"])
+async def test_run_batch_workbench_scope_rejects_non_editable_status(
+    status, db_session: AsyncSession, monkeypatch, super_admin
+):
+    """review #121 · workbench 白名单外状态 (uploading / 终态) 一律拒绝。"""
+    from app.db.models.task import Task
+    from app.workers import tasks as worker_tasks
+
+    user, _ = super_admin
+    proj, backend = await _seed_project_and_backend(db_session, user.id)
+    t1 = Task(
+        id=uuid.uuid4(),
+        project_id=proj.id,
+        display_id=f"T-WB-{status}",
+        file_name="a.jpg",
+        file_path="http://x/a.jpg",
+        file_type="image",
+        status=status,
+    )
+    db_session.add(t1)
+    await db_session.flush()
+
+    fake_engine, fake_factory = _passthrough_engine_and_factory(db_session)
+    import sqlalchemy.ext.asyncio as sa_async
+
+    monkeypatch.setattr(sa_async, "create_async_engine", fake_engine)
+    monkeypatch.setattr(sa_async, "async_sessionmaker", fake_factory)
+
+    with pytest.raises(ValueError, match="not editable"):
+        await worker_tasks._run_batch(
+            project_id=str(proj.id),
+            ml_backend_id=str(backend.id),
+            task_ids=[str(t1.id)],
+            prompt="x",
+            user_id=str(user.id),
+            execution_scope="workbench",
+        )
+
+
+@pytest.mark.asyncio
+async def test_run_batch_workbench_scope_rejects_foreign_lock_alongside_own(
+    db_session: AsyncSession, monkeypatch, super_admin, annotator
+):
+    """review #121 · 同 task 多行锁时, 他人锁不能被本人更新的锁掩盖。"""
+    from datetime import datetime, timedelta, timezone
+
+    from app.db.models.task import Task
+    from app.db.models.task_lock import TaskLock
+    from app.workers import tasks as worker_tasks
+
+    user, _ = super_admin
+    other, _ = annotator
+    proj, backend = await _seed_project_and_backend(db_session, user.id)
+    t1 = Task(
+        id=uuid.uuid4(),
+        project_id=proj.id,
+        display_id="T-WB-LOCK",
+        file_name="a.jpg",
+        file_path="http://x/a.jpg",
+        file_type="image",
+        status="in_progress",
+    )
+    db_session.add(t1)
+    await db_session.flush()
+    now = datetime.now(timezone.utc)
+    db_session.add_all(
+        [
+            TaskLock(
+                task_id=t1.id, user_id=other.id, expire_at=now + timedelta(minutes=5)
+            ),
+            TaskLock(
+                task_id=t1.id, user_id=user.id, expire_at=now + timedelta(minutes=10)
+            ),
+        ]
+    )
+    await db_session.flush()
+
+    fake_engine, fake_factory = _passthrough_engine_and_factory(db_session)
+    import sqlalchemy.ext.asyncio as sa_async
+
+    monkeypatch.setattr(sa_async, "create_async_engine", fake_engine)
+    monkeypatch.setattr(sa_async, "async_sessionmaker", fake_factory)
+
+    with pytest.raises(ValueError, match="locked for editing"):
+        await worker_tasks._run_batch(
+            project_id=str(proj.id),
+            ml_backend_id=str(backend.id),
+            task_ids=[str(t1.id)],
+            prompt="x",
+            user_id=str(user.id),
+            execution_scope="workbench",
+        )
+
+
+@pytest.mark.asyncio
 async def test_run_batch_bulk_scope_rejects_in_progress_task(
     db_session: AsyncSession, monkeypatch, super_admin
 ):

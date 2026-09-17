@@ -558,7 +558,7 @@ async def _run_batch(
         create_async_engine,
     )
 
-    from app.db.enums import BatchStatus
+    from app.db.enums import BatchStatus, WORKBENCH_AI_EDITABLE_TASK_STATUSES
     from app.db.models.async_job import AsyncJob, AsyncJobStatus
     from app.db.models.ml_backend_registry import MLBackendRegistry as MLBackend
     from app.db.models.project import Project
@@ -712,22 +712,25 @@ async def _run_batch(
                     raise ValueError(
                         "preannotation task scope does not belong to active batches"
                     )
-            elif any(task.status in {"review", "completed"} for task, _ in scope_rows):
+            elif any(
+                task.status not in WORKBENCH_AI_EDITABLE_TASK_STATUSES
+                for task, _ in scope_rows
+            ):
+                # 白名单 (pending / in_progress / rejected), 与 API 同源, 排除 uploading
+                # 与终态 (issue #121 review)。
                 raise ValueError("preannotation workbench task scope is not editable")
             lock_service = TaskLockService(db)
             actor_id = actor.id if actor is not None else None
             for task, _ in scope_rows:
-                lock = await lock_service.active_lock(task.id)
-                if lock is None:
-                    continue
-                # 工作台运行者本人持锁是交互式执行的正常状态; 他人锁仍拒绝。
-                if (
-                    workbench_scope
-                    and actor_id is not None
-                    and lock.user_id == actor_id
-                ):
-                    continue
-                raise ValueError("preannotation task scope is locked for editing")
+                # 同一 task 可能有多行残留锁, 必须逐行判断 (active_lock 只看最新一行;
+                # issue #121 review)。工作台运行者本人持锁是交互式执行的正常状态。
+                locks = await lock_service.active_locks(task.id)
+                if workbench_scope and actor_id is not None:
+                    locked_by_other = any(lock.user_id != actor_id for lock in locks)
+                else:
+                    locked_by_other = bool(locks)
+                if locked_by_other:
+                    raise ValueError("preannotation task scope is locked for editing")
         context = _build_predict_context(
             prompt=prompt,
             output_mode=output_mode,
