@@ -54,6 +54,7 @@ from app.services.pipeline_validation import (
     resolve_preannotate_queue,
 )
 from app.services.capability_registry import INPUT_BBOX_PROMPT, INPUT_CROP
+from app.services.batch_permissions import allows_bulk_preannotation
 from app.services.pipeline_template import (
     assert_pipeline_visible,
     copy_pipeline_stages,
@@ -2233,10 +2234,17 @@ async def _validate_preannotate_task_scope(
             status_code=409,
             detail="explicit preannotation tasks must be pending",
         )
-    if any(batch is not None and batch.status != "active" for _, batch in rows):
+    # issue #124 · draft 批次在未分派标注员与质检员时同样可批量预标;
+    # 已分派人员的 draft 与已进入人工流程的批次仍拒绝。
+    if any(
+        batch is not None and not allows_bulk_preannotation(batch) for _, batch in rows
+    ):
         raise HTTPException(
             status_code=409,
-            detail="explicit preannotation tasks must belong to active batches",
+            detail=(
+                "explicit preannotation tasks must belong to active or "
+                "unassigned draft batches"
+            ),
         )
     from app.services.task_lock import TaskLockService
 
@@ -2496,10 +2504,24 @@ async def trigger_preannotation(
         batch = await db.get(TaskBatch, body.batch_id)
         if not batch or batch.project_id != project.id:
             raise HTTPException(status_code=404, detail="Batch not found")
-        if batch.status != BatchStatus.ACTIVE:
+        # issue #124 · 未分派人员（标注员与质检员）的 draft 批次同样可批量预标,
+        # 让管理员先跑 AI 再分派人工; 已分派 draft / 其它状态仍拒绝。
+        if not allows_bulk_preannotation(batch):
+            if batch.status == BatchStatus.DRAFT:
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "draft batch already has an annotator or reviewer "
+                        "assigned; bulk preannotation is only available "
+                        "before assignment"
+                    ),
+                )
             raise HTTPException(
                 status_code=400,
-                detail=f"batch.status must be 'active' to preannotate, got {batch.status!r}",
+                detail=(
+                    "batch.status must be 'active' or an unassigned 'draft' "
+                    f"to preannotate, got {batch.status!r}"
+                ),
             )
         if batch.admin_locked:
             raise HTTPException(status_code=409, detail="batch is admin-locked")

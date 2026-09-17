@@ -88,18 +88,18 @@ AI 预标注的目标不是直接把 task 变成“完成”，而是：
 
 ### 当前约束
 
-指定 `batch_id` 时，后端会校验：
+指定 `batch_id` 时，后端会校验（API 与 worker 复校验共用 `allows_bulk_preannotation`）：
 
 - batch 属于当前 project
-- `batch.status == active`
+- `batch.status == active`，或 `batch.status == draft` 且 `annotator_id` / `reviewer_id` 均未分派（Issue #124，支持先跑 AI 再分派人工）
 
 所以现在不能直接对：
 
-- `draft`
+- 已分派人员的 `draft`
 - `pre_annotated`
 - `annotating`
 
-再发同一类 batch 预标请求。
+再发同一类 batch 预标请求。显式 `task_ids` 的批量路径同源校验任务所属批次（工作台单题 `execution_scope=workbench` 走独立的 #121 口径，允许可编辑任务与 draft 批次）。
 
 ## Worker 侧写入
 
@@ -154,7 +154,7 @@ worker 会按三种模式选任务：
 
 - 这次请求指定了 `batch_id`
 - 本轮至少有一个可处理单元，且不是全部失败
-- batch 当前仍是 `active`
+- batch 当前仍是 `active`（未分派人员的 `draft` 批次保持 `draft`：候选挂任务保留，不隐式推进状态或分派人员，管理员随后正常分派并 `draft → active` 激活即可接管；Issue #124）
 - 走常规 task 批处理收尾；当前 `execution_unit=frame` 的 fan-out finalizer 不会推进 batch
 
 就会自动：

@@ -25,6 +25,21 @@ REVERSE_TRANSITIONS: set[tuple[str, str]] = {
 }
 
 
+def allows_bulk_preannotation(batch: TaskBatch) -> bool:
+    """issue #124 · 批量预标注的批次准入规则（API 与 worker 复校验共用）。
+
+    active 批次照旧放行；另放行「尚未分派标注员与质检员」的 draft 批次，
+    让管理员在分派人工前先跑 AI。已分派人员的 draft 与已进入人工流程的
+    批次（annotating / reviewing / ...）一律拒绝：分派即代表人工工作已定，
+    不允许绕过任务锁与生命周期往进行中的工作灌预测。
+    """
+    if batch.status == BatchStatus.ACTIVE:
+        return True
+    if batch.status == BatchStatus.DRAFT:
+        return batch.annotator_id is None and batch.reviewer_id is None
+    return False
+
+
 # v0.7.0：transition 鉴权矩阵 — (from, to) 元组 → 允许角色集合 / 特殊判定
 # 'owner' = super_admin 或项目 owner（require_project_owner 等价）
 # 'reviewer' = super_admin / project_admin(owner) / reviewer

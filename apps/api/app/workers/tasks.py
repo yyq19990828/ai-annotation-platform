@@ -541,7 +541,8 @@ async def _run_batch(
     新增参数：
     - prompt: 文本批量预标 prompt（None 时走老的 image-only 批量行为）。
     - output_mode: text 模式输出形态（box / mask / both），仅 prompt 非空生效。
-    - batch_id: 跑完后自动转 PRE_ANNOTATED 的目标 batch；None 则不动状态。
+    - batch_id: 跑完后 active 批次自动转 PRE_ANNOTATED；draft 批次 (issue #124)
+      保持 draft 不隐式推进，None 则不动状态。
     - celery_task_id (v0.9.8): 用于 _BatchPredictTask.on_failure 回查 async_jobs 行.
     - user_id (v0.10.45): 写 async_jobs owner, 供 /async-jobs owner-scope 列表可见.
     - model_id (v0.14.9): 协议 v2 多模型路由, 非空时写 context["model_id"]。
@@ -579,6 +580,7 @@ async def _run_batch(
     from app.services.prediction import PredictionService
     from app.services.scheduler import is_privileged_for_project
     from app.services.task_lock import TaskLockService
+    from app.services.batch_permissions import allows_bulk_preannotation
 
     engine = create_async_engine(settings.database_url, echo=False)
     SessionLocal = async_sessionmaker(
@@ -676,7 +678,8 @@ async def _run_batch(
             if (
                 selected_batch is None
                 or selected_batch.project_id != project_uuid
-                or selected_batch.status != BatchStatus.ACTIVE
+                # issue #124 · 与 API 同源准入: active 或未分派人员的 draft。
+                or not allows_bulk_preannotation(selected_batch)
                 or selected_batch.admin_locked
             ):
                 raise ValueError("preannotation batch scope is unavailable")
@@ -705,12 +708,15 @@ async def _run_batch(
             if not workbench_scope:
                 if any(task.status != "pending" for task, _ in scope_rows):
                     raise ValueError("preannotation task scope is no longer pending")
+                # issue #124 · 与 API 同源准入: active 或未分派人员的 draft;
+                # 已分派 draft / 已进入人工流程的批次仍拒绝。
                 if any(
-                    batch is not None and batch.status != BatchStatus.ACTIVE
+                    batch is not None and not allows_bulk_preannotation(batch)
                     for _, batch in scope_rows
                 ):
                     raise ValueError(
-                        "preannotation task scope does not belong to active batches"
+                        "preannotation task scope does not belong to "
+                        "active or unassigned draft batches"
                     )
             elif any(
                 task.status not in WORKBENCH_AI_EDITABLE_TASK_STATUSES
@@ -1192,6 +1198,9 @@ async def _run_batch(
         all_failed = success_count == 0 and failed_count > 0
 
         # v0.9.5 · 跑完自动 active → pre_annotated（仅当指定 batch + 当前还在 active 时）
+        # issue #124 · 未分派人员的 draft 批次跑完保持 draft：不隐式推进生命周期、
+        # 不隐式分派人员；预测挂在 task 上保留，管理员随后正常分派并 draft → active
+        # 激活即可进入人工流程（激活不清预测）。all_failed 时任何状态都不推进。
         if batch_id and not all_failed:
             batch = await db.get(TaskBatch, uuid.UUID(batch_id))
             if batch and batch.status == BatchStatus.ACTIVE:
