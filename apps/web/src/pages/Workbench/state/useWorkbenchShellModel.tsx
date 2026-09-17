@@ -3601,7 +3601,12 @@ export function useWorkbenchShellModel({
       });
       return;
     }
-    const payload = structuredClone({ ...args, task_ids: [taskId] });
+    // Issue #121 · 工作台单题执行语义: 允许对 in_progress / draft 批次的当前题运行 AI。
+    const payload = structuredClone({
+      ...args,
+      task_ids: [taskId],
+      execution_scope: "workbench" as const,
+    });
     aiRequest.start({
       summary: {
         projectId,

@@ -1902,6 +1902,10 @@ class PreannotateRequest(BaseModel):
     prompt: str | None = None
     output_mode: Literal["box", "mask", "both"] = "mask"
     batch_id: uuid.UUID | None = None
+    # 执行场景 (issue #121): bulk=数据管理批量预标 (缺省, 保留 pending + active 批次 +
+    # 无有效编辑锁的批量前置条件); workbench=工作台「当前题 AI」单题交互执行, 按当前用户
+    # 对该题的编辑语义校验 (允许 in_progress 任务与 draft 批次, 保留管理员锁 / 他人锁 / 终态保护)。
+    execution_scope: Literal["bulk", "workbench"] = "bulk"
     # v0.10.38 · 按后端参数面板 (epic 阶段 2): 选中 backend 的 /setup.params 值,
     # 由前端按 backend 分桶解析后显式带上, worker 合并进 /predict context (覆盖项目级阈值兜底).
     params: dict | None = None
@@ -2246,6 +2250,62 @@ async def _validate_preannotate_task_scope(
     return requested
 
 
+# 工作台当前题 AI 允许的状态: 与标注写入口径一致 (pending / in_progress / rejected),
+# 终态任务先撤回或重开后再运行。批量预标另按 pending-only 校验。
+_WORKBENCH_AI_BLOCKED_STATUSES = {"review", "completed"}
+
+
+async def _validate_workbench_task_scope(
+    db: AsyncSession,
+    *,
+    project: Project,
+    task_ids: list[uuid.UUID],
+    actor: User,
+) -> list[uuid.UUID]:
+    """校验工作台「当前题 AI」的单题执行范围 (issue #121)。
+
+    与数据管理批量路径不同, 交互式执行只针对调用者正在编辑的那道题, 因此允许
+    in_progress 任务与 draft 批次; 任务归属、批次管理员锁、他人编辑锁与终态任务
+    仍然受保护。拒绝原因用中文, 因为工作台面板会原样展示 API detail。
+    """
+
+    requested = sorted(set(task_ids), key=str)
+    if len(requested) != 1:
+        raise HTTPException(
+            status_code=422,
+            detail="工作台当前题 AI 一次仅支持一个任务",
+        )
+    row = (
+        await db.execute(
+            select(Task, TaskBatch)
+            .outerjoin(TaskBatch, TaskBatch.id == Task.batch_id)
+            .where(Task.project_id == project.id, Task.id == requested[0])
+        )
+    ).first()
+    if row is None:
+        raise HTTPException(status_code=404, detail="任务不存在或不属于当前项目")
+    task, batch = row
+    if batch is not None and batch.admin_locked:
+        raise HTTPException(
+            status_code=409,
+            detail="任务所属批次已被管理员锁定，无法运行 AI",
+        )
+    if task.status in _WORKBENCH_AI_BLOCKED_STATUSES:
+        raise HTTPException(
+            status_code=409,
+            detail="当前任务已提交审核或已完成，请先撤回或重开后再运行 AI",
+        )
+    from app.services.task_lock import TaskLockService
+
+    lock = await TaskLockService(db).active_lock(task.id)
+    if lock is not None and lock.user_id != actor.id:
+        raise HTTPException(
+            status_code=409,
+            detail="当前任务正由其他成员编辑，无法运行 AI",
+        )
+    return requested
+
+
 @router.post("/{project_id}/preannotate")
 async def trigger_preannotation(
     body: PreannotateRequest,
@@ -2388,14 +2448,27 @@ async def trigger_preannotation(
                 raise HTTPException(status_code=422, detail=geo_violations[0].detail)
         pipeline_stages_payload = norm
 
+    if body.execution_scope == "workbench" and not body.task_ids:
+        raise HTTPException(
+            status_code=422,
+            detail="工作台当前题 AI 必须指定当前任务",
+        )
     explicit_task_ids: list[uuid.UUID] | None = None
     if body.task_ids:
-        explicit_task_ids = await _validate_preannotate_task_scope(
-            db,
-            project=project,
-            task_ids=body.task_ids,
-            batch_id=body.batch_id,
-        )
+        if body.execution_scope == "workbench":
+            explicit_task_ids = await _validate_workbench_task_scope(
+                db,
+                project=project,
+                task_ids=body.task_ids,
+                actor=current_user,
+            )
+        else:
+            explicit_task_ids = await _validate_preannotate_task_scope(
+                db,
+                project=project,
+                task_ids=body.task_ids,
+                batch_id=body.batch_id,
+            )
 
     # v0.9.5 · 指定 batch 时校验归属本项目 + 状态在 active
     total_tasks_hint: int | None = None
@@ -2564,6 +2637,9 @@ async def trigger_preannotation(
                 "pipeline_stages": pipeline_stages_payload,
                 # v0.21.7 · 执行单位 (video/frame/scene): frame → 逐帧 fan-out。缺省=整段/逐题。
                 "execution_unit": execution_unit,
+                # issue #121 · 执行场景透传 worker: workbench 单题允许 in_progress / draft,
+                # bulk 保持 pending + active 批次前置条件。
+                "execution_scope": body.execution_scope,
                 **(
                     {"async_job_id": str(idempotent_job.id)}
                     if idempotent_job is not None

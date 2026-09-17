@@ -533,6 +533,7 @@ async def _run_batch(
     class_filter: list[int] | None = None,
     pipeline_stages: list[dict] | None = None,
     execution_unit: str | None = None,
+    execution_scope: str = "bulk",
     async_job_id: str | None = None,
 ):
     """v0.9.5 · 批量预标 worker.
@@ -679,6 +680,9 @@ async def _run_batch(
                 or selected_batch.admin_locked
             ):
                 raise ValueError("preannotation batch scope is unavailable")
+        # issue #121 · 工作台单题交互执行 (execution_scope=workbench) 允许 in_progress / draft,
+        # 但批次管理员锁、他人编辑锁、终态任务与越权仍在此兜底; bulk 保持原批量前置条件。
+        workbench_scope = execution_scope == "workbench"
         if requested_task_ids is not None:
             scope_rows = (
                 await db.execute(
@@ -696,21 +700,34 @@ async def _run_batch(
                 task.batch_id != uuid.UUID(batch_id) for task, _ in scope_rows
             ):
                 raise ValueError("preannotation task scope does not match batch")
-            if any(task.status != "pending" for task, _ in scope_rows):
-                raise ValueError("preannotation task scope is no longer pending")
             if any(batch is not None and batch.admin_locked for _, batch in scope_rows):
                 raise ValueError("preannotation task scope is admin-locked")
-            if any(
-                batch is not None and batch.status != BatchStatus.ACTIVE
-                for _, batch in scope_rows
-            ):
-                raise ValueError(
-                    "preannotation task scope does not belong to active batches"
-                )
+            if not workbench_scope:
+                if any(task.status != "pending" for task, _ in scope_rows):
+                    raise ValueError("preannotation task scope is no longer pending")
+                if any(
+                    batch is not None and batch.status != BatchStatus.ACTIVE
+                    for _, batch in scope_rows
+                ):
+                    raise ValueError(
+                        "preannotation task scope does not belong to active batches"
+                    )
+            elif any(task.status in {"review", "completed"} for task, _ in scope_rows):
+                raise ValueError("preannotation workbench task scope is not editable")
             lock_service = TaskLockService(db)
+            actor_id = actor.id if actor is not None else None
             for task, _ in scope_rows:
-                if await lock_service.active_lock(task.id) is not None:
-                    raise ValueError("preannotation task scope is locked for editing")
+                lock = await lock_service.active_lock(task.id)
+                if lock is None:
+                    continue
+                # 工作台运行者本人持锁是交互式执行的正常状态; 他人锁仍拒绝。
+                if (
+                    workbench_scope
+                    and actor_id is not None
+                    and lock.user_id == actor_id
+                ):
+                    continue
+                raise ValueError("preannotation task scope is locked for editing")
         context = _build_predict_context(
             prompt=prompt,
             output_mode=output_mode,
@@ -732,8 +749,10 @@ async def _run_batch(
             base_conds = [
                 Task.project_id == project_uuid,
                 Task.id.in_(requested_task_ids),
-                Task.status == "pending",
             ]
+            # 工作台单题交互可对 in_progress 任务运行; bulk 仍只捞 pending。
+            if not workbench_scope:
+                base_conds.append(Task.status == "pending")
         elif batch_id:
             # v0.9.5 · 指定 batch 时仅捞 batch 内 pending tasks
             base_conds = [
@@ -1307,6 +1326,7 @@ def batch_predict(
     class_filter: list[int] | None = None,
     pipeline_stages: list[dict] | None = None,
     execution_unit: str | None = None,
+    execution_scope: str = "bulk",
     async_job_id: str | None = None,
 ):
     asyncio.run(
@@ -1327,6 +1347,7 @@ def batch_predict(
             class_filter=class_filter,
             pipeline_stages=pipeline_stages,
             execution_unit=execution_unit,
+            execution_scope=execution_scope,
             async_job_id=async_job_id,
         )
     )

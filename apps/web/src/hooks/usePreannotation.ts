@@ -66,6 +66,10 @@ export interface TriggerPreannotationPayload {
   params?: Record<string, unknown>;
   /** v0.11.24 · 跳过已预标 (默认) / 覆盖历史预标 / 追加 */
   predict_mode?: PredictMode;
+  /** Issue #121 · 执行场景: "bulk" (缺省, 数据管理批量预标) | "workbench"
+   *  (工作台「当前题 AI」单题交互)。工作台路径允许 in_progress 任务与 draft 批次,
+   *  但仍保留管理员锁 / 他人编辑锁 / 终态任务保护。 */
+  execution_scope?: "bulk" | "workbench";
   /** v0.14.9 · 能力声明协议 v2: 多模型 backend 时指定目标 model 条目 id. */
   model_id?: string;
   /** v0.14.9 · 任务类型便捷别名 ("ocr" / "doc_layout" / "text"); OCR / 版面预标透传. */
