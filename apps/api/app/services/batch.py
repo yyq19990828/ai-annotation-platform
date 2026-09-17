@@ -19,7 +19,10 @@ from app.db.models.project import Project
 from app.db.models.user import User
 from app.schemas.batch import BatchCreate, BatchUpdate, BatchSplitRequest
 from app.services.display_id import next_display_id
-from app.services.progress import publish_batch_status_change
+from app.services.progress import (
+    publish_batch_assignment_change,
+    publish_batch_status_change,
+)
 from app.services.scene import resolve_task_scene_frames
 
 # v0.16.x 拆分：角色权限守卫已抽到 batch_permissions.py，此处冗余别名 re-export，
@@ -171,7 +174,11 @@ class BatchService:
     ) -> list[TaskBatch]:
         q = select(TaskBatch).where(TaskBatch.project_id == project_id)
         if status:
-            q = q.where(TaskBatch.status == status)
+            # issue #124 · 允许逗号分隔多状态（如 "active,draft"），让调用方只取
+            # 需要的批次而不是全量历史；单状态（"active"）行为不变。
+            statuses = [s.strip() for s in status.split(",") if s.strip()]
+            if statuses:
+                q = q.where(TaskBatch.status.in_(statuses))
         q = q.order_by(TaskBatch.priority.desc(), TaskBatch.created_at)
         result = await self.db.execute(q)
         return list(result.scalars().all())
@@ -292,6 +299,12 @@ class BatchService:
             await self._cascade_task_assignee(batch.id, batch.annotator_id)
         if reviewer_changed:
             await self._cascade_task_reviewer(batch.id, batch.reviewer_id)
+        # issue #124 · 改派不改变 batch.status，不会触发 status_changed；单独广播让
+        # 其它管理员的「可预标」列表实时收敛（draft 的分派会改变准入资格）。
+        if annotator_changed or reviewer_changed:
+            await publish_batch_assignment_change(
+                str(batch.project_id), [str(batch.id)]
+            )
         return batch
 
     @staticmethod
@@ -842,6 +855,7 @@ class BatchService:
         annotator_per_batch: dict[str, str | None] = {}
         reviewer_per_batch: dict[str, str | None] = {}
         affected = 0
+        changed_ids: list[uuid.UUID] = []
         for item in plan.items:
             b = batches_by_id[item.batch_id]
             if item.before_annotator_id != item.after_annotator_id:
@@ -859,8 +873,15 @@ class BatchService:
             if item.will_change:
                 self._sync_assigned_user_ids(b)
                 affected += 1
+                changed_ids.append(b.id)
 
         await self.db.flush()
+
+        # issue #124 · 分派不改变 batch.status, 单独广播让可预标列表实时收敛。
+        if changed_ids:
+            await publish_batch_assignment_change(
+                str(project_id), [str(b) for b in changed_ids]
+            )
 
         return {
             "distributed_batches": affected,
@@ -1395,6 +1416,11 @@ class BatchService:
             self._sync_assigned_user_ids(batch)
             succeeded.append(bid)
         await self.db.flush()
+        # issue #124 · 批量改派后广播, 让其它管理员的「可预标」列表实时收敛。
+        if succeeded:
+            await publish_batch_assignment_change(
+                str(project_id), [str(b) for b in succeeded]
+            )
         return {"succeeded": succeeded, "skipped": [], "failed": failed}
 
     async def bulk_activate(

@@ -284,7 +284,8 @@ export function ProjectDetailPanel({ projectId, onBack, summary }: Props) {
   // issue #124 · 可预标批次 = active 批次 + 未分派标注员与质检员的 draft 批次,
   // 让管理员先跑 AI 再分派人工。准入规则与后端同源 (batchPreannotationEligible),
   // 前端仅负责入口展示, 提交时后端仍会复校验。
-  const batchesQ = useBatches(projectId);
+  // 查询限定 active,draft, 不再拉取 approved/rejected/archived 全量历史。
+  const batchesQ = useBatches(projectId, "active,draft");
   const batches = (
     (batchesQ.data ?? []) as unknown as Array<{
       id: string;

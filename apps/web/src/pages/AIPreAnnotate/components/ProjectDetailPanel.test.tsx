@@ -304,6 +304,11 @@ describe("ProjectDetailPanel v0.9.12", () => {
     expect(screen.getByRole("radiogroup", { name: /并发模式/ })).toBeInTheDocument();
   });
 
+  it("批次查询限定 active,draft, 避免拉取全量批次历史", () => {
+    renderUI();
+    expect(mockUseBatches).toHaveBeenCalledWith("p1", "active,draft");
+  });
+
   // issue #124 · 未分派人员的 draft 批次出现在可预标列表, 已分派 draft / 已进入
   // 人工流程的批次不出现; draft 行带「草稿·未分派」徽标提醒后续仍需分派激活。
   it("批次列表放行未分派 draft, 过滤已分派 draft 与人工流程批次", () => {

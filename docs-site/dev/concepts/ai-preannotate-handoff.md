@@ -101,6 +101,10 @@ AI 预标注的目标不是直接把 task 变成“完成”，而是：
 
 再发同一类 batch 预标请求。显式 `task_ids` 的批量路径同源校验任务所属批次（工作台单题 `execution_scope=workbench` 走独立的 #121 口径，允许可编辑任务与 draft 批次）。
 
+`/ai-pre` 首页项目卡片的「可预标」计数也复用同一准入规则（`batch_permissions.bulk_preannotation_eligible_condition`），统计 `active` 加未分派人员的 `draft`，避免卡片显示 0 而详情页仍列有草稿。
+
+批次准入依赖 `annotator_id` / `reviewer_id`，而改派不改变 `batch.status`。因此 `BatchService` 在单条更新、批量改派与项目分派后额外广播 `batch.assignment_changed`（频道与 `batch.status_changed` 相同），前端 `useBatchEventsSocket` 对两者都 invalidate `["batches", projectId]`，让其它管理员打开的面板实时收敛可预标资格。
+
 ## Worker 侧写入
 
 `apps/api/app/workers/tasks.py:_run_batch()` 是预标真值源。
@@ -324,6 +328,8 @@ ML backend 对某题失败时，不会中断整批；worker 会写：
 | `apps/web/src/pages/Projects/sections/ClassesSection.tsx`               | 项目类别与属性区;头部「从 ML Backend 预填」按钮挂 `PrefillFromBackendDialog`,「属性 JSON」下拉挂属性 schema 导入 / 导出                                                         |
 | `apps/web/src/pages/Projects/sections/PrefillFromBackendDialog.tsx`     | 「从 ML Backend 预填」对话框——列出自报 `output_attribute_schema` 的所有在线 backend / model,预览勾选字段后一键合并进当前工具单位的 `attribute_schema`(同 key 覆盖、新 key 追加) |
 | `apps/web/src/hooks/usePredictions.ts`                                  | prediction 查询与采纳(含 `attribute_overrides`)                                                                                                                                 |
+| `apps/web/src/utils/batchPreannotation.ts`                              | 前端可预标准入筛选（与后端 `allows_bulk_preannotation` 同源：`active` 或未分派人员的 `draft`）                                                                                  |
+| `apps/web/src/hooks/useBatchEventsSocket.ts`                            | 订阅 `batch.status_changed` / `batch.assignment_changed`，invalidate 批次缓存（改派会让未分派草稿的可预标资格实时变化）                                                         |
 | `apps/web/src/pages/Workbench/shell/Topbar.tsx`                         | 当前 task 所属批次的 `pre_annotated` 提示                                                                                                                                       |
 | `apps/web/src/components/badges/BatchStatusBadge.tsx`                   | `pre_annotated` 徽章                                                                                                                                                            |
 

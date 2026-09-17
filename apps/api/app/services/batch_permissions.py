@@ -9,6 +9,7 @@ REVERSE_TRANSITIONS 与角色门禁函数。语法层(VALID_TRANSITIONS)仍由 b
 from __future__ import annotations
 
 from fastapi import HTTPException
+from sqlalchemy import and_, or_
 
 from app.db.enums import BatchStatus, UserRole
 from app.db.models.project import Project
@@ -38,6 +39,22 @@ def allows_bulk_preannotation(batch: TaskBatch) -> bool:
     if batch.status == BatchStatus.DRAFT:
         return batch.annotator_id is None and batch.reviewer_id is None
     return False
+
+
+def bulk_preannotation_eligible_condition():
+    """SQL 侧等价于 `allows_bulk_preannotation` 的过滤条件（聚合 / 列表查询复用）。
+
+    与纯函数判定必须同源：`active` 或「未分派标注员与质检员」的 `draft`。管理员
+    从「先跑 AI 再分派」改为「先分派再跑 AI」时，两处都要同步修改。
+    """
+    return or_(
+        TaskBatch.status == BatchStatus.ACTIVE,
+        and_(
+            TaskBatch.status == BatchStatus.DRAFT,
+            TaskBatch.annotator_id.is_(None),
+            TaskBatch.reviewer_id.is_(None),
+        ),
+    )
 
 
 # v0.7.0：transition 鉴权矩阵 — (from, to) 元组 → 允许角色集合 / 特殊判定
