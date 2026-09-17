@@ -8,6 +8,7 @@ import { useHeartbeat } from "@/hooks/useHeartbeat";
 import { Sidebar } from "@/components/shell/Sidebar";
 import { SidebarDrawer } from "@/components/shell/SidebarDrawer";
 import { ToastRack, useToastStore } from "@/components/ui/Toast";
+import { DecisionDialogHost } from "@/components/ui/DecisionDialogHost";
 // 仪表盘 / 登录 类首屏关键路径：保持同步加载（避免 Suspense 闪烁）
 import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { AdminDashboard } from "@/pages/Dashboard/AdminDashboard";
@@ -200,6 +201,8 @@ function AppShell() {
         </Suspense>
       </main>
       <ToastRack />
+      {/* 决策对话框宿主:与 ToastRack 同位双挂载,全屏工作台路由也覆盖 */}
+      <DecisionDialogHost />
       <BugReportFAB onClick={() => openBugDrawer()} />
       {bugDrawerOpen && (
         <Suspense fallback={null}>
@@ -246,6 +249,7 @@ function FullScreenWorkbench({ mode }: { mode?: "annotate" | "review" }) {
         <WorkbenchPage mode={mode} />
       </Suspense>
       <ToastRack />
+      <DecisionDialogHost />
       {bugDrawerOpen && (
         <Suspense fallback={null}>
           <BugReportDrawer
