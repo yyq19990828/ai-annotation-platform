@@ -239,6 +239,9 @@ describe("NotificationPreferencesPanel", () => {
       useAuthStore.getState().setAuth("t2", { id: "u2", role: "annotator" } as MeResponse);
     });
     await waitFor(() => expect(screen.queryByText("保存中…")).toBeNull());
+    // 等新账号偏好加载完成后再放行旧账号的迟到失败:账号切换会重拉偏好,
+    // 若在此前的加载态断言,会和 CI 高负载下的查询结算竞态。
+    await screen.findByRole("checkbox", { name: "任务被退回 接收通知" }, { timeout: 5_000 });
 
     await act(async () => oldSave.reject(new Error("retired owner failed")));
     const receipt = screen.getByRole("checkbox", { name: "任务被退回 接收通知" });

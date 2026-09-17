@@ -8,9 +8,9 @@
  *
  * 用法：
  *   import { test } from "../fixtures/seed";
- *   test("登录后跳 dashboard", async ({ page, seed }) => {
+ *   test("登录后跳默认首页", async ({ page, seed }) => {
  *     const data = await seed.reset();
- *     await seed.loginViaUI(page, data.admin_email, "Test1234");
+ *     await seed.loginViaUI(page, data.admin_email, "Test1234", /\/overview/);
  *   });
  */
 import {
@@ -751,14 +751,22 @@ export class SeedAPI {
     }
   }
 
-  /** UI 路径登录：filling form + click 提交（auth spec 主用）。 */
-  async loginViaUI(page: Page, email: string, password: string): Promise<void> {
+  /**
+   * UI 路径登录：filling form + click 提交（auth spec 主用）。
+   * Issue #123 · 登录后进入角色默认首页：super_admin → /overview，其余角色 → /dashboard。
+   * 调用方传入该账号角色对应的期望路径。
+   */
+  async loginViaUI(
+    page: Page,
+    email: string,
+    password: string,
+    expectedHome: RegExp,
+  ): Promise<void> {
     await page.goto("/login");
     await page.getByPlaceholder("输入账号或邮箱").fill(email);
     await page.getByPlaceholder("••••••••").fill(password);
     await page.getByRole("button", { name: "登录" }).click();
-    // 跳 dashboard
-    await expect(page).toHaveURL(/\/dashboard/, { timeout: 10_000 });
+    await expect(page).toHaveURL(expectedHome, { timeout: 10_000 });
   }
 
   /**
