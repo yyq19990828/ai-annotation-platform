@@ -190,8 +190,10 @@ test("Tracker 可按目标/帧窗局部接受拒绝并二次确认人工帧", as
     page.on("response", (response) => {
       if (decisionResponse(response)) statuses.push(response.status());
     });
-    page.once("dialog", (dialog) => dialog.accept());
     await page.getByTestId("tracker-review-accept").click();
+    const overrideDialog = page.getByRole("alertdialog");
+    await expect(overrideDialog).toBeVisible();
+    await overrideDialog.getByRole("button", { name: "覆盖", exact: true }).click();
     await expect.poll(() => statuses, { timeout: 15_000 }).toEqual([409, 200]);
     await expect(review).toContainText("已审 13/20");
 

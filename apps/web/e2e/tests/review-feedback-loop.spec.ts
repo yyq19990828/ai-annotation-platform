@@ -2,7 +2,7 @@
  * v0.8.7 F3 · review 反馈环 E2E：reviewer reject 真实 UI 流。
  *
  * - annotator 提交（advance_task → submitted/review）
- * - reviewer 进 /projects/:id/review?task={id} → 点退回 → RejectReasonModal 选预设原因 → 确认
+ * - reviewer 进 /projects/:id/review?task={id} → 点退回 → 两步决策弹窗选预设原因并填补充说明 → 确认
  * - 后端 task.status 应为 rejected，task.reject_reason 应非空
  *
  * 不走 _test_seed.advance_task 的 reject 短路，全程通过 UI 触发当前 review workbench
@@ -37,19 +37,24 @@ test.describe("review feedback loop", () => {
     await page.goto(`/projects/${data.project_id}/review?task=${data.task_ids[0]}`);
     await page.waitForLoadState("networkidle");
 
-    // 3. 点退回按钮 → 弹出 RejectReasonModal
+    // 3. 点退回按钮 → 弹出退回原因 choiceDialog（plan T3.5 起为两步决策流）
     const rejectBtn = page.getByTestId("review-reject");
     await expect(rejectBtn).toBeVisible({ timeout: 10_000 });
     await rejectBtn.click();
 
-    // 4. 选「类别错误」(wrong_label) + 补充自由文本，再确认
+    // 4. 第一步选「类别错误」(wrong_label)，第二步填可选补充说明后确认
     //    v0.10.16 起 reason_type 为结构化必填字段，reject_reason 仅存可选自由文本，
-    //    故显式勾选类型并填写 comment，断言两者都已持久化（不依赖默认勾选顺序）。
-    await page.getByTestId("reject-type-wrong_label").click();
-    await page.getByTestId("reject-comment").fill("类别错误");
-    const confirmBtn = page.getByTestId("reject-confirm");
-    await expect(confirmBtn).toBeVisible();
-    await confirmBtn.click();
+    //    故显式选类型并填写补充说明，断言两者都已持久化（不依赖默认勾选顺序）。
+    const choiceDialog = page.getByRole("alertdialog", { name: "退回原因（1 个任务）" });
+    await expect(choiceDialog).toBeVisible();
+    await choiceDialog.getByRole("button", { name: "类别错误" }).click();
+    await expect(choiceDialog).toBeHidden();
+
+    const noteDialog = page.getByRole("alertdialog", { name: "补充说明" });
+    await expect(noteDialog).toBeVisible();
+    await noteDialog.getByRole("textbox").fill("类别错误");
+    await noteDialog.getByRole("button", { name: "确认退回" }).click();
+    await expect(noteDialog).toBeHidden();
 
     // 5. Modal 关闭后，从后端 API 直接读 task 状态确认 reject 成功
     //    （UI 可能已导航走，跳过 DOM 断言避免 flaky）

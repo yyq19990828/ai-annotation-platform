@@ -9,7 +9,6 @@ import {
   type Ref,
 } from "react";
 import { ConflictModal } from "@/components/workbench/ConflictModal";
-import { RejectReasonModal } from "@/pages/Review/RejectReasonModal";
 import type { VideoStageControls } from "../stage/videoStageControls";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
 import { AIInspectorPanel, AIPredictionPopover } from "./AIInspectorPanel";
@@ -62,7 +61,6 @@ interface WorkbenchLayoutProps {
   /** v0.15.3 · 工作台设置窗口(齿轮菜单入口)。 */
   workbenchSettings: ComponentProps<typeof WorkbenchSettingsDialog>;
   conflict: ComponentProps<typeof ConflictModal>;
-  rejectModal?: ComponentProps<typeof RejectReasonModal>;
   deleteConfirm?: ComponentProps<typeof DeleteConfirmModal>;
   // v0.10.13 · E1 · 顶栏标注指引入口 (可选; 项目无 guide 时不渲染).
   guidePanel?: ComponentProps<typeof GuidePanel>;
@@ -114,7 +112,6 @@ export function WorkbenchLayout({
   offlineQueue,
   workbenchSettings,
   conflict,
-  rejectModal,
   deleteConfirm,
   guidePanel,
   discussionPanel,
@@ -273,7 +270,6 @@ export function WorkbenchLayout({
       <HotkeyCheatSheet {...hotkeys} />
       <OfflineQueueDrawer {...offlineQueue} />
       <ConflictModal {...conflict} />
-      {rejectModal && <RejectReasonModal {...rejectModal} />}
       {deleteConfirm && <DeleteConfirmModal {...deleteConfirm} />}
     </div>
   );

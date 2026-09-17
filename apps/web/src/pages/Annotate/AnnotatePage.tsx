@@ -4,6 +4,7 @@ import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import { Icon } from "@/components/ui/Icon";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { confirmDialog } from "@/components/ui/decisionDialog";
 import { useToastStore } from "@/components/ui/Toast";
 import { Thumbnail } from "@/components/Thumbnail";
 import { useElementStyle } from "@/components/ui/useElementStyle";
@@ -287,6 +288,19 @@ export function AnnotatePage() {
     unsubmittedTasks > 0 &&
     (selectedBatch.status === "annotating" || selectedBatch.status === "reviewing");
 
+  // 与 Dashboard MyBatchesCard 的提交确认同一 tone/voice(计划 Group B 要求)。
+  const confirmSubmitBatch = async (batch: MyBatchItem, pendingCount: number) => {
+    if (
+      !(await confirmDialog({
+        title: "提交批次质检",
+        description: `批次「${batch.batch_name}」仍有 ${pendingCount} 个任务未送审，提交后将整批锁定，无法继续修改。`,
+        confirmLabel: "提交质检",
+      }))
+    )
+      return;
+    handleSubmitBatch(batch);
+  };
+
   return (
     <div className={styles.page}>
       <aside className={styles.sidebarShell}>
@@ -365,9 +379,7 @@ export function AnnotatePage() {
                       : "整批提交质检"
                   }
                   onClick={() => {
-                    const warn = `批次「${selectedBatch.batch_name}」仍有 ${unsubmittedTasks} 个任务未送审。确认整批提交质检？提交后这些任务将锁定，无法继续修改。`;
-                    if (!window.confirm(warn)) return;
-                    handleSubmitBatch(selectedBatch);
+                    void confirmSubmitBatch(selectedBatch, unsubmittedTasks);
                   }}
                 >
                   <Icon name="check" size={11} />

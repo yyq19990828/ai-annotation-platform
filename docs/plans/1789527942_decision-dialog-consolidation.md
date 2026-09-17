@@ -1,7 +1,7 @@
 # Decision dialog consolidation (confirm / alert / reason / leave guards)
 
-> Status: draft — awaiting approval. No implementation started.
-> Date: 2026-09-16
+> Status: approved — execution started 2026-09-17 via orchestrated waves T0–T4 (see [Execution](#execution)).
+> Date: 2026-09-16 (draft), 2026-09-17 (approved)
 > Requested outcome: one owned, theme-aware **decision-dialog** capability for confirmation, destructive actions, required-reason input, and leave guards; replace native `window.confirm` / `window.alert` / `window.prompt` and unify the bespoke reason modals so the same capability has one visual language with a premium, on-brand finish.
 > Motivation: `window.prompt` was silently suppressed in an embedded browser, so the Review-page batch reject sent **no request at all** (fixed in `2ee3bc16`). The same failure mode applies to `alert` and, on some embedded/enterprise/automation browsers, to `confirm` — where a blocked confirm turns a destructive action into a silent no-op.
 > Non-goals: content dialogs (`components/ui/Modal`), rich multi-field forms, a dialog framework rewrite, OS notifications.
@@ -142,7 +142,7 @@ Optional convenience hook `useDecisionDialogs()` is not required; keep one servi
 - **Copy voice**: title states the action and object (`删除数据集`), description states the consequence and scope, confirm uses the verb. Templates live in the service consumer, not in the component.
 - **Details slot**: surface counts/names where available (`将删除 3 个数据集 · 1,204 张图片`), which native dialogs cannot do.
 - **Focus and keyboard**: destructive → focus Cancel; neutral → focus Confirm; Esc and overlay click cancel; `AlertDialog` handles roles and focus trap.
-- **Pending state**: confirm may receive an async handler; show `删除中…`, disable both actions, and ignore repeated submits while pending. (Alternatively keep the service boolean-only and let the caller own spinners; decide in Phase 0.)
+- **Pending state**: the service is boolean-only (decision [1](#decisions)); the dialog never shows a pending state. Callers keep owning their spinners/loading states exactly as they do today.
 - **Motion**: reuse existing `data-[state=open]` animation utilities and respect reduced motion; keep `z-modal` layering consistent with `Modal`/`Toast`.
 - **Icons**: Lucide via `Icon`; default `warning`, allow `trash`/`x`.
 - **Consistency with existing success/error feedback**: results still go through `Toast`, unchanged.
@@ -209,7 +209,7 @@ Risk: H. These run inside canvas/video interactions with generation keys and und
 
 ### Hard cases that cannot use the async service as-is
 
-- `pages/Settings/useUnsavedSettingsGuard.ts:19` overrides React Router `navigator.push/replace`, which must stay synchronous. Convert with React Router's `useBlocker` (v6.19+) or a deferred-navigation pattern; keep `beforeunload` native.
+- `pages/Settings/useUnsavedSettingsGuard.ts:19` overrides React Router `navigator.push/replace`, which must stay synchronous. The app mounts `<BrowserRouter>` (`main.tsx`), not a data router, so `useBlocker` is unavailable. Convert with a deferred-navigation pattern: the override stays synchronous, `confirmDialog` decides asynchronously, and confirm replays the captured transition through the original navigator method; keep `beforeunload` native.
 - `pages/Settings/SettingsPage.tsx:104` duplicates the same copy; fold into the same guard.
 - All `beforeunload` handlers stay native.
 
@@ -249,13 +249,29 @@ Each phase is independently mergeable and reviewable.
 - `CHANGELOG.md` Unreleased: user-visible copy/behaviour changes (per phase); the `alert`→notice change is user-visible, the internal service is not.
 - No API, schema, environment variable, database, or dependency changes.
 
-## Open questions
+## Decisions
 
-1. Should `confirmDialog` accept an async confirm handler with built-in pending state, or stay boolean-only with the caller owning spinners? (Affects call-site diffs.)
-2. Which bespoke reason modals are truly subsumed by `inputDialog`, and which need multi-field forms kept on `Modal`?
-3. Is an eslint **error** acceptable for `window.confirm` immediately, or should it start as a warning with an allowlist while Phases 1–3 land?
-4. Scope confirmation: land Phases 0–2 as one change and Phase 3 separately, or ship phase-by-phase?
+Resolved 2026-09-17 when the plan was approved:
+
+1. **`confirmDialog` stays boolean-only** (`Promise<boolean>`). No async confirm handler, no built-in pending state; callers own spinners and disable states as they do today. One-line call sites and a pure, testable service win over built-in pending UI.
+2. **Reason-modal subsumption**: `RejectBatchModal` (single required textarea, ≤500 chars) is fully subsumed by `inputDialog`, copy preserved. `RejectReasonModal` maps to `choiceDialog` + optional `inputDialog`. `ReverseTransitionModal` and the reset/lock modals: migrate to `inputDialog` only where the form is a single reason field; keep on `Modal` if genuinely multi-field — evaluator judgment, recorded in the task report.
+3. **eslint guardrail lands as an `error`** in Phase 4, scoped so test fixtures/e2e are exempt; it ships only after grep proves zero `window.confirm`/`window.alert`/`window.prompt` call sites remain in `apps/web/src`.
+4. **Ship as one orchestrated change on `feat/platform_opt260917`** with one commit per task (phases stay independently reviewable); no version bump.
+
+## Execution
+
+Orchestrated waves (isolated worktrees per modifying worker; integration and validation on the originating branch between waves):
+
+| Task | Scope                                                                                  | Wave            | Model         |
+| ---- | -------------------------------------------------------------------------------------- | --------------- | ------------- |
+| T0   | Phase 0 — capability (service, host, dual mount, unit tests)                           | 1               | glm-5.3 (max) |
+| T1   | Phase 1 — Group A alerts + Group B management confirms                                 | 2 (after T0)    | glm-5.3-flash |
+| T2   | Phase 2 — Group C Projects/Review modal consolidation                                  | 2 (after T0)    | glm-5.3 (max) |
+| T3   | Phases 2–3 — Workbench `prompt*Choice` + Group D guards + Settings deferred navigation | 2 (after T0)    | glm-5.3 (max) |
+| T4   | Phase 4 — eslint guardrail, e2e dialog-spec updates, design-system docs                | 3 (after T1–T3) | glm-5.3-flash |
+
+T3 additionally updates the eight e2e specs that sniff `page.on("dialog")` for the flows it migrates; T4 covers any remainder.
 
 ## Outcome
 
-Pending — not implemented.
+Implemented 2026-09-17 via orchestrated waves T0–T4 plus follow-up T3.5 (Run `run_c32ffbdd3101`), integrated as six commits on `feat/platform_opt260917` (`26ec1af7` T0 → `d0603a1d` T2 → `e580f06e` T1 → `3a623542` T3 → `4881ac07` T4 → `f27b9c76` T3.5). All phases landed: the decision-dialog capability, all native `confirm`/`alert` migrations (zero call sites remain, enforced by an eslint error rule), the bespoke reason-modal consolidation (`RejectBatchModal`/`ReverseTransitionModal`/`ResetBatchModal`/`AdminLockModal`/`RejectReasonModal` deleted), the Settings deferred-navigation guard, and the 8 e2e dialog-sniffing specs rewritten against `role="alertdialog"`. Verified per integration and finally: `typecheck`, `lint`, `lint:css-tokens`, full vitest suite, `git diff --check`. Known follow-up: the review-guide `reject-form.png` screenshot still shows the old single-window reject form (doc-media refresh, aap-doc-media), and the full e2e suite runs centrally (CI/dev stack) rather than in worker worktrees.

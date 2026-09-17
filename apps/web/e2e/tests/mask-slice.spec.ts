@@ -860,13 +860,11 @@ test("H4b-3 discard on task switch retires the mask slice preview without writes
   // Chromium may report keepalive release as aborted during navigation; verify the DB release below.
   fixture.allowedErrors.add(`request:/api/v1/tasks/${fixture.taskId}/lock:net::ERR_ABORTED`);
   const dialogs: string[] = [];
-  page.on("dialog", async (dialog) => {
-    dialogs.push(dialog.message());
-    if (dialog.message() === "Mask 尚未保存。是否保存后离开？") await dialog.dismiss();
-    else if (dialog.message() === "是否丢弃 Mask 稿件并离开？") await dialog.accept();
-    else throw new Error(`Unexpected dialog: ${dialog.message()}`);
-  });
+  const leaveDialog = page.getByRole("alertdialog");
   await page.getByText(next.display_id, { exact: true }).first().click();
+  await expect(leaveDialog).toBeVisible({ timeout: 5_000 });
+  dialogs.push((await leaveDialog.locator('[data-slot="alert-dialog-title"]').textContent()) ?? "");
+  await leaveDialog.getByRole("button", { name: "丢弃并离开", exact: true }).click();
   await expect(page).toHaveURL(new RegExp(`task=${nextId}`));
   await expect(stage(page)).toHaveAttribute("data-image-ready", "true");
   await openMaskSettings(page);
@@ -875,7 +873,7 @@ test("H4b-3 discard on task switch retires the mask slice preview without writes
   await expect(controls(page)).not.toContainText("待原子提交");
   await expect(page.getByTestId(`box-list-item-${source.id}`)).toHaveCount(0);
   await expect.poll(() => ledger(fixture).activeLocks).toBe(0);
-  expect(dialogs).toEqual(["Mask 尚未保存。是否保存后离开？", "是否丢弃 Mask 稿件并离开？"]);
+  expect(dialogs).toEqual(["Mask 尚未保存"]);
   expect(fixture.writes).toHaveLength(0);
   expect(ledger(fixture).operations).toHaveLength(0);
   expect(await content(request, fixture, source.id)).toEqual(holed());
@@ -887,5 +885,4 @@ test("H4b-3 discard on task switch retires the mask slice preview without writes
   expect(other).toEqual([]);
   expect(await history(page, fixture.taskId)).toBeNull();
   fixture.evidence.push({ nextTask: nextId, dialogs, noWrites: true });
-  page.removeAllListeners("dialog");
 });

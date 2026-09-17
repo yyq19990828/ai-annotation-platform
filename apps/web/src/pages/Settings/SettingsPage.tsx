@@ -64,7 +64,8 @@ export function SettingsPage() {
   const isAdmin = role === "super_admin";
   const [section, setSection] = useState<SectionKey>("profile");
   const [systemDirty, setSystemDirty] = useState(false);
-  useUnsavedSettingsGuard(systemDirty);
+  // 与路由级离开守卫共用同一确认 (文案 + 防重入),分区切换也不再弹原生 confirm。
+  const confirmLeaveSystemSettings = useUnsavedSettingsGuard(systemDirty);
 
   const sections: {
     key: SectionKey;
@@ -98,11 +99,8 @@ export function SettingsPage() {
                   <li key={s.key}>
                     <button
                       onClick={() => {
-                        if (
-                          section === "system" &&
-                          systemDirty &&
-                          !window.confirm("系统设置有未保存修改，确定离开吗？")
-                        ) {
+                        if (section === "system" && systemDirty) {
+                          confirmLeaveSystemSettings(() => setSection(s.key));
                           return;
                         }
                         setSection(s.key);

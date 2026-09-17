@@ -7,6 +7,7 @@ import { Card } from "@/components/ui/Card";
 import { Badge } from "@/components/ui/Badge";
 import { useToastStore } from "@/components/ui/Toast";
 import { AssigneeAvatarStack } from "@/components/ui/AssigneeAvatarStack";
+import { confirmDialog } from "@/components/ui/decisionDialog";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useMyBatches } from "@/hooks/useDashboard";
 import { ApiError } from "@/api/client";
@@ -219,12 +220,28 @@ export function MyBatchesCard() {
   const submittable = sorted.filter(canBatchSubmit);
   const selectedSubmittable = submittable.filter((b) => selectedIds.has(b.batch_id));
 
+  // 与 AnnotatePage 的单批提交确认同一 tone/voice(计划 Group B 要求)。
+  const confirmBatchSubmit = async (b: MyBatchItem, pendingCount: number) => {
+    if (
+      !(await confirmDialog({
+        title: "提交批次质检",
+        description: `批次「${b.batch_name}」仍有 ${pendingCount} 个任务未送审，提交后将整批锁定，无法继续修改。`,
+        confirmLabel: "提交质检",
+      }))
+    )
+      return;
+    submitMut.mutate(b);
+  };
+
   const handleBulkSubmit = async () => {
     if (selectedSubmittable.length === 0) return;
     if (
-      !window.confirm(
-        `确认批量将 ${selectedSubmittable.length} 个批次提交质检？未送审任务将全部提交并锁定。`,
-      )
+      !(await confirmDialog({
+        title: "批量提交质检",
+        description: "选中批次的未送审任务将全部提交并锁定，无法继续修改。",
+        details: `将提交 ${selectedSubmittable.length} 个批次`,
+        confirmLabel: "提交质检",
+      }))
     )
       return;
     setBulkSubmitting(true);
@@ -392,9 +409,7 @@ export function MyBatchesCard() {
                       title={`仍有 ${submittableCount} 个任务未送审；确认后整批提交`}
                       onClick={(e) => {
                         e.stopPropagation();
-                        const warn = `批次「${b.batch_name}」仍有 ${submittableCount} 个任务未送审。确认整批提交质检？提交后这些任务将锁定，无法继续修改。`;
-                        if (!window.confirm(warn)) return;
-                        submitMut.mutate(b);
+                        void confirmBatchSubmit(b, submittableCount);
                       }}
                     >
                       <Icon name="check" size={11} />

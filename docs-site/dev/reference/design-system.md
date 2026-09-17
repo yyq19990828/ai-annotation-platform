@@ -3,7 +3,7 @@ title: Design System
 audience: [developer]
 type: reference
 status: stable
-last_reviewed: 2026-07-11
+last_reviewed: 2026-09-17
 ---
 
 # Design System
@@ -101,6 +101,12 @@ Use semantic z utilities instead of raw numeric z-index classes:
 - Do not add raw numeric `z-N` / `z-[N]` classes. Use the semantic z utilities above.
 - Use shadcn/ui primitives from `apps/web/src/components/shadcn/ui/` for low-level behavior where possible.
 - Keep existing `@/components/ui/*` adapters only when they preserve the current app API; they should delegate to shadcn/Radix behavior or Tailwind classes internally.
+
+## Decision dialogs
+
+Blocking decisions — confirms, destructive actions, multi-choice steps, and required-reason input — use one shared capability: `@/components/ui/decisionDialog` (`confirmDialog` / `choiceDialog` / `inputDialog` / `alertDialog`), rendered by a single `<DecisionDialogHost />`. The host mounts next to both `ToastRack` sites in `App.tsx` so the full-screen Workbench routes are covered without `AppShell`. Content dialogs (forms, previews, multi-section panels) remain `components/ui/Modal`. `beforeunload` stays native because the browser requires that dialog to be synchronous.
+
+One capability, one visual language: never introduce a second confirm / alert / reason surface. An eslint `no-restricted-properties` rule (error) bans `window.confirm` / `window.alert` / `window.prompt` call sites in `apps/web/src`, with test files exempt. Copy follows an action–object–consequence voice: the title states the action and object (`删除数据集`), the description states the consequence and scope, and the confirm button uses the verb. Danger tone is restrained — a status-colored icon and confirm button over a soft danger icon container (`text-status-danger bg-status-danger-soft`), never full-bleed red. Destructive dialogs focus Cancel by default and neutral ones focus Confirm; Esc and overlay click cancel. Callers keep owning their pending states — the service resolves before the action runs — and results still surface through `Toast`.
 
 ## Filter presentation
 

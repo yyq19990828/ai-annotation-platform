@@ -328,11 +328,10 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await expect(toolbar).toContainText("组件 3→1");
     await applyPreview(page);
     await expect(toolbar).toContainText("未保存");
-    page.on("dialog", async (dialog) => {
-      if (dialog.message().includes("丢弃")) await dialog.accept();
-      else await dialog.dismiss();
-    });
     await toolbar.getByTestId("mask-secondary-action").click();
+    const leaveDialog = page.getByRole("alertdialog");
+    await expect(leaveDialog).toBeVisible({ timeout: 5_000 });
+    await leaveDialog.getByRole("button", { name: "丢弃并离开", exact: true }).click();
     await expect(page.getByTestId("mask-tool-capsule")).toHaveCount(0);
     expect(await maskContent(request, fixture.annotation_id, token)).toEqual(persisted);
   });
