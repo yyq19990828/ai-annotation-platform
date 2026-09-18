@@ -3,7 +3,7 @@
 - **Status:** Accepted（v0.23.5 冻结 v0.23.6 实施所需的全部边界；gzip 传输 / polygon 转换无损报告 / 编辑会话状态机语义为本次新增冻结项）
 - **Date:** 2026-07-21
 - **Deciders:** core team
-- **Supersedes:** —（在 [ADR-0048](./archive/0048-video-raster-mask-content-addressed-rle.md) 的视频 `coco_rle_ref` 内容寻址之上，统一图片与视频两侧的栅格 mask 真值；ADR-0022 图片「mask→polygon」过渡决策在本 ADR 后正式标记为仅图片遗留路径，不再扩散到视频或新 geometry）
+- **Supersedes:** —（在 [ADR-0048](./0048-video-raster-mask-content-addressed-rle.md) 的视频 `coco_rle_ref` 内容寻址之上，统一图片与视频两侧的栅格 mask 真值；ADR-0022 图片「mask→polygon」过渡决策在本 ADR 后正式标记为仅图片遗留路径，不再扩散到视频或新 geometry）
 
 ## Context
 
@@ -153,8 +153,8 @@ feature flag 语义：read flag 与 create flag 独立；read flag 默认 on（�
 - 实现代码位置（v0.23.5 已落 / v0.23.6 待落）：
   - v0.23.5：`apps/api/app/utils/raster_mask_gzip.py`（新）、`apps/api/app/services/raster_mask_storage.py`（gzip + async to_thread）、`apps/api/app/services/video_tracking/runner.py:accept_tracker_job`（版本冲突 → 409）、`apps/web/src/pages/Workbench/state/useMaskEditorSession.ts`（新）、`apps/web/src/pages/Workbench/state/canEditMask.ts`（新）、`apps/web/src/pages/Workbench/stage/ImageStageShapes.tsx:KonvaPolygon`（even-odd holes / multi_polygon）、`apps/web/src/pages/Workbench/stage/shared/geometry/maskToPolygon.ts`（无损报告）、`apps/web/src/pages/Workbench/stage/shared/geometry/maskRle.ts`（HTTP gzip 上传与安全回退）。
   - v0.23.6：`raster_mask` JSONB union（加法扩展，无 schema 迁移）、`validate_mask_geometry_for_task` 泛化、静态与兼容 GET、独立 read / create flags。
-- 相关 ADR：[ADR-0022](./archive/0022-mask-editor-tool-architecture.md)（图片 mask 工具 v1，过渡决策）、[ADR-0048](./archive/0048-video-raster-mask-content-addressed-rle.md)（视频 `coco_rle_ref` 内容寻址，本 ADR 复用）、[ADR-0045](./0045-track-id-as-annotation-column.md)（track_id 跨帧身份）。
-- 相关计划：[v0.23.5 可靠性与安全地基](../plans/archive/2026-07-21-v0.23.5-mask-reliability-security-foundation.md)、[v0.23.6 共享 RLE 与图片 geometry](../plans/archive/2026-07-21-v0.23.6-shared-rle-image-mask-schema.md)、[Epic 总纲](../plans/2026-07-21-raster-mask-workbench-unification-epic.md)。
+- 相关 ADR：[ADR-0022](./0022-mask-editor-tool-architecture.md)（图片 mask 工具 v1，过渡决策）、[ADR-0048](./0048-video-raster-mask-content-addressed-rle.md)（视频 `coco_rle_ref` 内容寻址，本 ADR 复用）、[ADR-0045](./0045-track-id-as-annotation-column.md)（track_id 跨帧身份）。
+- 相关计划：[v0.23.5 可靠性与安全地基../../plans/archive/2026-07-21-v0.23.5-mask-reliability-security-foundation.md)、[v0.23.6 共享 RLE 与图片 geometry../../plans/archive/2026-07-21-v0.23.6-shared-rle-image-mask-schema.md)、[Epic 总纲../../plans/2026-07-21-raster-mask-workbench-unification-epic.md)。
 - Open Questions（本 ADR 不冻结，留后续版本）：
   - tile / sparse 编辑触发条件：5K / 8K 基准出来前不改 4096 常量（v0.23.10）。
   - semantic / panoptic class-map schema：在独立计划中决策，不修改 `raster_mask` 的 instance 语义。

@@ -50,4 +50,4 @@ WebCodecs 精确帧与 Raster Mask WebGPU 已具备能力探测、资源预算�
 - WebCodecs：`apps/web/src/pages/Workbench/stage/useVideoChunkDecoder.ts`
 - Raster Mask WebGPU gate：`apps/web/src/pages/Workbench/stage/shared/rasterMask.worker.ts`
 - 生产 build arg：`infra/docker/Dockerfile.web`、`docker-compose.prod.yml`
-- 后验验证：[ROADMAP.md](../../ROADMAP.md)
+- 后验验证：[ROADMAP.md../../../ROADMAP.md)

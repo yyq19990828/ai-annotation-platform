@@ -191,7 +191,7 @@ URL / 当前角色
 
 ## 7. 必须保留的业务合同
 
-依据 [ADR-0051](../adr/0051-model-market-observability-information-architecture.md)，以下已是冻结决策：
+依据 [ADR-0051](../../adr/archive/0051-model-market-observability-information-architecture.md)，以下已是冻结决策：
 
 1. 健康、路由、容量、驻留是四条独立状态轴，不能压成一个“在线”绿点。
 2. unknown、stale、partial 不互相替代；缺失数据不回落成 0/健康/空闲。
@@ -278,14 +278,14 @@ web lint 已包含 `lint:css-tokens`；分阶段调整样式时可先单独运�
 
 ## 10. 实施前已核对的依据
 
-- [模型市场使用说明](../../docs-site/user-guide/superadmin/model-market.md)
-- [应用设计系统](../../docs-site/dev/reference/design-system.md)
-- [筛选状态与结果范围](../../docs-site/dev/reference/filtering.md)
-- [ADR-0051](../adr/0051-model-market-observability-information-architecture.md)
-- [主页面](../../apps/web/src/pages/ModelMarket/ModelMarketPage.tsx)
-- [注册管理编排](../../apps/web/src/pages/ModelMarket/RegisteredBackendsTab.tsx)
-- [本地 Tabs](../../apps/web/src/components/shadcn/ui/tabs.tsx)
-- [URL 筛选状态](../../apps/web/src/hooks/useUrlFilterState.ts)
+- [模型市场使用说明](../../../docs-site/user-guide/superadmin/model-market.md)
+- [应用设计系统](../../../docs-site/dev/reference/design-system.md)
+- [筛选状态与结果范围](../../../docs-site/dev/reference/filtering.md)
+- [ADR-0051](../../adr/archive/0051-model-market-observability-information-architecture.md)
+- [主页面](../../../apps/web/src/pages/ModelMarket/ModelMarketPage.tsx)
+- [注册管理编排](../../../apps/web/src/pages/ModelMarket/RegisteredBackendsTab.tsx)
+- [本地 Tabs](../../../apps/web/src/components/shadcn/ui/tabs.tsx)
+- [URL 筛选状态](../../../apps/web/src/hooks/useUrlFilterState.ts)
 
 以上为规划阶段的依据，实施范围与验证结果见 Outcome。
 
