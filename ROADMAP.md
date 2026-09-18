@@ -70,7 +70,6 @@
 - **批量推理**：吞吐压测证明瓶颈后，将 `batchable` 分块派发与 backend 真 GPU batch 一起设计，避免只摊销 HTTP 开销。
 - **编排新数据源**：支持既有矩形标注作为 crops 源；scene 跨帧聚合作为独立执行单位。
 - **生产存储地址策略**：首个复杂部署出现时扩展 `ML_BACKEND_STORAGE_HOST` 的 endpoint 选择规则。
-- **新几何预测对账**：客户 backend 实际输出 rotated bbox / polyline / keypoint 时，补齐协议与端到端导入导出验收。
 - **类别确认建议**：Magic Box 产出后提供模型类别 hint，由标注员确认。
 
 ### 项目模板
@@ -83,7 +82,7 @@
 
 ### 账号、组织与安全
 
-- 头像上传，以及用户级语言和时区偏好。
+- 用户级语言和时区偏好。
 - 可操作的组织 / 工作区切换器。
 - OAuth2 / 企业 SSO；2FA / TOTP 由客户安全要求触发。
 - i18n 文案体系，以及可量化的无障碍审计和 CI 门禁。
@@ -92,14 +91,13 @@
 
 - Webhook 订阅、outbox、重试投递和签名校验；复用现有事件信封 schema。
 - Bug Report 的 LLM 聚类、邮件摘要投递和用户邮件通知偏好。
-- AnnotationFeedback 旧表退役并切为单一写入源；视频 Issue 创建时写入当前帧锚点。
+- AnnotationFeedback 旧表退役并切为单一写入源。
 - 首次进入标注工作台的一次性 onboarding。
 
 ### 标注体验
 
 - 视频单帧折线、polygon track、polyline track 的无冲突快捷键。
 - `U` 键改为服务端按真实预测置信度查找下一最不确定任务，不再按预测数量近似。
-- 用户级快捷键映射、冲突校验、设置页录制器和动态快捷键帮助。
 - 明确 outside 帧是否显示 ghost 参考几何；产品决策后统一实现与测试。
 - 评估视频连接层 wedge 后自动硬刷新的收益与标注中断风险。
 
@@ -113,7 +111,7 @@
 
 - 提升 `BatchesSection`、`useWorkbenchShellModel`、`useImageAnnotationActions` 等复杂页面和 hook 的有效测试覆盖，不在路线图固化易过期的覆盖率快照。
 - 为 `vite` 代理 `/ws` 的多并发 CONNECTING 卡死制作最小复现；生产链路不受影响。
-- 先建立 Playwright 视觉基线，再拆分 `useStageViewport` 相关的首帧 paint 时序。
+- 在已建立的 Playwright 视觉基线上，拆分 `useStageViewport` 相关的首帧 paint 时序。
 
 ## 战略与研究输入
 

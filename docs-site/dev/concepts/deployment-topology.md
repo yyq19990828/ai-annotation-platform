@@ -36,7 +36,7 @@ last_reviewed: 2026-07-29
 
 物理实例保存在 ML Backend registry 中，服务池把能力一致的一个或多个实例组成逻辑计算单元。项目启用的是服务池，请求进入 `MLBackendRouter` 后才会根据健康、能力指纹、熔断、权重和并发上限选出物理实例。
 
-prompt、媒体和 pipeline 参数是推理输入，不是直接选择物理主机的路由键。协议契约见 [ML Backend 协议](../reference/ml-backend-protocol)，服务池语义见 [ADR 0050 — ML Backend 服务池路由](../adr/0050-ml-backend-service-pools-and-request-routing)。
+prompt、媒体和 pipeline 参数是推理输入，不是直接选择物理主机的路由键。协议契约见 [ML Backend 协议](../reference/ml-backend-protocol)，服务池语义见 [ADR 0050 — ML Backend 服务池路由](../adr/archive/0050-ml-backend-service-pools-and-request-routing)。
 
 Kubernetes 编排目前不是既定路线；如果 Compose 和服务池已无法满足调度、容错或运维要求，应先新建 ADR 论证迁移边界。
 

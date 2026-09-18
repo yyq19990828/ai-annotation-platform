@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-22
 - **Deciders:** core team
-- **Supersedes:** —（扩展 [ADR-0048](./archive/0048-video-raster-mask-content-addressed-rle.md) 与 [ADR-0052](./0052-shared-raster-mask-and-image-geometry.md) 的持久 Mask 合同，不改变其内容寻址格式）
+- **Supersedes:** —（扩展 [ADR-0048](./0048-video-raster-mask-content-addressed-rle.md) 与 [ADR-0052](./0052-shared-raster-mask-and-image-geometry.md) 的持久 Mask 合同，不改变其内容寻址格式）
 
 ## Context
 

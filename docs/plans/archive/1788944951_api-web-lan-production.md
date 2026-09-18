@@ -157,3 +157,13 @@ IP + HTTP 是配置成本更低的替代入口，但 WebGPU、WebCodecs 依赖�
 - [Redis Pub/Sub 不按数据库编号隔离](https://redis.io/docs/latest/develop/pubsub/)。
 - [Caddy 内部 HTTPS 与客户端信任](https://caddyserver.com/docs/automatic-https)。
 - [WebGPU 安全上下文要求](https://gpuweb.github.io/gpuweb/) 与 [WebCodecs 安全上下文要求](https://www.w3.org/TR/webcodecs/)。
+
+## Outcome
+
+- Landed commits: 见 `## 交付记录`（本计划未记录仓库提交哈希；应用镜像标识 `6429a41d3603-lan2`）
+- Release milestone: Not yet determined
+- User documentation: `docs-site/ops/deploy/docker-compose.md`、`docs-site/ops/deploy/lan-production.md`
+- Developer documentation: `docs-site/dev/concepts/deployment-topology.md`
+- ADR: 无
+- CHANGELOG: 未添加（未进行应用版本发布）
+- Remaining work: 未运行真实模型预标注、完整浏览器标注 / 导出、8 GiB 超限上传、共享模型故障与 Redis 重启恢复演练，也未替另一台客户端安装 CA；生产数据库备份尚未做恢复演练。

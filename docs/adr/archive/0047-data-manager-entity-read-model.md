@@ -72,7 +72,7 @@ Data Manager 扩展为概览、数据、成员三个区域。实体 read model �
 
 首批操作限定显式选择的 1–200 个 task ID，不把任务集合转换成 batch 集合，不提供全匹配选择、批量审核或删除。分派先预览，再在锁内验证版本并应用；异步作业持久化原始范围和幂等标识，执行时复核范围与权限。
 
-成员统计使用独立的项目绩效服务和查询范围，仅项目负责人及超级管理员可读。首审事实与审核轮次在任务工作流事务内记录，已记录时长通过校验后的 TaskEvent 采集；这些事实不复制 annotation 权威写模型。技术口径见[项目成员绩效数据](../../docs-site/dev/concepts/project-performance.md)。
+成员统计使用独立的项目绩效服务和查询范围，仅项目负责人及超级管理员可读。首审事实与审核轮次在任务工作流事务内记录，已记录时长通过校验后的 TaskEvent 采集；这些事实不复制 annotation 权威写模型。技术口径见[项目成员绩效数据../../../docs-site/dev/concepts/project-performance.md)。
 
 原有不带 `section` 的链接继续打开数据区域；任务/对象/轨迹仍是数据内部的 grain。新增操作不改变 Filter DSL、实体分页或 visible-task scope。
 

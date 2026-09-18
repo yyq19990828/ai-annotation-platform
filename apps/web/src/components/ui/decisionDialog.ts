@@ -4,7 +4,7 @@ import type { ReactNode } from "react";
 import type { IconName } from "@/components/ui/Icon";
 
 /**
- * decisionDialog —— 命令式决策对话框服务(docs/plans/1789527942_decision-dialog-consolidation.md Phase 0)。
+ * decisionDialog —— 命令式决策对话框服务(docs/plans/archive/1789527942_decision-dialog-consolidation.md Phase 0)。
  *
  * confirm/choice/input/alert 四个入口都返回 Promise,hook 与非 React 模块可一行调用;
  * 对话框本体由 App.tsx 两处挂载的 <DecisionDialogHost /> 渲染(与 ToastRack 同位,覆盖全屏工作台)。

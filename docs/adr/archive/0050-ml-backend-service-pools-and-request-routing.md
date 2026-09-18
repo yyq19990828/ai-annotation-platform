@@ -3,7 +3,7 @@
 - **Status:** Accepted（v0.23.3 P0 范围；schema 与请求切换须经本文「冻结决策」逐 PR 落地）
 - **Date:** 2026-07-20（提案 / P0 锁定）
 - **Deciders:** core team
-- **Supersedes:** —（在 [ADR-0044](./archive/0044-global-ml-backend-registry-and-project-enablement.md) 的全局实例注册表之上加一层「逻辑服务池」，不改变 registry 行语义；与 [ADR-0049](./archive/0049-cross-backend-gpu-memory-arbitration.md) 的 GPU 显存仲裁正交，互不替代）
+- **Supersedes:** —（在 [ADR-0044](./0044-global-ml-backend-registry-and-project-enablement.md) 的全局实例注册表之上加一层「逻辑服务池」，不改变 registry 行语义；与 [ADR-0049](./0049-cross-backend-gpu-memory-arbitration.md) 的 GPU 显存仲裁正交，互不替代）
 
 ## Context
 
@@ -186,7 +186,7 @@ Super Admin：`GET/POST/GET/PATCH/DELETE /admin/ml-integrations/service-pools[/:
 
 ## Notes
 
-- 目标版本：**v0.23.3**，计划详见 [`docs/plans/archive/2026-07-20-v0.23.3-ml-backend-service-pool-load-balancing-foundation.md`](../plans/archive/2026-07-20-v0.23.3-ml-backend-service-pool-load-balancing-foundation.md)。本文是 P0 交付物；ADR 被接受之前可以完成 inventory / fixture / 实验脚本，但不得合并生产 schema 或请求切换（计划 §4）。
+- 目标版本：**v0.23.3**，计划详见 [`docs/plans/archive/2026-07-20-v0.23.3-ml-backend-service-pool-load-balancing-foundation.md`../../plans/archive/2026-07-20-v0.23.3-ml-backend-service-pool-load-balancing-foundation.md)。本文是 P0 交付物；ADR 被接受之前可以完成 inventory / fixture / 实验脚本，但不得合并生产 schema 或请求切换（计划 §4）。
 - 涉及代码（当前状态，待迁移）：
   - 数据模型：`apps/api/app/db/models/ml_backend_registry.py:18`（`MLBackendRegistry`）、`:84`（`ProjectMLBackend`）、`apps/api/app/db/models/project.py:43`（`Project.ml_backend_id`）、`apps/api/app/db/models/prediction.py:18`（`Prediction.ml_backend_id`，按月分区）、`:101`（`FailedPrediction.ml_backend_id`）、`apps/api/app/db/models/async_job.py:49`（`AsyncJob.payload / result`）、`apps/api/app/db/models/user.py:60`（`User.preferences`）。
   - 请求选择：`apps/api/app/services/ml_backend.py:131`（`get`）、`:582`（`get_interactive_backend`）、`:601`（`get_project_backend`）、`:618`（`get_tracker_backend_for_capabilities`）；`apps/api/app/services/ml_client.py:140`（`MLBackendClient`，被 12 个 prediction 站点 + 多个 lifecycle 站点构造）。
@@ -196,6 +196,6 @@ Super Admin：`GET/POST/GET/PATCH/DELETE /admin/ml-integrations/service-pools[/:
   - 前端 / SDK：`apps/web/src/pages/AIPreAnnotate/**`、`apps/web/src/api/{adminMlIntegrations,ml-backends,projects,tasks,failed-predictions,mlCapabilities}.ts`、`apps/web/src/components/projects/CreateProjectWizard.tsx` + `steps/Step4Ai.tsx`、`packages/python-sdk/`。
 - alembic：head 当前为 `0131`（`apps/api/alembic/versions/0131_gpu_collector_fence_delete_guard.py`），pool 迁移从 `0131` 分叉；`predictions` 按月分区，FK / 索引须在父表与分区上同步（ADR-0006 / ADR-0044 先例）。
 - Redis namespace：routing ledger 用 `ml-router:v1`，GPU 仲裁用 `gpu-arbiter:v1`（`apps/api/app/services/gpu_arbitration/ledger/types.py:15`），零交叉。
-- 相关 ADR：[ADR-0044](./archive/0044-global-ml-backend-registry-and-project-enablement.md)（全局注册表）、[ADR-0049](./archive/0049-cross-backend-gpu-memory-arbitration.md)（GPU 显存仲裁）、ADR-0006（predictions 分区）、[ADR-0043](./archive/0043-staged-preannotation-pipeline.md)（多阶段 pipeline）。
+- 相关 ADR：[ADR-0044](./0044-global-ml-backend-registry-and-project-enablement.md)（全局注册表）、[ADR-0049](./0049-cross-backend-gpu-memory-arbitration.md)（GPU 显存仲裁）、ADR-0006（predictions 分区）、[ADR-0043](./0043-staged-preannotation-pipeline.md)（多阶段 pipeline）。
 - 后续演进触发条件：least-request / 自适应权重若需要，单独 ADR；池 merge / 跨实例 autoscale / 服务发现属于更后续 epic，不在本版本预留。
 - v0.23.4 前置：本文冻结的 topology / runtime contract 是 v0.23.4「模型市场注册管理 / 运行时观测」UI 的硬前置；v0.23.4 不得复制 router 判定。

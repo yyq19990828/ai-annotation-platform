@@ -138,5 +138,5 @@ Project Admin 通过 `topology` 端点拿到裁剪后的响应（`routing_policy
   - 前端 view-model：`apps/web/src/pages/ModelMarket/runtimeTopology.ts`
   - 注册管理：`apps/web/src/pages/ModelMarket/RegisteredBackendsTab.tsx` + `registry/`
   - 运行时观测：`apps/web/src/pages/ModelMarket/RuntimeObservePanel.tsx` + `runtime/`
-- 相关 ADR：[ADR-0050](./0050-ml-backend-service-pools-and-request-routing.md)（服务池与路由核心）、[ADR-0049](./archive/0049-cross-backend-gpu-memory-arbitration.md)（GPU 仲裁，正交）、[ADR-0044](./archive/0044-global-ml-backend-registry-and-project-enablement.md)（全局注册表，底层）
+- 相关 ADR：[ADR-0050](./0050-ml-backend-service-pools-and-request-routing.md)（服务池与路由核心）、[ADR-0049](./0049-cross-backend-gpu-memory-arbitration.md)（GPU 仲裁，正交）、[ADR-0044](./0044-global-ml-backend-registry-and-project-enablement.md)（全局注册表，底层）
 - 后续可能演进：当共享路由计数器落地后，D3 的 metrics 字段从 null 切为真值，前端只需移除「暂无路由指标」sentinel，合同无需重构。

@@ -3,13 +3,13 @@
 - **Status:** Accepted
 - **Date:** 2026-07-07（回填；实现于 v0.21.0 / PR #50，迁移 `0112`）
 - **Deciders:** core team
-- **Supersedes:** —（在 [ADR-0043](./archive/0043-staged-preannotation-pipeline.md) 运行时编排 / [ADR-0044](./archive/0044-global-ml-backend-registry-and-project-enablement.md) 全局注册表之上做「持久化 + 作用域」的加法，不推翻）
+- **Supersedes:** —（在 [ADR-0043](./0043-staged-preannotation-pipeline.md) 运行时编排 / [ADR-0044](./0044-global-ml-backend-registry-and-project-enablement.md) 全局注册表之上做「持久化 + 作用域」的加法，不推翻）
 
 ## Context
 
-[ADR-0043](./archive/0043-staged-preannotation-pipeline.md) 把跨 backend 流水线从 backend 内部上提到平台层，但那套 `pipeline_stages` 是**运行时临时编排**:它只作为 `PreannotateRequest.pipeline_stages` 出现在预标请求体里，跑完即弃（拓扑仅为追溯落 `PredictionMeta.extra`）。项目侧「记住这条编排」的唯一落点是 `Project.preannotate_pipeline` 单条 JSONB 列——**一项目一条、无名、不可跨项目复用**。
+[ADR-0043](./0043-staged-preannotation-pipeline.md) 把跨 backend 流水线从 backend 内部上提到平台层，但那套 `pipeline_stages` 是**运行时临时编排**:它只作为 `PreannotateRequest.pipeline_stages` 出现在预标请求体里，跑完即弃（拓扑仅为追溯落 `PredictionMeta.extra`）。项目侧「记住这条编排」的唯一落点是 `Project.preannotate_pipeline` 单条 JSONB 列——**一项目一条、无名、不可跨项目复用**。
 
-[ADR-0044](./archive/0044-global-ml-backend-registry-and-project-enablement.md) 已把 backend 注册表全局化,能力池是全局的;但「用这些全局能力搭出来的编排」还锁在单项目的 JSONB 列里——层次不对称:**能力全局、编排却每项目一份私货**。
+[ADR-0044](./0044-global-ml-backend-registry-and-project-enablement.md) 已把 backend 注册表全局化,能力池是全局的;但「用这些全局能力搭出来的编排」还锁在单项目的 JSONB 列里——层次不对称:**能力全局、编排却每项目一份私货**。
 
 由此的痛点:
 
@@ -23,11 +23,11 @@
 | ----------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
 | **A. 独立 `project_pipelines` 表 + 三档作用域(private / organization / public) + apply copy-on-write**                  | 命名 / 多条 / 跨项目复用;作用域天然表达 private→org→public 治理层次;项目侧仍以一条 `is_default` 维持「当前编排」语义不破 | 新表 + 数据迁移;权限要按档分层;与旧 `preannotate_pipeline` 列并存一段                        |
 | B. 继续用 `Project.preannotate_pipeline`,加「从别的项目导入」                                                           | 改动最小                                                                                                                 | 仍是每项目一份拷贝,无命名无作用域,治理缺失——治标                                             |
-| C. 编排直接挂到 [ADR-0044](./archive/0044-global-ml-backend-registry-and-project-enablement.md) 的全局 backend 注册表上 | 复用现成全局层                                                                                                           | 编排是「能力的组合」而非「能力本身」,概念错层;且套用要项目上下文(类别 / 属性 schema)才能落地 |
+| C. 编排直接挂到 [ADR-0044](./0044-global-ml-backend-registry-and-project-enablement.md) 的全局 backend 注册表上 | 复用现成全局层                                                                                                           | 编排是「能力的组合」而非「能力本身」,概念错层;且套用要项目上下文(类别 / 属性 schema)才能落地 |
 
 ## Decision
 
-**采方案 A:新建 `project_pipelines` 表,把编排升级为可命名、可复用、copy-on-write、带三档作用域的一等资源。** stages 结构直接复用 [ADR-0043](./archive/0043-staged-preannotation-pipeline.md) 的 `pipeline_stages`(存储态与运行态同构),本 ADR 只加「持久化 + 作用域 + 应用」这一层,不碰执行路径。
+**采方案 A:新建 `project_pipelines` 表,把编排升级为可命名、可复用、copy-on-write、带三档作用域的一等资源。** stages 结构直接复用 [ADR-0043](./0043-staged-preannotation-pipeline.md) 的 `pipeline_stages`(存储态与运行态同构),本 ADR 只加「持久化 + 作用域 + 应用」这一层,不碰执行路径。
 
 ### 1. 数据模型(`project_pipelines`,迁移 `0112`)
 
@@ -59,7 +59,7 @@
 `POST /projects/{id}/pipelines/apply`(`apps/api/app/api/v1/projects.py:721`),入参 `{ pipeline_id, set_default }`。语义**不是活引用,是深拷贝快照**:
 
 1. `require_project_owner` 守卫 + `assert_pipeline_visible` 校验来源模板对当前用户可见;
-2. `_validate_saved_pipeline` 结构校验 + `unenabled_backend_ids`(`services/pipeline_template.py:87`)校验编排引用的每个 backend **已在当前项目启用**——直接复用 [ADR-0044](./archive/0044-global-ml-backend-registry-and-project-enablement.md) 的项目级启用门控,未启用则 422 回带 `unenabled_backends` 列表;
+2. `_validate_saved_pipeline` 结构校验 + `unenabled_backend_ids`(`services/pipeline_template.py:87`)校验编排引用的每个 backend **已在当前项目启用**——直接复用 [ADR-0044](./0044-global-ml-backend-registry-and-project-enablement.md) 的项目级启用门控,未启用则 422 回带 `unenabled_backends` 列表;
 3. `copy_pipeline_stages`(deepcopy)把模板 stages 拷成一条**新的 `scope=private` 项目副本**(`project_id=当前项目`,`created_by=当前用户`,`projects.py:743`);
 4. 源模板 `usage_count += 1`(复用热度埋点,前端列表显示「已套用 N 次」);
 5. `set_default=true` 时先 `switch_project_default_pipeline` 清掉该项目原默认,再把新副本置默认。
@@ -70,7 +70,7 @@
 
 历史的 `Project.preannotate_pipeline`(一项目一条 JSONB)被升级为「project 名下多条 `scope=private` 记录 + 一条 `is_default=true` 标记谁是当前」。`switch_project_default_pipeline`(`services/pipeline_template.py:68`)做「先清零旧默认、再置新默认」的原子切换,`uq_project_pipelines_default_per_project` 从 DB 侧兜底「每项目至多一条默认」。旧列不立即拆(见 Consequences 迁移影响)。
 
-### 5. 与 [ADR-0043](./archive/0043-staged-preannotation-pipeline.md) 的关系:存储层 vs 执行层
+### 5. 与 [ADR-0043](./0043-staged-preannotation-pipeline.md) 的关系:存储层 vs 执行层
 
 - **stages 同构**:模板 `stages` 就是 0043 的 `pipeline_stages`。`_validate_saved_pipeline`(`projects.py:1465`)直接构造 `PreannotateRequest(pipeline_stages=stages)` 复用 0043 同款树形校验——存储态即运行态,零翻译。
 - **执行仍走 0043**:本 ADR 只负责「把 stages 存下来 / 分作用域 / 拷进项目」;真正跑预标时,项目默认编排的 stages 仍沿 0043 的 `PreannotateRequest.pipeline_stages` → worker 路径执行。0046 是 0043 的**持久化与复用层**,不是新执行引擎。
@@ -86,7 +86,7 @@
 正向:
 
 - **编排一次搭建、跨项目复用**:全局库搭一条公共 / 组织模板,任意项目一键 apply,不再重搭;`usage_count` 让「哪条模板最常被套用」可见,便于沉淀策展。
-- **治理层次归位**:private→organization→public 三档对齐平台既有的项目 / 组织 / 超管权限分层,与 [ADR-0044](./archive/0044-global-ml-backend-registry-and-project-enablement.md) 的全局能力池层次对称。
+- **治理层次归位**:private→organization→public 三档对齐平台既有的项目 / 组织 / 超管权限分层,与 [ADR-0044](./0044-global-ml-backend-registry-and-project-enablement.md) 的全局能力池层次对称。
 - **「当前编排」语义不破且增强**:项目仍有唯一「默认编排」(`is_default` + 部分唯一索引),但同时能持有多条备选 private 编排,切换即改默认。
 - **copy-on-write 隔离**:套用是快照,项目改副本与源模板互不干扰,避免「改了公共模板波及所有已用项目」的连锁事故。
 - **约束双写、脏编排早拒**:owner 配对 / 默认唯一在 DB 与 schema 双层保证;结构非法 / backend 未启用在 apply 时即 422,不留到执行期才炸。
@@ -115,9 +115,9 @@
   - 前端:`apps/web/src/pages/AIPreAnnotate/GlobalPipelineLibraryPage.tsx`(路由 `/pipelines`,全局库 UI;与 `ProjectDetailPanel` 共用 `usePipelineComposer`)、`apps/web/src/api/projectPipelines.ts`、`apps/web/src/hooks/useProjectPipelines.ts`
 - **相关 alembic**:`0112_project_pipelines.py`(建表 + 四约束 + 回填 + 移除 `projects.ml_backend_id` FK)
 - **相关 ADR**:
-  - [ADR-0043](./archive/0043-staged-preannotation-pipeline.md)(多阶段运行时编排,本 ADR 的持久化 / 复用层建于其上,stages 结构复用)
-  - [ADR-0044](./archive/0044-global-ml-backend-registry-and-project-enablement.md)(全局 backend 注册表 + 项目级启用,apply 时的 backend 启用门控复用其能力)
-  - [ADR-0023](./archive/0023-project-template-vs-clone.md)(项目模板 vs 克隆:copy-on-write 思路同源)
+  - [ADR-0043](./0043-staged-preannotation-pipeline.md)(多阶段运行时编排,本 ADR 的持久化 / 复用层建于其上,stages 结构复用)
+  - [ADR-0044](./0044-global-ml-backend-registry-and-project-enablement.md)(全局 backend 注册表 + 项目级启用,apply 时的 backend 启用门控复用其能力)
+  - [ADR-0023](./0023-project-template-vs-clone.md)(项目模板 vs 克隆:copy-on-write 思路同源)
 - **后续演进 / 触发条件**:
   - **旧列收口**:`Project.preannotate_pipeline` 读兼容为过渡态,待读写路径统一到 `project_pipelines` 后废弃该列(与本 ADR 迁移影响呼应)。
   - **organization 档前端补全**:补组织选择器,让 `organization` 编排可从全局库直接创建,去掉当前「需 API 直连」限制。

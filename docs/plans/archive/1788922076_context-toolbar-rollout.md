@@ -15,7 +15,7 @@ Do not unify all floating UI. Dockview owns task/AI/tracker configuration panels
 ## Evidence and decisions
 
 - PR82 explicitly keeps drafts, commands, settings, persistence, and asynchronous work outside `ContextToolbar`. Full-panel children unmount after the closing animation.
-- `InteractiveToolBar` already has an accepted primary/advanced split. Its required inputs, candidate actions, and recovery cannot disappear behind an advanced disclosure. See [E1 record](archive/1788769060_workbench-e1-ai-toolbar-layers.md).
+- `InteractiveToolBar` already has an accepted primary/advanced split. Its required inputs, candidate actions, and recovery cannot disappear behind an advanced disclosure. See [E1 record](1788769060_workbench-e1-ai-toolbar-layers.md).
 - `SecondaryInferenceBar` owns selected capability, per-model parameters/variants, temporary text, and busy state. `useSecondaryParamPrefs` owns persisted parameters. Keep the component mounted when only its panel closes.
 - `VideoTrackerReviewBar` owns pending intent protection and the manual-keyframe override confirmation. Those must survive presentation changes. Its review projection remains owned by `useVideoTrackerJobs` and existing review scope logic.
 - Existing render conditions are not fully exclusive: capability recovery can coexist with secondary inference, and Mask is not excluded by the secondary bar's non-AI gate. Resolve placement deliberately rather than putting several capsules at `left-3 top-3`.
@@ -127,7 +127,15 @@ Rollback is a frontend patch revert in reverse delivery order, without data dele
 - The user explicitly corrected the presentation direction: idle must contain only one small capsule. All primary inputs and decisions now live inside its hover disclosure. A single 160 × 36 px header and unified expanding surface replace the large permanent primary cards. This supersedes earlier always-visible-primary assumptions.
 - The Workbench intentionally blocks phone-width interaction with its existing mobile dialog. Responsive browser acceptance uses the supported 1024 px viewport; phone interaction is not claimed.
 
-## Verification outcome
+## Outcome
+
+- Landed commits: 未提交（本计划仅在本地实现与验证；状态为 no commit or publication requested）
+- Release milestone: Not yet determined
+- User documentation: `docs-site/user-guide/workbench/`
+- Developer documentation: `docs-site/dev/concepts/`、`docs-site/dev/reference/`
+- ADR: 无
+- CHANGELOG: 未添加（未提交 / 未发布）
+- Remaining work: 见下方 Follow-up 段落
 
 - The final presentation is a single 160 × 36 px idle capsule. Hover/focus/touch reveals one downward-growing surface with labelled frequent actions and a final More entry. Required inputs and decisions are hidden while idle; their state remains with the existing owner.
 - Related unit coverage totals 137 passing cases across the shared toolbar, Mask, secondary inference, interactive AI, tracker review, eligibility, guards and secondary cache ownership. After the last presentation edits, the affected shared/Mask and primary-owner suites passed again.

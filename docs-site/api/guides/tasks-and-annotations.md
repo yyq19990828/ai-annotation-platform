@@ -422,7 +422,7 @@ annotation 变更、内容关联、操作账本、lineage、任务统计和聚�
 
 两个接口均要求当前任务可见、可编辑且任务锁允许写入，以及 `annotations:write` scope。相同 actor / task / key 同参回放首次响应，异参返回 `409 idempotency_conflict`。同一次超时重试复用原 key；下一次 undo / redo 必须使用新 key。对象版本变化、锁定或活动子对象分别返回 `409 version_mismatch / annotation_locked / active_children`，非法切线返回 `422 invalid_cut`。原切割提交后 30 天返回 `410 restore_expired`，撤销与重做不续期。
 
-每次提交或恢复都在单一事务内写入对象、统计、操作账本、lineage 与审计；任一失败不产生部分结果。Python SDK 将两个工作台内部接口明确列为 excluded，尚未提供对应客户端方法。实现与回滚约束见 [ADR-0074](/dev/adr/0074-atomic-annotation-slice-restore)。
+每次提交或恢复都在单一事务内写入对象、统计、操作账本、lineage 与审计；任一失败不产生部分结果。Python SDK 将两个工作台内部接口明确列为 excluded，尚未提供对应客户端方法。实现与回滚约束见 [ADR-0074](/dev/adr/archive/0074-atomic-annotation-slice-restore)。
 
 ## 标注转换计划
 
