@@ -322,7 +322,7 @@ context 是 `annotate|review × image|video|3d` 的六项闭集，按账号分�
 
 Shell 通过 `annotationSlicesApi` 提交，在原任务记录一条受限 `slice` history 命令。命令不允许嵌入 create / delete 叶批次，只保存原操作 ID、完整结果版本、恢复期限与待重试请求键。undo / redo 成功后才移动栈，失败保留位置；任务切换期间每个异步操作只结算原任务历史并刷新原任务缓存。恢复响应先更新历史，缓存刷新异步进行，避免用户立即刷新时丢失已成功撤销的历史位置。
 
-服务端快照、幂等、版本保护与不可收窄的账本迁移见 [ADR-0074](/dev/adr/0074-atomic-annotation-slice-restore)。
+服务端快照、幂等、版本保护与不可收窄的账本迁移见 [ADR-0074](/dev/adr/archive/0074-atomic-annotation-slice-restore)。
 
 ## 偏好四分树与设置窗口
 

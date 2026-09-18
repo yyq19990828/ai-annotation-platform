@@ -1,5 +1,5 @@
 /**
- * decisionDialog 服务 + <DecisionDialogHost /> 单测(docs/plans/1789527942 Phase 0 验收):
+ * decisionDialog 服务 + <DecisionDialogHost /> 单测(docs/plans/archive/1789527942 Phase 0 验收):
  * Promise 结算(确认/取消/Esc/点遮罩)、危险态默认聚焦取消 vs 普通态聚焦确认、
  * 危险态语义 token、input 必填/maxLength/validate/initialValue 行为、choice 取消为 null、
  * 队列一次只显示一条、data-modal 模态标记、cancelAll 认证归属变更兜底。

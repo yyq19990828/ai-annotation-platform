@@ -333,7 +333,7 @@
       "recommendDocs": [
         "docs-site/dev/reference/data-manager-query.md",
         "docs-site/user-guide/projects/data-manager.md",
-        "docs/adr/0047-data-manager-entity-read-model.md"
+        "docs/adr/archive/0047-data-manager-entity-read-model.md"
       ],
       "acceptDocs": [
         "docs-site/dev/reference/data-manager-query.md",

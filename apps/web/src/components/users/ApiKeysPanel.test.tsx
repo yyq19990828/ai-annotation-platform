@@ -1,5 +1,5 @@
 /**
- * ApiKeysPanel 吊销密钥的决策对话框迁移验证(docs/plans/1789527942 Phase 1 / Group B 验收):
+ * ApiKeysPanel 吊销密钥的决策对话框迁移验证(docs/plans/archive/1789527942 Phase 1 / Group B 验收):
  * 代表性破坏性流程 —— 断言对话框文案(动作+对象、后果、动词确认键),以及
  * 「确认后才执行」:点吊销只弹对话框不调 mutation,取消不执行,确认后才吊销。
  */
