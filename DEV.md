@@ -493,7 +493,7 @@ CI E2E 每个 PR 保留 4 个功能分片，以及 readonly Mask、native Mask�
 CI 检查名称统一使用 `领域 职责`，例如 `Backend tests`、`Frontend verification`、
 `Docs validation`。所有 job（包括单 job 工作流）都显式设置 `name`，并在仓库内保持唯一；
 整个名称使用 sentence case，保留 Python、SDK 等专有名词和缩写。工具明细放在 step 名称中。GitHub 会展示 `工作流 / job (事件)`，因此 job 名称不再添加斜杠；
-例如 `CI / Frontend verification (pull_request)`、`Change analysis / Docs impact (pull_request)`。
+例如 `CI / Frontend verification (pull_request)`、`CI / Backend tests (pull_request)`。
 工作流文件使用 `<domain>-<action>.yml`（聚合工作流保留 `ci.yml`），顶层名称使用 sentence case。
 命名检查器不依赖额外安装包，按仓库统一的块式 YAML 检查：job 键缩进两格，job 属性缩进四格。
 本地 pre-commit 和 CI 均严格检查文件名、工作流名称、job 名称格式及重名。
