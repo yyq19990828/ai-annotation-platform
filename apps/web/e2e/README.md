@@ -108,10 +108,42 @@ PLAYWRIGHT_AI_REQUEST_WORKER=1 pnpm test:e2e \
 pipeline 的开关边界、精确解码或安全回退、pending→ready 切换。视频舞台容器暴露
 `data-video-frame-source` / `data-video-precise-state` / `data-video-frame-index`
 三个可观察属性供 spec 读取；`data-video-painted-frame-index`（精确绘制完成的帧号，
-非 webcodecs 源恒为 `-1`）用于等待绘制就绪。时间轴点击触发的异步取帧在负载下可能
-迟到：应用层已在播放控制器的帧号写入处加单调栅栏，迟到的旧帧回报不会再覆盖键盘
-步进后的帧号（Issue #114），`video-issue-context.spec.ts` 的 `expectPaintSettled`
-保留为冗余防护——等它与 `data-video-frame-index` 一致后再继续步进或断言仍最稳妥。
+非 webcodecs 源恒为 `-1`）用于等待绘制就绪。导航触发的异步取帧在负载下可能
+迟到：应用层已在播放控制器的帧号写入处加单调栅栏，迟到的旧帧回报不会再覆盖
+更新后的帧号（Issue #114，组件级回归见
+`useVideoPlaybackController.stale-seek.test.ts`），视频 Issue 套件的
+`expectPaintSettled` 保留为冗余防护——等它与 `data-video-frame-index` 一致后再
+继续或断言仍最稳妥。
+
+### 时间轴定位契约与真实指针回归
+
+视频 Issue/track 套件建立前置帧一律走 `e2e/helpers/video-timeline-seek.ts` 的
+确定性通路：先等可见窗口包含目标（需要时展开时间轴并 zoom-reset，等窗口状态
+实际更新），再把能精确表达目标帧的 range 归一化值（0..10000）写入「视频帧时间轴」
+输入，经应用既有 `onChange → onSeek` 生效。映射与组件 `timelineCoords.pctToFrame`
+同款，`rangeValueForFrame` 反解不精确即显式失败——本套件 180 帧素材在任意合法
+窗口下逐帧可表达（`scripts/video-timeline-seek.test.ts` 逐帧验证）；更长素材出现
+不可表达帧时应缩窗或扩粒度，不允许静默近似。导航失败时 `seek` 会在
+`seek-navigation-state` 附件写入目标/选择/绘制帧、显示源、precise state 与时间轴
+窗口的只读快照，帮助区分「目标未写入 / 呈现未完成」，且不覆盖原始断言错误。
+
+像素采样（`fixtures/video-frame-pixels.ts`）对「属性断言已过、采样时文档恰好被
+真实导航替换」的竞态做了有界重试：仅针对 `Execution context was destroyed`，
+重试在当前文档上重新采样。帧身份断言逐帧特异，采错帧会照常失败，因此重试
+不会把导航竞态放大成假通过。
+
+不要回退成「裸坐标点击时间轴 + 有限键盘补偿」：播放浮层在指针离开画布约 2s 后
+进入 `pointer-events: none`，裸 `mouse.click` 绕过 actionability 检查会被静默吞掉
+（`default-two` shard 2/4 曾因此偶发失败：点击后停留网格吸附帧，补偿十次后断言
+失败）。fill 不做命中检查，不依赖浮层可见。
+
+真实鼠标路径由 `e2e/tests/video-timeline-seek.spec.ts` 单独覆盖：折叠态、展开态、
+关闭 Issue 表单后、缩放窗口与首末帧端点。它以 `video-timeline-shell` 为定位器，
+用 `locator.click({ position })`（带 hit-target 检查，被吞的点击会显式失败），
+几何换算与组件 `frameFromPointer` 一致；点击前通过真实指针移动唤出浮层并断言
+shell `pointerEvents` 恢复 `auto`，不用 `force: true`、不关动画、不用键盘补救。
+端点点击内缩 2px 并容忍 ±1 帧的取整漂移（输入量化到整数像素的固有不确定
+性，内部帧仍逐帧精确断言）；不要把端点断言绑定在个别边界像素上。
 
 **能力门**：WebCodecs `VideoDecoder` 需 secure context。localhost 下 Chromium 暴露
 构造器，但 headless 软解下 `isConfigSupported` / 实际 decode 可能不通过，精确帧会
