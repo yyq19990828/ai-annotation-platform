@@ -412,6 +412,191 @@ async def _seed_full(engine) -> dict:
     return {"ids": ids, "users": users, "projects": projects}
 
 
+async def _seed_manager_cases(engine) -> dict:
+    """Seed active-manager and adversarial effective assignments.
+
+    Mirrors ``scheduler.is_privileged_for_project``: an active super
+    administrator manages every project and an active ``project_admin`` owns
+    exactly the project it owns.  Each manager task has no membership row, so
+    the pre-fix audit reports it; the adversarial rows prove the exemption is
+    not broader than the live authorization rule.
+    """
+    users: list[uuid.UUID] = []
+    projects: list[uuid.UUID] = []
+    ids: dict = {}
+
+    async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+
+        async def make_user(role: str, tag: str):
+            user = await create_user(
+                db,
+                role,
+                f"{_EMAIL_SENTINEL}-{tag}-{uuid.uuid4()}@test.local",
+                f"{_NAME_SENTINEL}-{tag}",
+            )
+            users.append(user.id)
+            return user
+
+        super_admin = await make_user("super_admin", "mgr-super")
+        super_admin_member = await make_user("super_admin", "mgr-super-member")
+        admin_owner = await make_user("project_admin", "mgr-admin-owner")
+        foreign_admin = await make_user("project_admin", "mgr-foreign-admin")
+        inactive_admin = await make_user("project_admin", "mgr-inactive-admin")
+        inactive_admin.is_active = False
+        employee = await make_user("employee", "mgr-employee")
+        employee_owner = await make_user("employee", "mgr-employee-owner")
+        wrong_employee = await make_user("employee", "mgr-wrong-employee")
+
+        work_project = await create_project(db, owner_id=admin_owner.id)
+        foreign_project = await create_project(db, owner_id=foreign_admin.id)
+        employee_project = await create_project(db, owner_id=employee_owner.id)
+        inactive_admin_project = await create_project(db, owner_id=inactive_admin.id)
+        projects.extend(
+            [
+                work_project.id,
+                foreign_project.id,
+                employee_project.id,
+                inactive_admin_project.id,
+            ]
+        )
+
+        # A manager may still carry a member row: the assignment must not be
+        # re-reported as a wrong-role gap.  An ordinary employee with a
+        # mismatched membership stays a finding.
+        super_admin_membership = ProjectMember(
+            project_id=work_project.id,
+            user_id=super_admin_member.id,
+            role="viewer",
+            assigned_by=admin_owner.id,
+        )
+        wrong_employee_membership = ProjectMember(
+            project_id=work_project.id,
+            user_id=wrong_employee.id,
+            role="reviewer",
+            assigned_by=admin_owner.id,
+        )
+        db.add_all([super_admin_membership, wrong_employee_membership])
+        await db.flush()
+
+        # Positive: explicit and inherited manager assignments resolve without a
+        # membership, including a manager whose member row has another role.
+        task_super_reviewer = await create_task(db, project_id=work_project.id)
+        task_super_reviewer.reviewer_id = super_admin.id
+
+        task_admin_owner_assignee = await create_task(db, project_id=work_project.id)
+        task_admin_owner_assignee.assignee_id = admin_owner.id
+
+        task_manager_wrong_role = await create_task(db, project_id=work_project.id)
+        task_manager_wrong_role.reviewer_id = super_admin_member.id
+
+        batch_super_reviewer = TaskBatch(
+            project_id=work_project.id,
+            display_id=f"B-AUDIT-{uuid.uuid4().hex[:8]}",
+            name="Inherited super reviewer",
+            reviewer_id=super_admin.id,
+        )
+        db.add(batch_super_reviewer)
+        await db.flush()
+        task_inherited_super_reviewer = await create_task(
+            db, project_id=work_project.id
+        )
+        task_inherited_super_reviewer.batch_id = batch_super_reviewer.id
+
+        batch_admin_assignee = TaskBatch(
+            project_id=work_project.id,
+            display_id=f"B-AUDIT-{uuid.uuid4().hex[:8]}",
+            name="Inherited admin owner",
+            annotator_id=admin_owner.id,
+        )
+        db.add(batch_admin_assignee)
+        await db.flush()
+        task_inherited_admin_assignee = await create_task(
+            db, project_id=work_project.id
+        )
+        task_inherited_admin_assignee.batch_id = batch_admin_assignee.id
+
+        # The explicit task value wins: a non-member batch default must not mask
+        # the manager override.
+        batch_employee_default = TaskBatch(
+            project_id=work_project.id,
+            display_id=f"B-AUDIT-{uuid.uuid4().hex[:8]}",
+            name="Non-member default",
+            annotator_id=employee.id,
+        )
+        db.add(batch_employee_default)
+        await db.flush()
+        task_override_manager = await create_task(db, project_id=work_project.id)
+        task_override_manager.batch_id = batch_employee_default.id
+        task_override_manager.assignee_id = super_admin.id
+
+        # Adversarial non-managers: a foreign-project admin, an ordinary
+        # employee (explicit and inherited), a non-administrative owner and an
+        # inactive admin all keep their findings.
+        task_foreign_admin = await create_task(db, project_id=work_project.id)
+        task_foreign_admin.assignee_id = foreign_admin.id
+
+        task_employee = await create_task(db, project_id=work_project.id)
+        task_employee.reviewer_id = employee.id
+
+        task_inherited_employee = await create_task(db, project_id=work_project.id)
+        task_inherited_employee.batch_id = batch_employee_default.id
+
+        task_employee_owner = await create_task(db, project_id=employee_project.id)
+        task_employee_owner.assignee_id = employee_owner.id
+
+        task_inactive_admin = await create_task(db, project_id=work_project.id)
+        task_inactive_admin.assignee_id = inactive_admin.id
+
+        task_wrong_employee = await create_task(db, project_id=work_project.id)
+        task_wrong_employee.assignee_id = wrong_employee.id
+
+        db.add_all(
+            [
+                task_super_reviewer,
+                task_admin_owner_assignee,
+                task_manager_wrong_role,
+                task_inherited_super_reviewer,
+                task_inherited_admin_assignee,
+                task_override_manager,
+                task_foreign_admin,
+                task_employee,
+                task_inherited_employee,
+                task_employee_owner,
+                task_inactive_admin,
+                task_wrong_employee,
+            ]
+        )
+        await db.flush()
+        ids = {
+            "work_project": work_project.id,
+            "super_admin": super_admin.id,
+            "super_admin_member": super_admin_member.id,
+            "admin_owner": admin_owner.id,
+            "foreign_admin": foreign_admin.id,
+            "inactive_admin": inactive_admin.id,
+            "employee": employee.id,
+            "employee_owner": employee_owner.id,
+            "wrong_employee": wrong_employee.id,
+            "super_admin_membership": super_admin_membership.id,
+            "wrong_employee_membership": wrong_employee_membership.id,
+            "task_super_reviewer": task_super_reviewer.id,
+            "task_admin_owner_assignee": task_admin_owner_assignee.id,
+            "task_manager_wrong_role": task_manager_wrong_role.id,
+            "task_inherited_super_reviewer": task_inherited_super_reviewer.id,
+            "task_inherited_admin_assignee": task_inherited_admin_assignee.id,
+            "task_override_manager": task_override_manager.id,
+            "task_foreign_admin": task_foreign_admin.id,
+            "task_employee": task_employee.id,
+            "task_inherited_employee": task_inherited_employee.id,
+            "task_employee_owner": task_employee_owner.id,
+            "task_inactive_admin": task_inactive_admin.id,
+            "task_wrong_employee": task_wrong_employee.id,
+        }
+        await db.commit()
+
+    return {"ids": ids, "users": users, "projects": projects}
+
+
 async def _cleanup(engine, ctx: dict) -> None:
     async with async_sessionmaker(engine, expire_on_commit=False)() as db:
         projects = ctx.get("projects") or []
@@ -547,6 +732,82 @@ async def test_audit_flags_expected_discrepancies(
     _assert_no_sensitive_keys(report)
 
 
+async def test_audit_recognizes_active_managers_without_membership(
+    test_engine, apply_migrations
+) -> None:
+    """Active managers never need a membership; everyone else still does."""
+    ctx = await _seed_manager_cases(test_engine)
+    ids = ctx["ids"]
+    try:
+        report = await _readonly_report(
+            test_engine,
+            run_id="audit-manager-test",
+            generated_at=datetime.now(timezone.utc),
+        )
+    finally:
+        await _cleanup(test_engine, ctx)
+
+    gaps = report["findings"]["assignment_membership_gaps"]
+
+    # Active super administrators and administrative owners are valid effective
+    # reviewers/annotators without a membership row, whether the assignment is
+    # explicit or inherited from the batch default.
+    for key in (
+        "task_super_reviewer",
+        "task_manager_wrong_role",
+        "task_inherited_super_reviewer",
+    ):
+        assert str(ids[key]) not in _item_ids(gaps["reviewer_missing_membership"]), key
+        assert str(ids[key]) not in _item_ids(gaps["reviewer_wrong_membership_role"]), (
+            key
+        )
+    for key in (
+        "task_admin_owner_assignee",
+        "task_inherited_admin_assignee",
+        "task_override_manager",
+    ):
+        assert str(ids[key]) not in _item_ids(gaps["annotator_missing_membership"]), key
+        assert str(ids[key]) not in _item_ids(
+            gaps["annotator_wrong_membership_role"]
+        ), key
+
+    # Adversarial non-managers keep their findings: a foreign-project
+    # administrator, ordinary employees (explicit and inherited), a
+    # non-administrative owner and an ordinary wrong-role member.
+    assert str(ids["task_foreign_admin"]) in _item_ids(
+        gaps["annotator_missing_membership"]
+    )
+    assert str(ids["task_employee"]) in _item_ids(gaps["reviewer_missing_membership"])
+    assert str(ids["task_inherited_employee"]) in _item_ids(
+        gaps["annotator_missing_membership"]
+    )
+    assert str(ids["task_employee_owner"]) in _item_ids(
+        gaps["annotator_missing_membership"]
+    )
+    assert str(ids["task_wrong_employee"]) in _item_ids(
+        gaps["annotator_wrong_membership_role"]
+    )
+
+    # An inactive administrator is never privileged: the missing-membership
+    # finding and the inactive-account check both stay.
+    assert str(ids["task_inactive_admin"]) in _item_ids(
+        gaps["annotator_missing_membership"]
+    )
+    assert str(ids["task_inactive_admin"]) in _item_ids(
+        gaps["assignment_to_inactive_account"]
+    )
+    assert str(ids["inactive_admin"]) in _item_ids(
+        gaps["inactive_accounts_with_unfinished_work"]
+    )
+
+    # Suppressing the assignment gap does not hide the administrative
+    # membership from the role reconciliation.
+    roles = report["findings"]["role_discrepancies"]
+    assert str(ids["super_admin_member"]) in _item_user_ids(
+        roles["administrator_memberships"]
+    )
+
+
 def test_audit_runs_before_0173_migration(test_db_url, apply_migrations) -> None:
     """Synchronous migration test: Alembic must run outside the event loop."""
     migration = _load_migration_0173()
@@ -576,6 +837,10 @@ def test_audit_runs_before_0173_migration(test_db_url, apply_migrations) -> None
                     )
                     task = await create_task(db, project_id=project.id, status="review")
                     task.review_round_id = uuid.uuid4()
+                    # An active administrative owner manages the project without
+                    # a membership row on every schema revision.
+                    task.assignee_id = owner.id
+                    state["manager_task"] = task.id
                     future = datetime.now(timezone.utc) + timedelta(days=3)
                     legacy_invitation = UserInvitation(
                         email=f"{_EMAIL_SENTINEL}-pre-inv-{uuid.uuid4()}@test.local",
@@ -668,6 +933,16 @@ def test_audit_runs_before_0173_migration(test_db_url, apply_migrations) -> None
             "total"
         ]
         == 0
+    )
+    # Manager authority does not depend on the 0173 preparation columns: the
+    # active administrative owner stays a valid assignee pre-migration even
+    # though its only member row is a non-annotator role.
+    gaps = report["findings"]["assignment_membership_gaps"]
+    assert str(state["manager_task"]) not in _item_ids(
+        gaps["annotator_missing_membership"]
+    )
+    assert str(state["manager_task"]) not in _item_ids(
+        gaps["annotator_wrong_membership_role"]
     )
     pending = {
         str(item["id"]): item
