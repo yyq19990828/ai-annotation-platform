@@ -1041,3 +1041,79 @@ async def test_preview_and_apply_agree_on_target_platform_incompatibility(
             await session.close()
     finally:
         await _drop(maker, fixture, extra_user_ids=(viewer_id,) if viewer_id else ())
+
+
+async def test_materialized_history_is_prelocked_with_nowait(test_engine):
+    """A NULL-inheriting terminal row is a locked write target, not free history."""
+
+    maker = _maker(test_engine)
+    fixture = await _seed(maker)
+    holder = maker()
+    try:
+        async with maker() as seeding:
+            null_history = await create_task(
+                seeding, project_id=fixture["project"], status="completed"
+            )
+            null_history.batch_id = fixture["batch"]
+            # assignee_id stays NULL: the effective assignee is the batch default.
+            await seeding.commit()
+            null_history_id = null_history.id
+
+        await holder.scalar(
+            select(Task).where(Task.id == null_history_id).with_for_update()
+        )
+        session = maker()
+        try:
+            preview = await _preview(
+                session,
+                fixture,
+                target_role="reviewer",
+                replacement_annotator_id=fixture["annotator_receiver"],
+            )
+            assert (
+                str(null_history_id)
+                in preview["resource_snapshot"]["materialization_annotation_task_ids"]
+            )
+            with pytest.raises(Exception) as caught:
+                await _change(
+                    session,
+                    fixture,
+                    target_role="reviewer",
+                    expected_version=1,
+                    preview_token=preview["preview_token"],
+                    replacement_annotator_id=fixture["annotator_receiver"],
+                )
+            assert getattr(caught.value, "status_code", None) == 409
+            assert caught.value.detail["reason"] == "resource_busy"
+            assert not session.in_transaction()
+        finally:
+            await session.close()
+        await holder.rollback()
+
+        session = maker()
+        try:
+            preview = await _preview(
+                session,
+                fixture,
+                target_role="reviewer",
+                replacement_annotator_id=fixture["annotator_receiver"],
+            )
+            changed = await _change(
+                session,
+                fixture,
+                target_role="reviewer",
+                expected_version=1,
+                preview_token=preview["preview_token"],
+                replacement_annotator_id=fixture["annotator_receiver"],
+            )
+            assert changed.version == 2
+        finally:
+            await session.close()
+
+        async with maker() as check:
+            materialized = await check.get(Task, null_history_id)
+            assert materialized.assignee_id == fixture["member_user"]
+            assert materialized.assignee_is_override is False
+    finally:
+        await holder.close()
+        await _drop(maker, fixture)

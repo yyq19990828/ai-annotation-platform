@@ -470,6 +470,51 @@ async def _active_batch_ids(
     return [batch_id for (batch_id,) in rows.all()]
 
 
+async def _materialization_task_ids(
+    db: AsyncSession,
+    *,
+    project_id: uuid.UUID,
+    batch_annotator_ids: Iterable[uuid.UUID],
+    batch_reviewer_ids: Iterable[uuid.UUID],
+) -> tuple[list[uuid.UUID], list[uuid.UUID]]:
+    """Exact historical rows that a batch-default change would stamp.
+
+    These are the only past-phase tasks the handoff writes (NULL-inheriting
+    rows in an active batch).  They must be prelocked with the rest of the
+    affected set; unrelated completed non-NULL history stays untouched.
+    """
+
+    annotation_batches = sorted({uuid.UUID(str(bid)) for bid in batch_annotator_ids})
+    review_batches = sorted({uuid.UUID(str(bid)) for bid in batch_reviewer_ids})
+    annotation_targets: list[uuid.UUID] = []
+    review_targets: list[uuid.UUID] = []
+    if annotation_batches:
+        rows = await db.execute(
+            select(Task.id)
+            .where(
+                Task.project_id == project_id,
+                Task.batch_id.in_(annotation_batches),
+                Task.assignee_id.is_(None),
+                Task.status.not_in(UNFINISHED_ANNOTATION_STATUSES),
+            )
+            .order_by(Task.id)
+        )
+        annotation_targets = [task_id for (task_id,) in rows.all()]
+    if review_batches:
+        rows = await db.execute(
+            select(Task.id)
+            .where(
+                Task.project_id == project_id,
+                Task.batch_id.in_(review_batches),
+                Task.reviewer_id.is_(None),
+                Task.status == TaskStatus.COMPLETED.value,
+            )
+            .order_by(Task.id)
+        )
+        review_targets = [task_id for (task_id,) in rows.all()]
+    return annotation_targets, review_targets
+
+
 async def _eligible_reviewer_ids(
     db: AsyncSession, *, project_id: uuid.UUID, exclude_user_ids: Iterable[uuid.UUID]
 ) -> list[str]:
@@ -630,11 +675,22 @@ async def build_member_resource_snapshot(
         project_id=project_row.id,
         exclude_user_ids=[user_id, replacement_reviewer_id],
     )
+    (
+        materialization_annotation_ids,
+        materialization_review_ids,
+    ) = await _materialization_task_ids(
+        db,
+        project_id=project_row.id,
+        batch_annotator_ids=batch_annotator_ids,
+        batch_reviewer_ids=batch_reviewer_ids,
+    )
     affected_task_ids = (
         set(annotation_task_ids)
         | set(review_task_ids)
         | set(lock_task_ids)
         | set(review_claim_task_ids)
+        | set(materialization_annotation_ids)
+        | set(materialization_review_ids)
     )
     tasks = await _load_tasks_with_batch(db, task_ids=affected_task_ids)
     member_user = await db.get(User, user_id, populate_existing=True)
@@ -665,6 +721,12 @@ async def build_member_resource_snapshot(
         ),
         "lock_task_ids": sorted(str(tid) for tid in lock_task_ids),
         "review_claim_task_ids": sorted(str(tid) for tid in review_claim_task_ids),
+        "materialization_annotation_task_ids": sorted(
+            str(tid) for tid in materialization_annotation_ids
+        ),
+        "materialization_review_task_ids": sorted(
+            str(tid) for tid in materialization_review_ids
+        ),
         "batch_annotator_ids": sorted(str(bid) for bid in batch_annotator_ids),
         "batch_reviewer_ids": sorted(str(bid) for bid in batch_reviewer_ids),
         "eligible_reviewer_ids": eligible_reviewer_ids,
@@ -1383,9 +1445,28 @@ async def change_role(
         project_id=locked_project.id,
         batch_ids=[*pre_batch_annotator_ids, *pre_batch_reviewer_ids],
     )
+    (
+        materialization_annotation_ids,
+        materialization_review_ids,
+    ) = await _materialization_task_ids(
+        db,
+        project_id=locked_project.id,
+        batch_annotator_ids=pre_batch_annotator_ids,
+        batch_reviewer_ids=pre_batch_reviewer_ids,
+    )
     affected_task_ids = [*pre_annotation_ids, *pre_review_ids, *pre_lock_ids]
+    # Prelock the exact historical rows a batch-default change would stamp for
+    # the responsibility being removed; unrelated completed non-NULL history
+    # and the retained responsibility's history are intentionally excluded.
+    materialization_ids: list[uuid.UUID] = []
+    if target_role != ProjectRole.ANNOTATOR.value:
+        materialization_ids.extend(materialization_annotation_ids)
+    if target_role != ProjectRole.REVIEWER.value:
+        materialization_ids.extend(materialization_review_ids)
     await _lock_task_ids_nowait(
-        db, project_id=locked_project.id, task_ids=affected_task_ids
+        db,
+        project_id=locked_project.id,
+        task_ids=[*affected_task_ids, *materialization_ids],
     )
     await _acquire_task_advisory_nowait(db, task_ids=affected_task_ids)
     await _lock_live_task_locks_nowait(
