@@ -51,6 +51,7 @@ from app.services.management import (
     platform_role_change_blockers,
     role_impact_preview,
     user_scope_clause,
+    validate_platform_role_filter,
     user_stats as management_user_stats,
 )
 from app.services.audit import (
@@ -72,12 +73,8 @@ router = APIRouter()
 _MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
 
 # Accounts a project administrator manages.  Post-cutover staff are employees;
-# the legacy staff values stay so unconverted rows remain manageable.
-_PA_ASSIGNABLE_ROLES = {
-    UserRole.EMPLOYEE.value,
-    UserRole.REVIEWER.value,
-    UserRole.ANNOTATOR.value,
-}
+# legacy global staff values are history only and are never eligible here.
+_PA_ASSIGNABLE_ROLES = {UserRole.EMPLOYEE.value}
 
 
 async def _count_active_super_admins(db: AsyncSession) -> int:
@@ -279,11 +276,14 @@ async def list_users(
     """用户列表。
     - super_admin：默认全量；可选 `project_id` 过滤到该项目成员。
     - project_admin：
-      * `role=annotator|reviewer`：放开限制返回全量候选（用于指派 modal 选人）。
+      * `role=employee`：放开限制返回全量候选（用于指派 modal 选人）。
       * 其他场景：限定到 `Project.owner_id == actor.id` 的项目成员（actor 自身始终可见）。
     """
     from app.db.models.project import Project
     from app.db.models.project_member import ProjectMember
+
+    # Legacy/unknown role filters are rejected, never silently empty.
+    role = validate_platform_role_filter(role)
 
     q = select(User)
     if status_filter == "active":
@@ -295,7 +295,7 @@ async def list_users(
 
     if actor.role == UserRole.PROJECT_ADMIN.value:
         if role in _PA_ASSIGNABLE_ROLES and status_filter == "active":
-            # 指派候选人场景：必须看到全量 annotator / reviewer，否则永远没有可指派对象
+            # 指派候选人场景：必须看到全量员工，否则永远没有可指派对象
             pass
         else:
             members_subq = (

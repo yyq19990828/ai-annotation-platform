@@ -46,10 +46,9 @@ from app.core.token_blacklist import increment_user_generation
 ACTIVE_HANDOFF_STATUSES = ("pending", "in_progress", "review", "rejected")
 REACTIVATABLE_KINDS = {"suspended", "emergency_suspended"}
 HISTORICAL_KINDS = {"deleted", "historical_unknown"}
-#: Platform roles a project administrator may offboard/handoff.  ``employee``
-#: is the post-cutover staff identity; the legacy staff values remain for
-#: unconverted rows.
-MANAGED_PROJECT_ROLES = ("employee", "annotator", "reviewer")
+#: Platform roles a project administrator may offboard/handoff.  Only the
+#: post-cutover staff identity; legacy globals are history, not live targets.
+MANAGED_PROJECT_ROLES = ("employee",)
 
 
 def lifecycle_user_out(user: User) -> UserOut:

@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from sqlalchemy import and_, func, or_, select, true, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.enums import TaskStatus, UserRole
+from app.db.enums import PLATFORM_ROLES, TaskStatus, UserRole
 from app.db.models.group import Group
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
@@ -43,11 +43,9 @@ INVITATION_STATUS = Literal["pending", "accepted", "expired", "revoked", "all"]
 # annotator/reviewer identity becomes project-driven; matches the widened
 # member-assignment candidate list. Super admins stay read-only-visible but
 # never manageable, and deactivated accounts stay out of scope.
-_PA_OPERABLE_ROLES = (
-    UserRole.EMPLOYEE.value,
-    UserRole.ANNOTATOR.value,
-    UserRole.REVIEWER.value,
-)
+#: Live platform roles a project administrator may manage/assign.  Legacy
+#: global staff values are history only and never an eligible receiver.
+_PA_OPERABLE_ROLES = (UserRole.EMPLOYEE.value,)
 
 
 def _managed_user_ids(actor: User):
@@ -207,6 +205,20 @@ def user_visibility_clause(
     )
 
 
+def validate_platform_role_filter(role: str | None) -> str | None:
+    """Reject legacy/unknown staff-role filters instead of returning nothing.
+
+    ``role=annotator``/``reviewer`` was the old global staff query; after the
+    employee cutover it must be a validation error, never a silently empty set.
+    """
+
+    if role is None:
+        return None
+    if role not in PLATFORM_ROLES:
+        raise HTTPException(status_code=400, detail=f"非法平台角色: {role}")
+    return role
+
+
 def build_user_query(
     actor: User,
     *,
@@ -216,6 +228,7 @@ def build_user_query(
     status_filter: USER_STATUS = "active",
     search: str | None = None,
 ):
+    role = validate_platform_role_filter(role)
     query = select(User).where(user_visibility_clause(actor, project_id=project_id))
     if status_filter == "active":
         query = query.where(User.is_active.is_(True))

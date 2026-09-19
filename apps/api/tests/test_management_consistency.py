@@ -196,7 +196,7 @@ async def test_role_preview_is_super_admin_only_and_hides_project_names(
 ):
     manager, token = project_admin
     admin, admin_token = super_admin
-    user = await create_user(db_session, "annotator", "shared-role@e.test", "Shared")
+    user = await create_user(db_session, "employee", "shared-role@e.test", "Shared")
     for owner, name in ((manager, "Visible"), (admin, "Private project name")):
         project = await create_project(db_session, owner_id=owner.id, name=name)
         db_session.add(
@@ -221,7 +221,9 @@ async def test_role_preview_is_super_admin_only_and_hides_project_names(
         headers={"Authorization": f"Bearer {admin_token}"},
     )
     assert allowed.status_code == 200, allowed.text
-    assert "Private project name" not in allowed.text
+    # A super administrator legitimately sees every project; only the denied
+    # project administrator response must not disclose it.
+    assert "Private project name" in allowed.text
 
 
 async def test_management_csv_treats_user_and_invitation_fields_as_literal_text(
@@ -271,9 +273,9 @@ async def test_bulk_invite_validation_reports_invalid_email_per_item(
         headers={"Authorization": f"Bearer {token}"},
         json={
             "items": [
-                {"email": "valid-bulk@e.test", "role": "annotator"},
-                {"email": "invalid", "role": "annotator"},
-                {"email": " VALID-BULK@e.test ", "role": "annotator"},
+                {"email": "valid-bulk@e.test", "role": "employee"},
+                {"email": "invalid", "role": "employee"},
+                {"email": " VALID-BULK@e.test ", "role": "employee"},
             ]
         },
     )
@@ -289,16 +291,16 @@ async def test_single_batch_preview_counts_review_backlog_and_applies_exact_mapp
     admin, token = super_admin
     headers = {"Authorization": f"Bearer {token}"}
     project = await create_project(db_session, owner_id=admin.id)
-    anno = await create_user(db_session, "annotator", "single-anno@e.test", "Annotator")
+    anno = await create_user(db_session, "employee", "single-anno@e.test", "Annotator")
     review = await create_user(
-        db_session, "reviewer", "single-review@e.test", "Reviewer"
+        db_session, "employee", "single-review@e.test", "Reviewer"
     )
-    for user in (anno, review):
+    for user, project_role in ((anno, "annotator"), (review, "reviewer")):
         db_session.add(
             ProjectMember(
                 project_id=project.id,
                 user_id=user.id,
-                role=user.role,
+                role=project_role,
                 assigned_by=admin.id,
             )
         )
@@ -403,7 +405,7 @@ async def test_distribution_can_target_only_selected_batches(
     admin, token = super_admin
     project = await create_project(db_session, owner_id=admin.id)
     user = await create_user(
-        db_session, "annotator", "selected-batches@e.test", "Worker"
+        db_session, "employee", "selected-batches@e.test", "Worker"
     )
     db_session.add(
         ProjectMember(

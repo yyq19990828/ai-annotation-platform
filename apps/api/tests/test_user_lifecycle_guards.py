@@ -30,7 +30,9 @@ def headers(user):
 
 
 async def seed_handoff(db, actor, role="annotator", project_count=2):
-    account_role = "project_admin" if role == "owner" else role
+    # Post-cutover staff are platform employees; the project role is carried by
+    # the membership only.  Owner retains the administrative identity.
+    account_role = "project_admin" if role == "owner" else "employee"
     target = await create_user(
         db, account_role, f"leaving-{uuid.uuid4()}@test.local", "Leaving"
     )

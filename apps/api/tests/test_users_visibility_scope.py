@@ -651,6 +651,21 @@ async def test_pa_writes_blocked_on_super_admin(
     assert target.email not in preview.text and target.name not in preview.text
 
 
+async def test_legacy_role_filters_are_rejected(
+    httpx_client: httpx.AsyncClient, super_admin
+):
+    """role=annotator/reviewer must be a validation error, not an empty list."""
+
+    _, token = super_admin
+    headers = {"Authorization": f"Bearer {token}"}
+    for url in ("/api/v1/users", "/api/v1/users/query", "/api/v1/users/stats"):
+        response = await httpx_client.get(
+            url, params={"role": "reviewer"}, headers=headers
+        )
+        assert response.status_code == 400, (url, response.text)
+        assert "非法平台角色" in response.text
+
+
 async def test_super_admin_visibility_unchanged(
     httpx_client: httpx.AsyncClient, project_admin, super_admin, db_session
 ):
