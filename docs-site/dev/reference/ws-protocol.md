@@ -27,8 +27,8 @@ last_reviewed: 2026-07-29
 | 频道                    | URL                                           | 鉴权                                                                                       | Redis 频道                                               | 用途                                                                                                                                       |
 | ----------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------ | -------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | 用户通知                | `/ws/notifications?token=<jwt>`               | JWT (query param)                                                                          | `notify:{user_id}` (`notification.py:27`)                | 任务分配、AI 进度、导出完成、@提及 等                                                                                                      |
-| 预标注进度（单项目）    | `/ws/projects/{project_id}/preannotate`       | 项目访问鉴权（握手参数见端点合同）                                                         | `project:{project_id}:preannotate` (`ws.py`)             | 工作台单次自动预标注的逐 batch progress                                                                                                    |
-| Batch 状态广播          | `/ws/batches/project/{project_id}`            | 项目访问鉴权（握手参数见端点合同）                                                         | `project:{project_id}:batch` (`ws.py:112`)               | 项目级 batch 状态翻转事件（B-15），让标注员/admin 多端实时同步                                                                             |
+| 预标注进度（单项目）    | `/ws/projects/{project_id}/preannotate`       | JWT/`ak_`（query）+ 项目访问                                                               | `project:{project_id}:preannotate` (`ws.py`)             | 工作台单次自动预标注的逐 batch progress                                                                                                    |
+| Batch 状态广播          | `/ws/batches/project/{project_id}`            | JWT/`ak_`（query）+ 项目访问                                                               | `project:{project_id}:batch` (`ws.py:112`)               | 项目级 batch 状态翻转事件（B-15），让标注员/admin 多端实时同步                                                                             |
 | Prediction Jobs（全局） | `/ws/prediction-jobs?token=<jwt>`             | JWT (query, `super_admin` / `project_admin`)                                               | `global:prediction-jobs` (`ws.py:168`)                   | Topbar 徽章 + 切项目 toast 用，仅在 job 开始/结束/失败 3 时点带 `job_meta` 推一条                                                          |
 | 视频 tracker job        | `/ws/video-tracker-jobs/{job_id}?token=<jwt>` | JWT (query)，并按 task 可见性校验                                                          | `video-tracker-job:{job_id}` (`video_tracker_runner.py`) | 单条 tracker job 的运行、候选暂存与人工决策事件                                                                                            |
 | ML Backend Stats        | `/ws/ml-backend-stats?token=<jwt 或 ak_key>`  | JWT **或 `ak_` api_key**（query, `super_admin` / `project_admin`；SDK / TUI 可用 api_key） | `ml-backend-stats:global` (`ws.py:246`)                  | Celery beat 每 1s 拉取 backend `/health` 快照后 publish；通过 `ml-backend-stats:subscribers` INCR/DECR 计数门控 — 0 订阅者时 beat 跳过实拉 |
@@ -50,6 +50,8 @@ ws://api.example.com/ws/notifications?token=eyJhbGciOi...
 服务端 `decode_access_token` 校验 sub 字段（`ws.py:80-88`）。失败立刻关闭 frame，code = `1008 Policy Violation`。
 
 > 为什么走 query 而不是 `Authorization` header：浏览器原生 `WebSocket` API 不允许设置自定义 header。如果前端用 `subprotocols` 走 token 也可以，但当前实现选 query 一致简单。query 参数可能进入反向代理或应用 access log，部署时必须对 `token` 脱敏。
+
+> 项目作用域频道（`/ws/projects/{id}/preannotate`、`/ws/batches/project/{id}`）同样以 query `token` 传 JWT 或 `ak_` API key，但额外要求当前账号在 `project_id` 上有实际访问，并在每个受保护 payload 前重新校验；见 §3.1 / §4.1。
 
 ### 2.2 消息格式
 
@@ -124,9 +126,13 @@ WS 不保证 at-least-once，当前也没有 transactional outbox。`Notificatio
 
 ### 3.1 鉴权
 
-项目作用域频道**必须**鉴权：服务端在订阅时按当前账号在该 `project_id` 上的有效访问（`super_admin` / 负责人 / 有效成员）解析权限，并在投递时再次解析当前权限；成员被撤销后不再向其投递该项目的受限事件。不要把可猜测的 project UUID 当作访问控制。
+握手时必须以 query 参数携带 `token`，值可以是 JWT 或 `ak_` 开头的 API key：
 
-> 精确的握手参数（query 形式与名称）由后端 socket 端点合同给出；本页不预先约定，也不要按“无需鉴权”实现客户端。
+```
+ws://api.example.com/ws/projects/{project_id}/preannotate?token=...
+```
+
+服务端要求当前账号启用并在该 `project_id` 上有实际访问（`super_admin` / 负责人 / 有效成员）；凭据无效 / 已撤销、无项目访问或 project UUID 不匹配时在 accept 前 close `1008 Policy Violation`。**没有 5 秒鉴权宽限**：每个受保护 payload 之前都重新校验当前权限，成员被撤销后立即停止该项目的受限投递。不要把可猜测的 project UUID 当作访问控制。
 
 ### 3.2 消息格式
 
@@ -153,7 +159,7 @@ WS 不保证 at-least-once，当前也没有 transactional outbox。`Notificatio
 
 ### 4.1 鉴权
 
-与 `/ws/projects/{id}/preannotate` 一致：按当前账号在该项目的有效访问鉴权，并在投递时解析当前权限；撤销成员后停止其该项目的受限投递，不影响该账号其他已授权频道。精确握手参数见端点合同，不要把可猜测的 project UUID 当作访问控制。
+与 `/ws/projects/{id}/preannotate` 一致：query `token` 传 JWT 或 `ak_` API key，并要求当前账号在该 `project_id` 上有实际访问；凭据无效 / 已撤销或无项目访问时在 accept 前 close `1008`。每个受保护 payload 前都重新校验当前权限，撤销成员后立即停止其该项目的受限投递，不影响该账号其他已授权频道；**没有 5 秒宽限**。不要把可猜测的 project UUID 当作访问控制。
 
 ### 4.2 消息格式
 
