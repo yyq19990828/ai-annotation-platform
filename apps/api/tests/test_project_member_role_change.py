@@ -519,3 +519,71 @@ async def test_last_reviewer_coverage_includes_unassigned_review_work(
     )
     # The alternate membership was removed, so it is no longer a valid receiver.
     assert "invalid_replacement_reviewer" in covered["blockers"]
+
+
+async def test_removal_ignores_target_role_pairing_and_allows_idle_admin(
+    db_session: AsyncSession,
+):
+    """Removal never grants a role, so an idle administrative member is removable."""
+
+    owner = await create_user(
+        db_session, "project_admin", f"adm-owner-{uuid.uuid4()}@test.local", "Owner"
+    )
+    project = await create_project(db_session, owner_id=owner.id, name="Admin Remove")
+    admin_user = await create_user(
+        db_session, "project_admin", f"adm-mem-{uuid.uuid4()}@test.local", "AdminMem"
+    )
+    member = await _add_member(
+        db_session,
+        project_id=project.id,
+        user=admin_user,
+        role="viewer",
+        assigned_by=owner.id,
+    )
+
+    preview = await preview_role_change(
+        db_session,
+        project=project,
+        actor=owner,
+        member_id=member.id,
+        target_role="viewer",
+        replacement_annotator_id=None,
+        replacement_reviewer_id=None,
+    )
+    assert "target_role_incompatible" in preview["blockers"]
+
+    # Removal does not change the platform role, so the idle admin is removable.
+    await remove_member(db_session, project=project, actor=owner, member_id=member.id)
+    remaining = await db_session.scalar(
+        select(ProjectMember).where(ProjectMember.id == member.id)
+    )
+    assert remaining is None
+
+
+async def test_removal_allows_idle_disabled_member(db_session: AsyncSession):
+    """A disabled idle membership must not become impossible to remove."""
+
+    owner = await create_user(
+        db_session, "project_admin", f"dis-owner-{uuid.uuid4()}@test.local", "Owner"
+    )
+    project = await create_project(
+        db_session, owner_id=owner.id, name="Disabled Remove"
+    )
+    disabled_user = await create_user(
+        db_session, "employee", f"dis-mem-{uuid.uuid4()}@test.local", "Disabled"
+    )
+    member = await _add_member(
+        db_session,
+        project_id=project.id,
+        user=disabled_user,
+        role="annotator",
+        assigned_by=owner.id,
+    )
+    disabled_user.is_active = False
+    await db_session.flush()
+
+    await remove_member(db_session, project=project, actor=owner, member_id=member.id)
+    remaining = await db_session.scalar(
+        select(ProjectMember).where(ProjectMember.id == member.id)
+    )
+    assert remaining is None

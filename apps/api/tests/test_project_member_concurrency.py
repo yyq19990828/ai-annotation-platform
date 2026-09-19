@@ -13,9 +13,10 @@ import uuid
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
+from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
@@ -173,6 +174,10 @@ async def _drop(
     ]
     project_ids = [pid for pid in (fixture["project"], fixture["other_project"]) if pid]
     async with maker() as cleanup:
+        # Audit rows are immutable; allow the exact fixture rows to be removed
+        # before their actors so the users FK cannot trip the guard on SET NULL.
+        await cleanup.execute(text("SET LOCAL \"app.allow_audit_update\" = 'true'"))
+        await cleanup.execute(delete(AuditLog).where(AuditLog.actor_id.in_(user_ids)))
         await cleanup.execute(delete(TaskLock).where(TaskLock.user_id.in_(user_ids)))
         await cleanup.execute(delete(Task).where(Task.project_id.in_(project_ids)))
         await cleanup.execute(
@@ -416,17 +421,24 @@ async def test_ownership_change_after_preview_conflicts(test_engine):
     maker = _maker(test_engine)
     fixture = await _seed(maker, with_annotation_work=False)
     preview_session = maker()
+    extra_user_ids: tuple[uuid.UUID, ...] = ()
     try:
         preview = await _preview(preview_session, fixture, target_role="reviewer")
-        # A different legitimate manager takes ownership on another connection.
+        # A different legitimate manager (platform project_admin) takes ownership
+        # on another connection.  The member's own platform role is untouched so
+        # only the project-owner change can invalidate the snapshot.
         async with maker() as seeding:
-            project = await seeding.get(Project, fixture["project"])
-            project.owner_id = fixture["member_user"]
+            new_owner = await create_user(
+                seeding,
+                "project_admin",
+                f"new-owner-{uuid.uuid4().hex[:8]}@test.local",
+                "NewOwner",
+            )
             await seeding.flush()
-            # Owner must be a manager platform role to remain a valid manager.
-            member_user = await seeding.get(User, fixture["member_user"])
-            member_user.role = "project_admin"
+            project = await seeding.get(Project, fixture["project"])
+            project.owner_id = new_owner.id
             await seeding.commit()
+            extra_user_ids = (new_owner.id,)
 
         session = maker()
         try:
@@ -444,7 +456,7 @@ async def test_ownership_change_after_preview_conflicts(test_engine):
             await session.close()
     finally:
         await preview_session.close()
-        await _drop(maker, fixture)
+        await _drop(maker, fixture, extra_user_ids=extra_user_ids)
 
 
 async def test_receiver_role_change_after_preview_conflicts(test_engine):

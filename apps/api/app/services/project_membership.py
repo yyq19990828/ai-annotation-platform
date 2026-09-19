@@ -924,7 +924,6 @@ async def evaluate_role_change(
     if annotation_removed and has_annotation_work:
         if replacement_annotator_id is None:
             blockers.append(_blocker("unfinished_annotation_work"))
-            annotation_handoff_ready = False
         elif annotation_error is not None:
             annotation_handoff_ready = False
         elif annotation_receiver is not None:
@@ -936,12 +935,12 @@ async def evaluate_role_change(
             )
             if conflict is not None:
                 blockers.append(conflict)
-                annotation_handoff_ready = False
+            else:
+                annotation_handoff_ready = True
 
     if review_removed and has_review_work:
         if replacement_reviewer_id is None:
             blockers.append(_blocker("unfinished_review_work"))
-            review_handoff_ready = False
         elif reviewer_error is not None:
             review_handoff_ready = False
         elif reviewer_receiver is not None:
@@ -953,7 +952,8 @@ async def evaluate_role_change(
             )
             if conflict is not None:
                 blockers.append(conflict)
-                review_handoff_ready = False
+            else:
+                review_handoff_ready = True
 
     # Active locks are releasable, but only when the responsibility that owns
     # the lock has a valid handoff (or is retained).  An uncovered lock blocks.
@@ -998,6 +998,12 @@ async def evaluate_role_change(
 
 def _handoff_blockers(blockers: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [entry for entry in blockers if entry["code"] != "same_role"]
+
+
+#: Blockers ignored by removal: removal never grants a new role, so a role
+#: pairing that would be incompatible on write must not trap an idle member
+#: (including an administrative or disabled account) in the project forever.
+_REMOVAL_IGNORED_BLOCKER_CODES = frozenset({"same_role", "target_role_incompatible"})
 
 
 # ---------------------------------------------------------------------------
@@ -1572,7 +1578,11 @@ async def remove_member(
         replacement_reviewer_id=None,
         fresh_project=locked_project,
     )
-    blockers = _handoff_blockers(blockers)
+    blockers = [
+        entry
+        for entry in blockers
+        if entry["code"] not in _REMOVAL_IGNORED_BLOCKER_CODES
+    ]
     if blockers:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
