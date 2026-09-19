@@ -18,13 +18,12 @@ from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.tasks._shared import _assert_task_visible
-from app.db.enums import UserRole
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_event import TaskEvent
 from app.db.models.user import User
 from app.schemas.task_event import TaskEventIn
+from app.services.project_access import ProjectCapability, resolve_project_access
 
 MAX_EVENT_DURATION_MS = 4 * 60 * 60 * 1000
 MAX_ANNOTATION_COUNT = 1_000_000
@@ -32,16 +31,6 @@ MAX_TIMESTAMP_SKEW_MS = 1
 FINAL_CLOSE_GRACE_MS = 5 * 60 * 1000
 SESSION_COLLECTOR_VERSION = "session-v2"
 
-_ANNOTATE_ROLES = {
-    UserRole.SUPER_ADMIN.value,
-    UserRole.PROJECT_ADMIN.value,
-    UserRole.ANNOTATOR.value,
-}
-_REVIEW_ROLES = {
-    UserRole.SUPER_ADMIN.value,
-    UserRole.PROJECT_ADMIN.value,
-    UserRole.REVIEWER.value,
-}
 _RETRYABLE_EVENT_STATUS_CODES = {401, 408, 425, 429}
 
 
@@ -173,25 +162,26 @@ async def assert_task_event_access(
     still fails the normal policy.
     """
 
-    allowed_roles = _REVIEW_ROLES if kind == "review" else _ANNOTATE_ROLES
-    if user.role not in allowed_roles:
-        raise _reject("work_type_not_allowed", status_code=403)
-
     project = await db.get(Project, task.project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    if user.role != UserRole.SUPER_ADMIN.value and project.owner_id != user.id:
-        member = await db.scalar(
-            select(ProjectMember.id).where(
-                ProjectMember.project_id == project.id,
-                ProjectMember.user_id == user.id,
-            )
-        )
-        if member is None:
-            raise HTTPException(status_code=404, detail="Task not found")
+    # Current account + actual-project membership authority, locked for the
+    # persisted interval write.  Legacy global annotator/reviewer roles are not
+    # an authority source; an anomalous non-administrative owner is rejected
+    # because resolve_project_access fails closed without a valid membership.
+    access = await resolve_project_access(
+        db, user=user, project=project, lock_membership=True
+    )
+    required_capability = (
+        ProjectCapability.REVIEW_WRITE.value
+        if kind == "review"
+        else ProjectCapability.ANNOTATION_WRITE.value
+    )
+    if not access.is_manager and not access.has(required_capability):
+        raise _reject("work_type_not_allowed", status_code=403)
 
     try:
-        await _assert_task_visible(db, task, user)
+        await _assert_task_visible(db, task, user, access=access)
     except HTTPException as exc:
         can_close_submitted = (
             kind == "annotate"
