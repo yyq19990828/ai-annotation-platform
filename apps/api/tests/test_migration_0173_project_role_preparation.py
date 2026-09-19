@@ -1,17 +1,18 @@
-"""Verify the 0173 additive preparation migration on a disposable database.
+"""Verify the 0173 additive preparation on a disposable database.
 
-The migration must be additive and default-safe: legacy binaries keep reading
-and writing the tables, existing rows survive a downgrade/upgrade round trip,
-and historical unknowns stay NULL.  No role values are converted here.
+The preparation stays additive and default-safe: legacy binaries keep reading
+and writing the tables and historical unknowns stay NULL.  Revision 0174 later
+converts the global staff roles, so this test asserts the preparation contract
+at head and that the non-reversible 0174 downgrade is refused.
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
+import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import select, text
@@ -33,7 +34,9 @@ _PREPARATION_COLUMNS = {
 }
 
 
-def test_0173_is_additive_default_safe_and_round_trips(test_db_url, apply_migrations):
+def test_0173_preparation_is_additive_and_0174_downgrade_refuses(
+    test_db_url, apply_migrations
+):
     config = Config("alembic.ini")
     config.set_main_option("sqlalchemy.url", test_db_url)
     saved: dict = {}
@@ -85,7 +88,7 @@ def test_0173_is_additive_default_safe_and_round_trips(test_db_url, apply_migrat
                     await db.flush()
                     saved["invitation"] = invitation.id
                     await db.commit()
-                elif action == "assert_downgraded":
+                elif action == "verify":
                     for table, columns in _PREPARATION_COLUMNS.items():
                         rows = await db.execute(
                             text(
@@ -94,15 +97,10 @@ def test_0173_is_additive_default_safe_and_round_trips(test_db_url, apply_migrat
                             ),
                             {"table": table, "columns": list(columns)},
                         )
-                        assert rows.scalars().all() == [], (
-                            f"{table} still has preparation columns after downgrade"
+                        assert set(rows.scalars().all()) == set(columns), (
+                            f"{table} missing preparation columns"
                         )
-                    count = await db.scalar(
-                        text("SELECT count(*) FROM project_members WHERE id = :id"),
-                        {"id": saved["member"]},
-                    )
-                    assert count == 1
-                elif action == "verify":
+
                     member = await db.scalar(
                         select(ProjectMember).where(ProjectMember.id == saved["member"])
                     )
@@ -113,8 +111,7 @@ def test_0173_is_additive_default_safe_and_round_trips(test_db_url, apply_migrat
                     task = await db.scalar(select(Task).where(Task.id == saved["task"]))
                     assert task is not None
                     assert task.review_round_id is not None
-                    # Downgrade removed the evidence columns; re-upgrade must
-                    # leave these historical rows unknown, not known-empty.
+                    # Historical rows stay unknown, not known-empty.
                     assert task.annotation_contributor_ids is None
                     assert task.review_contributor_ids is None
                     assert task.review_submitter_id is None
@@ -134,9 +131,7 @@ def test_0173_is_additive_default_safe_and_round_trips(test_db_url, apply_migrat
                     )
                     assert invitation is not None
                     assert invitation.project_id == saved["project"]
-                    # Re-upgrading to head also runs the later 0174 conversion,
-                    # which backfills the pending project invitation's project
-                    # role and normalises its platform role to employee.
+                    # 0174 backfills the pending project invitation.
                     assert invitation.project_role == "annotator"
                     assert invitation.role == "employee"
 
@@ -178,6 +173,11 @@ def test_0173_is_additive_default_safe_and_round_trips(test_db_url, apply_migrat
                     assert constraint == 1
                     await db.commit()
                 else:
+                    if "legacy_member" in saved:
+                        await db.execute(
+                            text("DELETE FROM project_members WHERE id = :id"),
+                            {"id": saved["legacy_member"]},
+                        )
                     if "task" in saved:
                         await db.execute(
                             text("DELETE FROM tasks WHERE id = :id"),
@@ -209,22 +209,14 @@ def test_0173_is_additive_default_safe_and_round_trips(test_db_url, apply_migrat
         finally:
             await engine.dispose()
 
-    # Downgrading below 0173 crosses the gated 0174 conversion; this isolated
-    # test database is explicitly allowed to run the lossy reverse.
-    gate_env = "AAP_ALLOW_ROLE_MIGRATION_DOWNGRADE"
-    previous_gate = os.environ.get(gate_env)
-    os.environ[gate_env] = "1"
+    # 0174 makes the schema non-reversible; post-opening recovery fixes forward.
+    with pytest.raises(RuntimeError):
+        command.downgrade(config, "0173")
+
     try:
         asyncio.run(step("seed"))
-        command.downgrade(config, "0172")
-        asyncio.run(step("assert_downgraded"))
         command.upgrade(config, "head")
         asyncio.run(step("verify"))
     finally:
-        if previous_gate is None:
-            os.environ.pop(gate_env, None)
-        else:
-            os.environ[gate_env] = previous_gate
-        # Restore the current schema even if an assertion or upgrade failed.
         command.upgrade(config, "head")
         asyncio.run(step("cleanup"))

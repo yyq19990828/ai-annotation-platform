@@ -11,12 +11,16 @@ Model
   ``project_admin``, ``employee`` or ``viewer``.
 * Project role lives on the membership (``project_members.role``):
   ``annotator``, ``reviewer`` or ``viewer``.
-* Managers are a super administrator or the project owner whose platform role
+* Managers are a super administrator, or the project owner whose platform role
   is a valid administrative role.  A platform ``project_admin`` who is only a
   member of another project receives at most that membership's capabilities,
   never management.
 * Membership role is never inferred from the account role and an unknown role
-  fails closed.
+  fails closed.  Legacy ``annotator`` / ``reviewer`` account values are *not*
+  an authorization source; historical readers live in the migration/audit
+  adapters, not here.
+* The resolver always re-reads current account and project state so a stale ORM
+  object cannot authorize a revoked account or a transferred project.
 
 All helpers are read-only unless explicitly documented.  Mutations live in
 ``services/project_membership.py``.
@@ -33,7 +37,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import (
-    LEGACY_PLATFORM_STAFF_ROLES,
     MANAGER_PLATFORM_ROLES,
     PLATFORM_ROLES,
     PROJECT_ROLES,
@@ -106,12 +109,12 @@ def platform_role_is_manager(platform_role: str) -> bool:
 def membership_role_compatible(platform_role: str, project_role: str) -> bool:
     """Whether ``platform_role`` may hold ``project_role`` membership.
 
-    * ``employee`` (and its pre-cutover legacy staff aliases) may hold any
-      project role.
-    * ``viewer`` accounts may only hold a ``viewer`` membership; accepting an
-      employee invitation must never silently upgrade a viewer.
-    * Managers and super administrators receive authority from ownership, not
-      from a membership row, so they have no compatible membership role.
+    * ``employee`` may hold any project role.
+    * ``viewer`` accounts may only hold a ``viewer`` membership.
+    * Managers, super administrators, unknown and legacy staff values have no
+      membership role (managers act through ownership).  Legacy
+      ``annotator`` / ``reviewer`` account values are rejected here; only the
+      migration/history readers treat them as historical facts.
     """
 
     if project_role not in PROJECT_ROLES:
@@ -119,10 +122,6 @@ def membership_role_compatible(platform_role: str, project_role: str) -> bool:
     if platform_role == PlatformRole.VIEWER.value:
         return project_role == ProjectRole.VIEWER.value
     if platform_role == PlatformRole.EMPLOYEE.value:
-        return True
-    # Pre-cutover staff accounts are treated as employees for membership
-    # pairing, but never as global authority.
-    if platform_role in LEGACY_PLATFORM_STAFF_ROLES:
         return True
     return False
 
@@ -171,13 +170,12 @@ def _manager_access(
     access_kind: str,
     is_super_admin: bool,
     is_owner: bool,
-    project_role: str | None = None,
 ) -> ProjectAccess:
     return ProjectAccess(
         user_id=user.id,
         project_id=project.id,
         platform_role=user.role,
-        project_role=project_role,
+        project_role=None,
         membership_id=None,
         membership_version=None,
         access_kind=access_kind,
@@ -185,6 +183,14 @@ def _manager_access(
         is_super_admin=is_super_admin,
         is_owner=is_owner,
         is_manager=True,
+    )
+
+
+def _invalid_account() -> HTTPException:
+    return HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="账号已停用或不存在",
+        headers={"WWW-Authenticate": "Bearer"},
     )
 
 
@@ -197,15 +203,35 @@ async def resolve_project_access(
 ) -> ProjectAccess:
     """Resolve the immutable access context for ``user`` on ``project``.
 
+    Always re-reads current account and project state so a revoked account or a
+    transferred project cannot authorize from a stale identity map entry.
+
     ``lock_membership=True`` acquires the membership with ``FOR SHARE`` so an
     in-flight authorized mutation can finish before a role change commits while
     still conflicting with the role-changing ``FOR UPDATE``.
 
-    Raises 404 when the account cannot see the project at all (existence is
-    hidden) and 403 when a visible membership is internally inconsistent.
+    Raises 401 for an inactive/missing account, 404 when the account cannot see
+    the project at all (existence is hidden) and 403 when a visible membership
+    is internally inconsistent.
     """
 
-    if user.role == PlatformRole.SUPER_ADMIN.value:
+    fresh_user = await db.get(User, user.id, populate_existing=True)
+    if fresh_user is None or not fresh_user.is_active:
+        raise _invalid_account()
+    fresh_project = await db.get(Project, project.id, populate_existing=True)
+    if fresh_project is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="项目不存在")
+    user, project = fresh_user, fresh_project
+
+    platform_role = user.role
+    if platform_role not in PLATFORM_ROLES:
+        # Unknown or legacy account roles fail closed; they are not a live
+        # authorization source.
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="账号角色无效，访问被拒绝"
+        )
+
+    if platform_role == PlatformRole.SUPER_ADMIN.value:
         return _manager_access(
             user=user,
             project=project,
@@ -214,31 +240,18 @@ async def resolve_project_access(
             is_owner=project.owner_id == user.id,
         )
 
-    if project.owner_id == user.id:
-        if platform_role_is_manager(user.role):
-            return _manager_access(
-                user=user,
-                project=project,
-                access_kind=ACCESS_KIND_OWNER,
-                is_super_admin=False,
-                is_owner=True,
-            )
-        # Anomalous owner whose platform role is not administrative.  This is a
-        # migration blocker: keep the project visible read-only and never grant
-        # manager authority from ownership alone.
-        return ProjectAccess(
-            user_id=user.id,
-            project_id=project.id,
-            platform_role=user.role,
-            project_role=None,
-            membership_id=None,
-            membership_version=None,
-            access_kind=ACCESS_KIND_MEMBER,
-            capabilities=_READ_CAPABILITIES,
+    if project.owner_id == user.id and platform_role_is_manager(platform_role):
+        return _manager_access(
+            user=user,
+            project=project,
+            access_kind=ACCESS_KIND_OWNER,
+            is_super_admin=False,
             is_owner=True,
-            is_manager=False,
         )
 
+    # Every other platform role, including an anomalous non-administrative
+    # owner, needs a valid membership.  Ownership alone never grants visibility
+    # or authority.
     stmt = select(ProjectMember).where(
         ProjectMember.project_id == project.id,
         ProjectMember.user_id == user.id,
@@ -249,24 +262,15 @@ async def resolve_project_access(
     if member is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="项目不存在")
 
-    if user.role not in PLATFORM_ROLES and user.role not in LEGACY_PLATFORM_STAFF_ROLES:
-        # Unknown platform role fails closed.  Pre-cutover staff aliases are
-        # treated as employee for membership capabilities only; they never
-        # grant the old global authority.
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="账号角色无效，访问被拒绝"
-        )
     project_role = member.role
     if project_role not in PROJECT_ROLES:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="项目职责无效，访问被拒绝"
         )
     if (
-        user.role == PlatformRole.VIEWER.value
+        platform_role == PlatformRole.VIEWER.value
         and project_role != ProjectRole.VIEWER.value
     ):
-        # A viewer may only ever hold a viewer membership; fail closed on
-        # inconsistent rows rather than granting work capabilities.
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="账号平台角色与项目职责不兼容"
         )
@@ -274,7 +278,7 @@ async def resolve_project_access(
     return ProjectAccess(
         user_id=user.id,
         project_id=project.id,
-        platform_role=user.role,
+        platform_role=platform_role,
         project_role=project_role,
         membership_id=member.id,
         membership_version=member.version,
@@ -291,7 +295,7 @@ async def resolve_project_access_by_id(
     project_id: uuid.UUID,
     lock_membership: bool = False,
 ) -> tuple[Project, ProjectAccess]:
-    project = await db.get(Project, project_id)
+    project = await db.get(Project, project_id, populate_existing=True)
     if project is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="项目不存在")
     access = await resolve_project_access(

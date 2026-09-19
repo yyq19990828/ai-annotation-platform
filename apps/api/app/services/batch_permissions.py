@@ -11,7 +11,7 @@ from __future__ import annotations
 from fastapi import HTTPException
 from sqlalchemy import and_, or_
 
-from app.db.enums import BatchStatus, ProjectRole, UserRole
+from app.db.enums import BatchStatus, MANAGER_PLATFORM_ROLES, ProjectRole, UserRole
 from app.db.models.project import Project
 from app.db.models.task_batch import TaskBatch
 from app.db.models.user import User
@@ -62,23 +62,26 @@ def bulk_preannotation_eligible_condition():
 # 'reviewer' = super_admin / project_admin(owner) / reviewer
 # 'annotator_assigned' = 标注员且 user_id == batch.annotator_id（v0.7.2 单值语义）
 def _is_owner(user: User, project: Project) -> bool:
-    return user.role == UserRole.SUPER_ADMIN or project.owner_id == user.id
+    """Privileged owner: active, administrative platform role, and owner."""
+
+    if not user.is_active:
+        return False
+    if user.role == UserRole.SUPER_ADMIN:
+        return True
+    return user.role in MANAGER_PLATFORM_ROLES and project.owner_id == user.id
 
 
 def _is_reviewer(user: User, project: Project, project_role: str | None = None) -> bool:
-    """Reviewer authority from the project membership role.
+    """Reviewer authority comes solely from the resolved project role.
 
-    ``project_role`` is the resolved membership role.  When it is omitted the
-    legacy global role is only a migration-window adapter: employee accounts no
-    longer carry ``reviewer``/``annotator``, so it cannot grant them authority.
-    Callers under the project-scoped model must pass ``project_role``.
+    A missing ``project_role`` fails closed; the legacy global staff role is
+    never an authority source.  Callers under the project-scoped model must
+    pass the resolved membership role.
     """
 
     if _is_owner(user, project):
         return True
-    if project_role is not None:
-        return project_role == ProjectRole.REVIEWER.value
-    return user.role == UserRole.REVIEWER
+    return project_role == ProjectRole.REVIEWER.value
 
 
 def _is_annotator_assigned(
@@ -86,10 +89,7 @@ def _is_annotator_assigned(
 ) -> bool:
     """v0.7.2：单值语义 — batch.annotator_id == user.id。"""
 
-    if project_role is not None:
-        if project_role != ProjectRole.ANNOTATOR.value:
-            return False
-    elif user.role != UserRole.ANNOTATOR:
+    if project_role != ProjectRole.ANNOTATOR.value:
         return False
     return batch.annotator_id is not None and batch.annotator_id == user.id
 
@@ -106,7 +106,7 @@ def assert_can_transition(
     语法层（VALID_TRANSITIONS）由 transition() 内部检查；本函数只做角色门禁。
 
     项目化后由调用方传入已解析的 ``project_role``（``batch.py``/``api/v1/batches.py``
-    由 B2 接线）；``project_role=None`` 仅保留迁移窗口兼容。
+    由 B2 接线）。``project_role=None`` 对非 owner 一律 fail closed，不回退全局角色。
     """
     src = batch.status
     dst = target_status

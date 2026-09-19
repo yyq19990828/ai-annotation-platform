@@ -34,7 +34,8 @@ async def _target_invitation(
 ) -> UserInvitation:
     invitation = UserInvitation(
         email=email,
-        role=role,
+        role="employee",
+        project_role=role if project_id is not None else None,
         project_id=project_id,
         token=secrets.token_urlsafe(32),
         expires_at=datetime.now(timezone.utc) + timedelta(days=1),
@@ -57,7 +58,8 @@ async def test_new_account_acceptance_creates_project_member_atomically(
         "/api/v1/users/invite",
         json={
             "email": "project-new@invite.test",
-            "role": "annotator",
+            "role": "employee",
+            "project_member_role": "annotator",
             "project_id": str(project.id),
         },
         headers=_headers(super_admin),
@@ -99,7 +101,7 @@ async def test_existing_account_must_explicitly_confirm_matching_project_invitat
 ):
     admin, _ = super_admin
     existing = await create_user(
-        db_session, "reviewer", "existing-project@invite.test", "Existing"
+        db_session, "employee", "existing-project@invite.test", "Existing"
     )
     project = await create_project(db_session, owner_id=admin.id, name="Existing QA")
     created = await httpx_client.post(
@@ -107,7 +109,8 @@ async def test_existing_account_must_explicitly_confirm_matching_project_invitat
         json={
             "email": existing.email,
             "project_id": str(project.id),
-            "role": "reviewer",
+            "role": "employee",
+            "project_member_role": "reviewer",
         },
         headers=_headers(super_admin),
     )
@@ -124,7 +127,7 @@ async def test_existing_account_must_explicitly_confirm_matching_project_invitat
     )
     assert accepted.status_code == 200, accepted.text
     assert accepted.json()["acceptance"]["project_name"] == "Existing QA"
-    assert accepted.json()["user"]["role"] == "reviewer"
+    assert accepted.json()["user"]["role"] == "employee"
     assert await db_session.scalar(
         select(ProjectMember).where(
             ProjectMember.project_id == project.id,
@@ -185,7 +188,7 @@ async def test_existing_employee_accepts_different_project_role_without_platform
 
     admin, _ = super_admin
     existing = await create_user(
-        db_session, "annotator", "cross-role@invite.test", "Cross Role"
+        db_session, "employee", "cross-role@invite.test", "Cross Role"
     )
     project = await create_project(db_session, owner_id=admin.id, name="Role QA")
     invitation = await _target_invitation(
@@ -207,7 +210,7 @@ async def test_existing_employee_accepts_different_project_role_without_platform
     assert response.status_code == 200, response.text
     assert response.json()["acceptance"]["project_member_role"] == "reviewer"
     await db_session.refresh(existing)
-    assert existing.role == "annotator"
+    assert existing.role == "employee"
 
     member = await db_session.scalar(
         select(ProjectMember).where(

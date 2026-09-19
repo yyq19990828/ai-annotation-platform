@@ -22623,6 +22623,17 @@
         "title": "PipelineStage",
         "type": "object"
       },
+      "PlatformRole": {
+        "description": "Account-level role.  The database/account field stays named ``role``.",
+        "enum": [
+          "super_admin",
+          "project_admin",
+          "employee",
+          "viewer"
+        ],
+        "title": "PlatformRole",
+        "type": "string"
+      },
       "PointCloudCameraOut": {
         "properties": {
           "calibration": {
@@ -25150,12 +25161,17 @@
         "description": "Resolved project access for the current account (``GET .../access``).",
         "properties": {
           "access_kind": {
+            "enum": [
+              "super_admin",
+              "owner",
+              "member"
+            ],
             "title": "Access Kind",
             "type": "string"
           },
           "capabilities": {
             "items": {
-              "type": "string"
+              "$ref": "#/components/schemas/ProjectCapability"
             },
             "title": "Capabilities",
             "type": "array"
@@ -25189,8 +25205,7 @@
             "title": "Membership Version"
           },
           "platform_role": {
-            "title": "Platform Role",
-            "type": "string"
+            "$ref": "#/components/schemas/PlatformRole"
           },
           "project_id": {
             "format": "uuid",
@@ -25200,13 +25215,12 @@
           "project_role": {
             "anyOf": [
               {
-                "type": "string"
+                "$ref": "#/components/schemas/ProjectRole"
               },
               {
                 "type": "null"
               }
-            ],
-            "title": "Project Role"
+            ]
           },
           "user_id": {
             "format": "uuid",
@@ -25243,6 +25257,22 @@
         },
         "title": "ProjectBatchSummary",
         "type": "object"
+      },
+      "ProjectCapability": {
+        "description": "Fixed capability set for a project request context.",
+        "enum": [
+          "project.read",
+          "project.manage",
+          "member.read",
+          "member.manage",
+          "task.read",
+          "annotation.write",
+          "review.write",
+          "export.annotations",
+          "performance.read"
+        ],
+        "title": "ProjectCapability",
+        "type": "string"
       },
       "ProjectClassUsageOut": {
         "properties": {
@@ -25775,19 +25805,10 @@
             "type": "string"
           },
           "platform_role": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Platform Role"
+            "$ref": "#/components/schemas/PlatformRole"
           },
           "role": {
-            "title": "Role",
-            "type": "string"
+            "$ref": "#/components/schemas/ProjectRole"
           },
           "updated_at": {
             "anyOf": [
@@ -25826,6 +25847,7 @@
           "user_name",
           "user_email",
           "role",
+          "platform_role",
           "assigned_at"
         ],
         "title": "ProjectMemberOut",
@@ -25910,8 +25932,7 @@
             "type": "array"
           },
           "current_role": {
-            "title": "Current Role",
-            "type": "string"
+            "$ref": "#/components/schemas/ProjectRole"
           },
           "current_version": {
             "title": "Current Version",
@@ -25937,8 +25958,7 @@
             "type": "object"
           },
           "target_role": {
-            "title": "Target Role",
-            "type": "string"
+            "$ref": "#/components/schemas/ProjectRole"
           },
           "user_id": {
             "format": "uuid",
@@ -26175,6 +26195,16 @@
               }
             ],
             "title": "Model Version"
+          },
+          "my_project_role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRole"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "name": {
             "title": "Name",
@@ -26852,6 +26882,16 @@
         },
         "title": "ProjectRenderingConfig",
         "type": "object"
+      },
+      "ProjectRole": {
+        "description": "Per-project responsibility stored on ``project_members.role``.",
+        "enum": [
+          "annotator",
+          "reviewer",
+          "viewer"
+        ],
+        "title": "ProjectRole",
+        "type": "string"
       },
       "ProjectStats": {
         "properties": {
@@ -50926,6 +50966,22 @@
           },
           {
             "in": "query",
+            "name": "project_role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Role"
+            }
+          },
+          {
+            "in": "query",
             "name": "created_from",
             "required": false,
             "schema": {
@@ -51150,6 +51206,22 @@
                 }
               ],
               "title": "Member Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Role"
             }
           },
           {

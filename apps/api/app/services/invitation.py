@@ -12,7 +12,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.security import hash_password
 from app.db.enums import (
-    LEGACY_PLATFORM_STAFF_ROLES,
     MANAGER_PLATFORM_ROLES,
     PLATFORM_ROLES,
     PROJECT_ROLES,
@@ -32,15 +31,12 @@ from app.services.project_access import (
 from app.services.system_settings_service import SystemSettingsService
 
 
-#: Account platform roles accepted as invitation input.  Legacy staff aliases
-#: remain accepted and are normalized to ``employee`` (they never grant the
-#: old global authority).
-_ALLOWED_ROLES = PLATFORM_ROLES | LEGACY_PLATFORM_STAFF_ROLES
+#: Account platform roles accepted as invitation input.  Legacy global staff
+#: values are rejected here; only historical readers may surface them.
+_ALLOWED_ROLES = PLATFORM_ROLES
 _PROJECT_ADMIN_INVITABLE_ROLES = {
     PlatformRole.EMPLOYEE.value,
     PlatformRole.VIEWER.value,
-    UserRole.REVIEWER.value,
-    UserRole.ANNOTATOR.value,
 }
 _PRIVILEGED_ROLES = {
     PlatformRole.SUPER_ADMIN.value,
@@ -56,14 +52,6 @@ _ROLE_LABELS = {
     UserRole.ANNOTATOR.value: "标注员",
     PlatformRole.VIEWER.value: "观察者",
 }
-
-
-def _normalize_platform_role(role: str) -> str:
-    """Map a legacy staff platform role to ``employee``; keep real platform roles."""
-
-    if role in LEGACY_PLATFORM_STAFF_ROLES:
-        return PlatformRole.EMPLOYEE.value
-    return role
 
 
 def invitation_project_role(invitation: UserInvitation) -> str | None:
@@ -337,27 +325,18 @@ class InvitationService:
         ):
             raise HTTPException(status_code=403, detail="当前账号不再具备邀请权限")
         actor = locked_actor
-        # Split the account role from the project role.  Project invitations may
-        # use the explicit ``project_member_role``; legacy callers that sent the
-        # project role in ``role`` keep working (and imply an employee account).
-        project_role = project_member_role
+        # Platform role and project role are independent inputs.  Legacy global
+        # staff values are rejected; staff invitations use ``employee`` plus an
+        # explicit ``project_member_role`` for a project target.
         platform_role = role
+        project_role = project_member_role
+        if platform_role not in _ALLOWED_ROLES:
+            raise HTTPException(status_code=400, detail=f"非法角色: {role}")
         if project_id is not None:
-            if project_role is None and role in _PROJECT_MEMBER_ROLES:
-                project_role = role
             _assert_project_role_compatible(project_role)
-            platform_role = _normalize_platform_role(role)
-            if platform_role in _PROJECT_MEMBER_ROLES:
-                platform_role = PlatformRole.EMPLOYEE.value
             assert_membership_role_compatible(platform_role, project_role)
-        else:
-            if project_role is not None:
-                raise HTTPException(
-                    status_code=400, detail="账号级邀请不得包含项目职责"
-                )
-            platform_role = _normalize_platform_role(role)
-            if platform_role not in _ALLOWED_ROLES:
-                raise HTTPException(status_code=400, detail=f"非法角色: {role}")
+        elif project_role is not None:
+            raise HTTPException(status_code=400, detail="账号级邀请不得包含项目职责")
 
         if (
             actor.role != UserRole.SUPER_ADMIN.value

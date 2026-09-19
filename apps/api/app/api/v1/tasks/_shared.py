@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.enums import UserRole
+from app.db.enums import MANAGER_PLATFORM_ROLES, ProjectRole, UserRole
 from app.db.models.user import User
 from app.db.models.task import Task
 from app.db.models.annotation import Annotation
@@ -21,7 +21,7 @@ from app.schemas.image_pyramid import ImagePyramidSummary
 from app.services.scheduler import (
     effective_task_assignee_id,
     is_privileged_for_project,
-    visible_batch_statuses_for,
+    visible_batch_statuses_for_project_role,
     annotator_can_rework_task,
 )
 from app.services.storage import storage_service
@@ -154,21 +154,39 @@ def _record_first_review_fact(
     return True
 
 
-def _assert_task_editable(task: Task, user: User | None = None) -> None:
+def _is_manager_user(user: User) -> bool:
+    return user.role in MANAGER_PLATFORM_ROLES
+
+
+def _assert_task_editable(
+    task: Task,
+    user: User | None = None,
+    *,
+    project_role: str | None = None,
+) -> None:
     """v0.6.5: 已提交质检 / 已通过审核的任务对所有 annotation 写动作锁死。
     标注员要继续编辑必须先 withdraw（review 态）或 reopen（completed 态）。
-    M2: 审核员可在 status=review 时直接微调标注（审计记 TASK_REVIEWER_EDIT）。"""
-    if (
-        user is not None
-        and user.role == UserRole.ANNOTATOR
-        and task.assignee_id is not None
-        and task.assignee_id != user.id
-    ):
-        raise HTTPException(status_code=403, detail="Task belongs to another annotator")
+    M2: 审核员可在 status=review 时直接微调标注（审计记 TASK_REVIEWER_EDIT）。
+
+    ``project_role`` 是已解析的项目职责（B2 路由传入）。非管理账号缺少该上下文时
+    一律 fail closed，绝不回退到全局 annotator/reviewer。
+    """
+    if user is not None and not _is_manager_user(user):
+        if project_role is None:
+            raise HTTPException(status_code=403, detail="缺少项目职责上下文")
+        if (
+            project_role == ProjectRole.ANNOTATOR.value
+            and task.assignee_id is not None
+            and task.assignee_id != user.id
+        ):
+            raise HTTPException(
+                status_code=403, detail="Task belongs to another annotator"
+            )
     if task.status not in _LOCKED_STATUSES:
         return
-    if task.status == "review" and user is not None and user.role in _REVIEWERS:
-        return
+    if task.status == "review" and user is not None:
+        if project_role == ProjectRole.REVIEWER.value or _is_manager_user(user):
+            return
     raise HTTPException(
         status_code=409,
         detail={"reason": "task_locked", "status": task.status},
@@ -266,10 +284,19 @@ def _assert_effective_task_assignee(
     *,
     action: str,
     allow_open_pool: bool = False,
+    project_role: str | None = None,
 ) -> None:
-    if user.role in (UserRole.SUPER_ADMIN.value, UserRole.PROJECT_ADMIN.value):
+    """Only the effective annotator may act.
+
+    ``project_role`` is the resolved membership role (B2 routes pass it).  A
+    non-manager without it fails closed; the global role is never a fallback.
+    """
+
+    if _is_manager_user(user):
         return
-    if user.role == UserRole.ANNOTATOR.value and (
+    if project_role is None:
+        raise HTTPException(status_code=403, detail="缺少项目职责上下文")
+    if project_role == ProjectRole.ANNOTATOR.value and (
         effective_assignee_id == user.id
         or (allow_open_pool and effective_assignee_id is None)
     ):
@@ -292,13 +319,16 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
     if is_privileged_for_project(user, project):
         return
     await _assert_current_project_member(db, project, user)
+    project_role = await _project_role_for_user(db, project.id, user.id)
     if task.file_type == "video" and bool(
         (project.video_collaboration or {}).get("enabled")
     ):
         return
     if task.batch_id is None:
-        if (user.role == UserRole.ANNOTATOR and task.assignee_id == user.id) or (
-            user.role == UserRole.REVIEWER and task.reviewer_id == user.id
+        if (
+            project_role == ProjectRole.ANNOTATOR.value and task.assignee_id == user.id
+        ) or (
+            project_role == ProjectRole.REVIEWER.value and task.reviewer_id == user.id
         ):
             return
         raise HTTPException(status_code=404, detail="Task not found")
@@ -306,14 +336,14 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
     if batch is None:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    visible_statuses = visible_batch_statuses_for(user)
+    visible_statuses = visible_batch_statuses_for_project_role(project_role)
     if batch.status not in visible_statuses and not annotator_can_rework_task(
-        user, batch, task.status, task.assignee_id
+        user, batch, task.status, task.assignee_id, project_role=project_role
     ):
         raise HTTPException(status_code=404, detail="Task not found")
 
     # reviewer 不受 annotator 约束（跨批次审核）
-    if user.role == UserRole.REVIEWER:
+    if project_role == ProjectRole.REVIEWER.value:
         return
 
     # Task-level assignment takes precedence over the legacy batch assignment.
@@ -355,6 +385,7 @@ async def _visible_task_ids(
         return set(result.scalars().all())
     if not await _has_current_project_membership(db, project.id, user.id):
         return set()
+    project_role = await _project_role_for_user(db, project.id, user.id)
 
     rows = (
         await db.execute(
@@ -373,13 +404,17 @@ async def _visible_task_ids(
         result = await db.execute(select(TaskBatch).where(TaskBatch.id.in_(batch_ids)))
         batches = {b.id: b for b in result.scalars()}
 
-    visible_statuses = visible_batch_statuses_for(user)
-    is_reviewer = user.role == UserRole.REVIEWER
+    visible_statuses = visible_batch_statuses_for_project_role(project_role)
+    is_reviewer = project_role == ProjectRole.REVIEWER.value
     visible: set[uuid.UUID] = set()
     for tid, bid, task_status, task_assignee_id, task_reviewer_id in rows:
         if bid is None:
-            if (user.role == UserRole.ANNOTATOR and task_assignee_id == user.id) or (
-                user.role == UserRole.REVIEWER and task_reviewer_id == user.id
+            if (
+                project_role == ProjectRole.ANNOTATOR.value
+                and task_assignee_id == user.id
+            ) or (
+                project_role == ProjectRole.REVIEWER.value
+                and task_reviewer_id == user.id
             ):
                 visible.add(tid)
             continue
@@ -387,7 +422,7 @@ async def _visible_task_ids(
         if batch is None or (
             batch.status not in visible_statuses
             and not annotator_can_rework_task(
-                user, batch, task_status, task_assignee_id
+                user, batch, task_status, task_assignee_id, project_role=project_role
             )
         ):
             continue

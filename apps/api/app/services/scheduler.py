@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.enums import ProjectRole, UserRole
+from app.db.enums import MANAGER_PLATFORM_ROLES, ProjectRole, UserRole
 from app.db.models.dataset import DatasetItem
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
@@ -27,8 +27,19 @@ _NEXT_TASK_CANDIDATE_WINDOW = 20
 
 
 def is_privileged_for_project(user: User, project: Project) -> bool:
-    """super_admin 或项目 owner 可越权看所有 batch；其他角色受 batch 可见性约束。"""
-    return user.role == UserRole.SUPER_ADMIN or project.owner_id == user.id
+    """Privileged project access for batch/task visibility.
+
+    Requires an active account that is either a super administrator or the
+    project owner *with a legitimate administrative platform role*.  An
+    anomalous non-administrative owner is not privileged; it must use a valid
+    membership.  Never authorizes from a legacy global staff role.
+    """
+
+    if not user.is_active:
+        return False
+    if user.role == UserRole.SUPER_ADMIN.value:
+        return True
+    return user.role in MANAGER_PLATFORM_ROLES and project.owner_id == user.id
 
 
 def is_privileged_access(access: object) -> bool:
@@ -167,10 +178,21 @@ def annotator_can_rework_task(
     batch: TaskBatch,
     task_status: str,
     task_assignee_id: uuid.UUID | None = None,
+    *,
+    project_role: str | None = None,
 ) -> bool:
-    """A single rejected task may be redone while its peers remain in review."""
+    """A single rejected task may be redone while its peers remain in review.
+
+    ``project_role`` is the resolved membership role; when omitted the legacy
+    global annotator value is not consulted (fail closed).
+    """
+    is_annotator = (
+        project_role == ProjectRole.ANNOTATOR.value
+        if project_role is not None
+        else False
+    )
     return (
-        user.role == UserRole.ANNOTATOR
+        is_annotator
         and (task_assignee_id or batch.annotator_id) == user.id
         and batch.status == "reviewing"
         and task_status in {"rejected", "in_progress"}

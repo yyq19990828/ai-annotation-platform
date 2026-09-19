@@ -11,8 +11,10 @@ from app.schemas._jsonb_types import (
     ToolBindings,
     validate_tool_bindings_keys,
 )
+from app.db.enums import PlatformRole, ProjectRole
 from app.schemas.mask_qc import MaskQCConfig
 from app.schemas.point_cloud_quality import PointCloudQualityConfig
+from app.services.project_access import ProjectCapability
 from pydantic import field_validator
 
 
@@ -247,6 +249,9 @@ class ProjectOut(BaseModel):
     owner_name: str | None = None
     owner_avatar_ref: str | None = None
     member_count: int = 0
+    #: Project role of the *requesting* account (None for managers / viewers
+    #: without a membership).  Filled by the list/query/detail serializers.
+    my_project_role: ProjectRole | None = None
     status: str
     ai_enabled: bool
     ml_backend_id: UUID | None = None
@@ -369,11 +374,12 @@ class ProjectMemberOut(BaseModel):
     user_id: UUID
     user_name: str
     user_email: str
-    #: Project responsibility (annotator | reviewer | viewer).  Flat by design;
-    #: invitation DTOs keep the ``project_member_role`` name.
-    role: str
+    #: Project responsibility.  Flat by design; invitation DTOs keep the
+    #: ``project_member_role`` name.  Required, so a missed serializer fails
+    #: loudly instead of returning an untyped string.
+    role: ProjectRole
     #: Account/platform role, added so clients no longer conflate the two.
-    platform_role: str | None = None
+    platform_role: PlatformRole
     #: Membership CAS version; increments on role change.
     version: int = 1
     assigned_at: datetime
@@ -410,13 +416,13 @@ class ProjectAccessOut(BaseModel):
 
     project_id: UUID
     user_id: UUID
-    platform_role: str
-    project_role: str | None = None
+    platform_role: PlatformRole
+    project_role: ProjectRole | None = None
     membership_id: UUID | None = None
     membership_version: int | None = None
-    access_kind: str  # super_admin | owner | member
+    access_kind: Literal["super_admin", "owner", "member"]
     is_manager: bool = False
-    capabilities: list[str] = Field(default_factory=list)
+    capabilities: list[ProjectCapability] = Field(default_factory=list)
 
 
 class ProjectMemberRolePreviewRequest(BaseModel):
@@ -431,9 +437,9 @@ class ProjectMemberRolePreviewRequest(BaseModel):
 class ProjectMemberRolePreviewOut(BaseModel):
     member_id: UUID
     user_id: UUID
-    current_role: str
+    current_role: ProjectRole
     current_version: int
-    target_role: str
+    target_role: ProjectRole
     #: True when the target role needs an explicit, valid handoff first.
     requires_handoff: bool = False
     blockers: list[str] = Field(default_factory=list)

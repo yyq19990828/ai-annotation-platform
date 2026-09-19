@@ -17,7 +17,12 @@ from app.deps import (
     require_project_capability,
     assert_project_visible,
 )
-from app.db.enums import TaskStatus, UserRole, WORKBENCH_AI_EDITABLE_TASK_STATUSES
+from app.db.enums import (
+    PROJECT_ROLES,
+    TaskStatus,
+    UserRole,
+    WORKBENCH_AI_EDITABLE_TASK_STATUSES,
+)
 from app.services.project_access import (
     ProjectCapability,
     resolve_project_access,
@@ -108,12 +113,40 @@ def _visible_project_filter(user: User):
     """
     if user.role == UserRole.SUPER_ADMIN:
         return None  # 不过滤
-    return or_(
-        Project.owner_id == user.id,
-        Project.id.in_(
-            select(ProjectMember.project_id).where(ProjectMember.user_id == user.id)
-        ),
+    # A legitimate owner must also hold an administrative platform role; an
+    # anomalous non-administrative owner is not implicitly visible.
+    if user.role == UserRole.PROJECT_ADMIN:
+        return or_(
+            Project.owner_id == user.id,
+            Project.id.in_(
+                select(ProjectMember.project_id).where(ProjectMember.user_id == user.id)
+            ),
+        )
+    return Project.id.in_(
+        select(ProjectMember.project_id).where(ProjectMember.user_id == user.id)
     )
+
+
+async def _my_project_roles(
+    db: AsyncSession, user: User, projects: list[Project]
+) -> dict[uuid.UUID, str]:
+    """Membership role of the requesting account per project (managers: absent)."""
+
+    ids = [project.id for project in projects]
+    if not ids or user.role == UserRole.SUPER_ADMIN:
+        return {}
+    rows = await db.execute(
+        select(ProjectMember.project_id, ProjectMember.role).where(
+            ProjectMember.user_id == user.id,
+            ProjectMember.project_id.in_(ids),
+        )
+    )
+    return {project_id: role for project_id, role in rows.all()}
+
+
+def _attach_my_project_role(items: list[dict], roles: dict[uuid.UUID, str]) -> None:
+    for item in items:
+        item["my_project_role"] = roles.get(item["id"])
 
 
 def _stats_bucket_ends(now: datetime) -> list[datetime]:
@@ -353,6 +386,7 @@ def _project_list_query(
     type_key: list[str] | None = None,
     data_type: list[str] | None = None,
     member_id: uuid.UUID | None = None,
+    project_role: str | None = None,
     created_from: str | None = None,
     created_to: str | None = None,
 ):
@@ -373,6 +407,17 @@ def _project_list_query(
             Project.id.in_(
                 select(ProjectMember.project_id).where(
                     ProjectMember.user_id == member_id
+                )
+            )
+        )
+    if project_role:
+        if project_role not in PROJECT_ROLES:
+            raise HTTPException(status_code=422, detail="非法项目职责")
+        q = q.where(
+            Project.id.in_(
+                select(ProjectMember.project_id).where(
+                    ProjectMember.user_id == user.id,
+                    ProjectMember.role == project_role,
                 )
             )
         )
@@ -437,6 +482,7 @@ async def list_projects(
     # v0.10.28 · 媒体维度筛选 (image / video / lidar)
     data_type: list[str] | None = Query(None),
     member_id: uuid.UUID | None = None,
+    project_role: str | None = None,
     created_from: str | None = None,  # ISO date "2026-01-01"
     created_to: str | None = None,
     db: AsyncSession = Depends(get_db),
@@ -449,11 +495,15 @@ async def list_projects(
         type_key=type_key,
         data_type=data_type,
         member_id=member_id,
+        project_role=project_role,
         created_from=created_from,
         created_to=created_to,
     )
     result = await db.execute(q)
-    return await _serialize_project_list(db, list(result.scalars().all()))
+    projects = list(result.scalars().all())
+    items = await _serialize_project_list(db, projects)
+    _attach_my_project_role(items, await _my_project_roles(db, user, projects))
+    return items
 
 
 @router.get("/query", response_model=ProjectPage)
@@ -465,6 +515,7 @@ async def query_projects(
     type_key: list[str] | None = Query(None),
     data_type: list[str] | None = Query(None),
     member_id: uuid.UUID | None = None,
+    project_role: str | None = None,
     created_from: str | None = None,
     created_to: str | None = None,
     db: AsyncSession = Depends(get_db),
@@ -477,6 +528,7 @@ async def query_projects(
         type_key=type_key,
         data_type=data_type,
         member_id=member_id,
+        project_role=project_role,
         created_from=created_from,
         created_to=created_to,
     )
@@ -485,7 +537,9 @@ async def query_projects(
         or 0
     )
     result = await db.execute(q.offset((page - 1) * page_size).limit(page_size))
-    items = await _serialize_project_list(db, list(result.scalars().all()))
+    projects = list(result.scalars().all())
+    items = await _serialize_project_list(db, projects)
+    _attach_my_project_role(items, await _my_project_roles(db, user, projects))
     return {
         "items": items,
         "total": total,
@@ -822,8 +876,12 @@ async def _validate_backend_modality(
 async def get_project(
     project: Project = Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    return await _serialize_project(db, project)
+    out = await _serialize_project(db, project)
+    roles = await _my_project_roles(db, user, [project])
+    out["my_project_role"] = roles.get(project.id)
+    return out
 
 
 @router.get("/{project_id}/readiness", response_model=ProjectReadinessSummary)

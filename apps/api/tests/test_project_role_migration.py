@@ -1,28 +1,40 @@
-"""Verify the 0174 role-conversion migration and its rollback gate.
+"""Verify the 0174 conversion migration and its non-reversible recovery policy.
 
-Runs on the disposable worktree test database: seeds legacy global roles and
-pending/historical invitations, re-runs 0174, and asserts the deterministic
-conversion.  The ungated downgrade must be rejected because the cutover is not
-losslessly reversible.
+The downgrade must always refuse: the employee cutover cannot be losslessly
+mapped back to one global role.  The conversion itself is idempotent, so the
+test seeds legacy rows at head and re-runs the migration's ``upgrade`` on a
+real connection, then asserts deterministic conversion with preserved history.
 """
 
 from __future__ import annotations
 
 import asyncio
-import os
+import importlib.util
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from alembic import command
 from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.db.models.user import User
 from app.db.models.user_invitation import UserInvitation
 
-_GATE_ENV = "AAP_ALLOW_ROLE_MIGRATION_DOWNGRADE"
+_API_ROOT = Path(__file__).resolve().parents[1]
+_MIGRATION_PATH = _API_ROOT / "alembic" / "versions" / "0174_project_role_conversion.py"
+
+
+def _load_migration():
+    spec = importlib.util.spec_from_file_location("migration_0174", _MIGRATION_PATH)
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
 
 
 def _user(email: str, role: str, *, active: bool) -> User:
@@ -50,9 +62,10 @@ def _invitation(
     )
 
 
-def test_0174_converts_and_preserves_history(test_db_url, apply_migrations):
+def test_0174_converts_and_downgrade_refuses(test_db_url, apply_migrations):
     config = Config("alembic.ini")
     config.set_main_option("sqlalchemy.url", test_db_url)
+    migration = _load_migration()
     saved: dict = {}
 
     async def step(action: str) -> None:
@@ -83,6 +96,14 @@ def test_0174_converts_and_preserves_history(test_db_url, apply_migrations):
                         invited_by=owner.id,
                         project_id=uuid.uuid4(),
                     )
+                    # Already populated project_role must be preserved.
+                    populated = _invitation(
+                        email=f"0174-populated-{uuid.uuid4()}@test.local",
+                        role="reviewer",
+                        invited_by=owner.id,
+                        project_id=uuid.uuid4(),
+                    )
+                    populated.project_role = "annotator"
                     accepted = _invitation(
                         email=f"0174-accepted-{uuid.uuid4()}@test.local",
                         role="annotator",
@@ -96,14 +117,19 @@ def test_0174_converts_and_preserves_history(test_db_url, apply_migrations):
                         role="reviewer",
                         invited_by=owner.id,
                     )
-                    db.add_all([pending, accepted, account_only])
+                    db.add_all([pending, populated, accepted, account_only])
                     await db.flush()
                     saved.update(
                         pending=pending.id,
+                        populated=populated.id,
                         accepted=accepted.id,
                         account_only=account_only.id,
                     )
                     await db.commit()
+                elif action == "convert":
+                    # Re-run the migration's conversion on a fresh connection.
+                    async with engine.begin() as conn:
+                        await conn.run_sync(_apply_upgrade, migration)
                 elif action == "verify":
                     for key in ("anno", "rev"):
                         user = await db.scalar(
@@ -123,6 +149,14 @@ def test_0174_converts_and_preserves_history(test_db_url, apply_migrations):
                     )
                     assert pending.project_role == "annotator"
                     assert pending.role == "employee"
+
+                    populated = await db.scalar(
+                        select(UserInvitation).where(
+                            UserInvitation.id == saved["populated"]
+                        )
+                    )
+                    assert populated.project_role == "annotator"
+                    assert populated.role == "employee"
 
                     # Accepted / historical invitations are not rewritten.
                     accepted = await db.scalar(
@@ -144,7 +178,7 @@ def test_0174_converts_and_preserves_history(test_db_url, apply_migrations):
                 else:
                     invitation_ids = [
                         saved[key]
-                        for key in ("pending", "accepted", "account_only")
+                        for key in ("pending", "populated", "accepted", "account_only")
                         if key in saved
                     ]
                     if invitation_ids:
@@ -164,18 +198,20 @@ def test_0174_converts_and_preserves_history(test_db_url, apply_migrations):
         finally:
             await engine.dispose()
 
-    # An ungated downgrade must be rejected before it runs.
-    os.environ.pop(_GATE_ENV, None)
+    # Post-opening recovery must refuse the destructive downgrade.
     with pytest.raises(RuntimeError):
         command.downgrade(config, "0173")
 
     try:
         asyncio.run(step("seed"))
-        os.environ[_GATE_ENV] = "1"
-        command.downgrade(config, "0173")
-        command.upgrade(config, "head")
+        asyncio.run(step("convert"))
         asyncio.run(step("verify"))
     finally:
-        os.environ.pop(_GATE_ENV, None)
         command.upgrade(config, "head")
         asyncio.run(step("cleanup"))
+
+
+def _apply_upgrade(sync_conn, migration) -> None:
+    context = MigrationContext.configure(sync_conn)
+    with Operations.context(context):
+        migration.upgrade()
