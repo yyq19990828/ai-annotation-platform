@@ -192,9 +192,10 @@ const test = base.extend<{ centerCase: Case; withCandidate: boolean }>({
                 "/api/v1/tasks",
                 "/api/v1/audit-logs",
               ].includes(error.path!) ||
-                /^\/api\/v1\/tasks\/[0-9a-f-]{36}(\/(annotations|discussion\/page))?$/.test(
+                /^\/api\/v1\/tasks\/[0-9a-f-]{36}(\/(annotations|discussion\/(page|annotation-counts)))?$/.test(
                   error.path!,
                 ) ||
+                /^\/api\/v1\/projects\/[0-9a-f-]{36}\/access$/.test(error.path!) ||
                 /^\/api\/v1\/annotations\/[0-9a-f-]{36}\/comments\/page$/.test(error.path!)))),
       );
       const unexpected = errors.filter((error) => !expectedAborts.includes(error));

@@ -54,6 +54,11 @@ down_revision: str | Sequence[str] | None = "0173"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
+#: Marker consumed by ``scripts/alembic_reversible_floor.py`` and the CI
+#: round-trip check: ``downgrade()`` refuses on purpose, so automation must
+#: stamp past this revision instead of executing its downgrade.
+IRREVERSIBLE = True
+
 #: Pending invitations only: accepted / revoked / expired rows are history.
 _PENDING_INVITATION_PREDICATE = """
     accepted_at IS NULL

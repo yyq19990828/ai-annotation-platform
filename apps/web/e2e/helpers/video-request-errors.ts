@@ -30,6 +30,8 @@ export function isVideoLifecycleCancellation(error: VideoRequestError): boolean 
     /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/(?:annotations|predictions)$/.test(error.path) ||
     /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/video\/(?:segments|frame-timetable)$/.test(error.path) ||
     /^\/api\/v1\/videos\/[0-9a-f-]{36}\/chapters$/.test(error.path) ||
+    // Leaving or reloading the workbench retires the project access query.
+    /^\/api\/v1\/projects\/[0-9a-f-]{36}\/access$/.test(error.path) ||
     /^\/api\/v1\/projects\/[0-9a-f-]{36}\/mention-candidates$/.test(error.path)
   );
 }
