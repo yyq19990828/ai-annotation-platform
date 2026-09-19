@@ -47,7 +47,6 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterable
-from typing import NoReturn
 
 from fastapi import HTTPException
 from sqlalchemy import select
@@ -59,21 +58,6 @@ from app.db.models.task import Task
 # Retryable PostgreSQL lock/transaction conflicts: lock_not_available (NOWAIT),
 # deadlock_detected, serialization_failure.
 _BUSY_SQLSTATES = {"55P03", "40P01", "40001"}
-
-
-def _raise_busy(exc: DBAPIError) -> NoReturn:
-    """Translate a retryable lock conflict into a 409 (caller rolled back)."""
-    raise HTTPException(
-        status_code=409,
-        detail={
-            "reason": "task_evidence_busy",
-            "message": "task is being updated by another operation; refresh and retry",
-        },
-    ) from exc
-
-
-def _is_busy(exc: DBAPIError) -> bool:
-    return getattr(exc.orig, "sqlstate", None) in _BUSY_SQLSTATES
 
 
 def canonical_actor_id(value: object) -> str | None:
@@ -128,14 +112,27 @@ async def lock_tasks_for_evidence(
     ids = sorted({task_id for task_id in task_ids if task_id is not None}, key=str)
     if not ids:
         return
-    stmt = select(Task.id).where(Task.id.in_(ids)).order_by(Task.id)
-    stmt = stmt.with_for_update(nowait=True) if nowait else stmt.with_for_update()
+    stmt = (
+        select(Task.id)
+        .where(Task.id.in_(ids))
+        .order_by(Task.id)
+        .with_for_update(nowait=nowait)
+    )
     try:
-        await db.execute(stmt)
+        # An autoflush UPDATE can wait before the NOWAIT SELECT ever executes.
+        # Acquire the locks before flushing any pending resource changes.
+        with db.no_autoflush:
+            await db.execute(stmt)
     except DBAPIError as exc:
-        if nowait and _is_busy(exc):
+        if getattr(exc.orig, "sqlstate", None) in _BUSY_SQLSTATES:
             await db.rollback()
-            _raise_busy(exc)
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "reason": "task_evidence_busy",
+                    "message": "task is being updated; refresh and retry",
+                },
+            ) from exc
         raise
 
 
@@ -149,51 +146,18 @@ async def refresh_task_evidence(
     Pending session changes are flushed first: ``Session.refresh`` expires the
     target attributes before its autoflush and would otherwise discard them.
 
-    ``nowait=True`` uses a locking column read instead of ``refresh`` (which has
-    no NOWAIT form) and reports a busy lock as a retryable 409.
+    At mixed-order boundaries acquire NOWAIT before autoflush, then reuse the
+    same flush/refresh path while holding the lock. This preserves pending
+    same-transaction contributions without a second evidence merge algorithm.
     """
     if nowait:
-        row = await _execute_locked_evidence_read(db, task.id, nowait=True)
-        if row is None:
-            return
-        values, phase = row
-        task.annotation_contributor_ids = values
-        task.status = phase
-        return
+        await lock_tasks_for_evidence(db, [task.id], nowait=True)
     await db.flush()
     await db.refresh(
         task,
         ["annotation_contributor_ids", "status"],
         with_for_update=True,
     )
-
-
-async def _execute_locked_evidence_read(
-    db: AsyncSession, task_id: uuid.UUID, *, nowait: bool
-) -> tuple[object, str] | None:
-    stmt = (
-        select(Task.annotation_contributor_ids, Task.status)
-        .where(Task.id == task_id)
-        .with_for_update(nowait=nowait)
-    )
-    try:
-        return (await db.execute(stmt)).one_or_none()
-    except DBAPIError as exc:
-        if nowait and _is_busy(exc):
-            await db.rollback()
-            _raise_busy(exc)
-        raise
-
-
-async def _read_evidence_nowait(
-    db: AsyncSession, task: Task
-) -> tuple[set[str] | None, str | None]:
-    """Lock the task with NOWAIT and return (canonical accumulator, phase)."""
-    row = await _execute_locked_evidence_read(db, task.id, nowait=True)
-    if row is None:
-        return None, None
-    values, phase = row
-    return canonical_actor_set(values), phase
 
 
 async def record_annotation_actor(
@@ -228,15 +192,11 @@ async def record_annotation_actor(
     actor = canonical_actor_id(actor_id)
     if actor is None:
         return False
-    if lock and nowait:
-        current, phase = await _read_evidence_nowait(db, task)
-    else:
-        if lock:
-            await refresh_task_evidence(db, task)
-        phase = task.status
-        current = known_annotation_contributor_ids(task)
-    if phase == "review":
+    if lock:
+        await refresh_task_evidence(db, task, nowait=nowait)
+    if task.status == "review":
         return False
+    current = known_annotation_contributor_ids(task)
     if current is None:
         return False
     if actor in current:
@@ -256,7 +216,8 @@ async def record_annotation_actor_for_task(
     """Accumulate ``actor_id`` on a task addressed by id, locking it first."""
     if canonical_actor_id(actor_id) is None:
         return False
-    task = await db.get(Task, task_id)
+    with db.no_autoflush:
+        task = await db.get(Task, task_id)
     if task is None:
         return False
     return await record_annotation_actor(db, task, actor_id, lock=True, nowait=nowait)
@@ -275,8 +236,11 @@ async def record_annotation_actors_for_tasks(
     ``nowait=True`` at mixed-order boundaries; a busy task is reported as a
     retryable 409 with the transaction rolled back.
     """
+    ids = sorted(set(task_ids), key=str)
+    if nowait:
+        await lock_tasks_for_evidence(db, ids, nowait=True)
     touched: set[uuid.UUID] = set()
-    for task_id in sorted(set(task_ids), key=str):
+    for task_id in ids:
         await record_annotation_actor_for_task(db, task_id, actor_id, nowait=nowait)
         touched.add(task_id)
     return touched

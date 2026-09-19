@@ -1213,6 +1213,7 @@ class BatchService:
         )
         from app.db.models.annotation import Annotation
         from app.services.annotation_evidence import (
+            lock_tasks_for_evidence,
             record_annotation_actors_for_tasks,
         )
         from sqlalchemy import text, bindparam
@@ -1223,6 +1224,10 @@ class BatchService:
                 "failed_predictions": 0,
                 "ai_annotations_deactivated": 0,
             }
+
+        # Serialize the content snapshot with producers before determining which
+        # tasks lose AI content. Multi-batch callers can already hold other locks.
+        await lock_tasks_for_evidence(self.db, task_ids, nowait=True)
 
         # A2 · capture which tasks actually lose accepted AI content, and record
         # the deletion actor before the soft-delete. A system cleanup without an

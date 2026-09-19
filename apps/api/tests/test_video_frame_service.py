@@ -291,6 +291,38 @@ async def test_video_submit_does_not_credit_shared_item_segment_assignees(
     assert str(owner.id) in (task.annotation_contributor_ids or [])
 
 
+async def test_segment_evidence_retains_each_actual_submitter(
+    db_session, super_admin, monkeypatch
+):
+    from app.services.video_frame_service import build_context_from_task
+    from app.services.video_segment_service import ensure_segments, submit_segment
+    from tests.factory import create_user
+
+    owner, _ = super_admin
+    other = await create_user(
+        db_session, "super_admin", "segment-submitter@test.local", "Other submitter"
+    )
+    task, _ = await _make_video_task(db_session, owner.id)
+    project = await db_session.get(Project, task.project_id)
+    project.video_collaboration = {"enabled": True, "overlap_frames": 2}
+    monkeypatch.setattr(
+        "app.services.video_segment_service.settings.video_segment_size_frames", 45
+    )
+    ctx = await build_context_from_task(db_session, task)
+    segments = await ensure_segments(db_session, ctx)
+    assert len(segments) == 2
+
+    await submit_segment(db_session, ctx, segments[0].id, owner, privileged=True)
+    assert task.status != "review"
+    assert task.annotation_contributor_ids == [str(owner.id)]
+    await submit_segment(db_session, ctx, segments[1].id, other, privileged=True)
+    await db_session.refresh(task)
+    assert task.status == "review"
+    assert task.review_round_id is not None
+    assert task.review_submitter_id == other.id
+    assert task.review_contributor_ids == sorted([str(owner.id), str(other.id)])
+
+
 async def test_video_collaboration_derives_overlap_work_ranges(
     db_session, httpx_client_bound, super_admin, monkeypatch
 ):

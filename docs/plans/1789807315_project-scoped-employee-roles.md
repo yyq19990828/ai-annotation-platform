@@ -1,6 +1,6 @@
 # Project-scoped employee roles
 
-> Status: approved for local implementation; Increment A in progress.
+> Status: approved for local implementation; Increment A accepted, Increment B next.
 > Reviewed: 2026-09-19. Repository baseline: `0529967217464bec8ae8fb6531ec732a777adffd`, branch `feat/platform_opt260919`.
 > Source: supplied `project-scoped-employee-roles-plan.md`, dated 2026-09-17, based on `53c19bb0fa6ae133b6b2948b9e36af801866f791`.
 > Scope of this review: source, callers, existing contracts, tests and documentation. No application tests, live browser validation, database inspection or migration was performed.
@@ -371,3 +371,4 @@ Production role mismatches, migration duration, irrecoverable legacy review evid
 - Formal cutover and post-deployment compatibility cleanup remain gated by their operational evidence and target-environment authorization.
 - A1 accepted on 2026-09-19: migration `0173`, additive ORM fields, read-only audit and documentation are integrated in `65b2bc1a4`, `604ccadf0` and `3bb3ae016`. The coordinator rejected the first two candidates, then passed all 14 targeted PostgreSQL/CLI/pure/drift checks and `git diff --check` on the corrected result. The parent uses an isolated worktree test database; no primary application database migration was performed.
 - A2 started from `604ccadf0` once the additive schema and roundtrip were verified, in a separate direct child. The remaining A1 audit fixes were confined to script/docs/tests and integrated independently; full Increment A acceptance still requires contributor-recording validation.
+- A2 accepted on 2026-09-19: worker changes are integrated in `4606f4aea`, `355403d85` and `6a0ca07c0`, with coordinator corrections in this execution-record commit. Acceptance fixed malformed UUID handling, pending ORM evidence loss, mixed-order NOWAIT acquisition before autoflush, inherited skip assignees, video segment submitters and prediction-cleanup actors. Final isolated PostgreSQL selections passed 106, 161 and 104 tests respectively (overlapping selections, not a unique total), including independent-connection write/freeze and busy-lock rollback, old-binary raw inserts, legacy migration roundtrip, API/worker/multimodal regressions and audit/model drift. Ruff, Markdown formatting and `git diff --check` passed. The initial migration expectation and expired-ORM test failures were corrected and rerun. No browser E2E or remote CI has run yet; project-role enforcement remains the next increment.

@@ -16,7 +16,7 @@ import uuid
 
 import pytest
 from fastapi import HTTPException
-from sqlalchemy import delete
+from sqlalchemy import delete, text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models.annotation import Annotation
@@ -28,6 +28,7 @@ from app.db.models.user import User
 from app.services.annotation_evidence import (
     freeze_review_contributor_evidence,
     record_annotation_actor,
+    refresh_task_evidence,
 )
 from app.services.annotation_slice import AnnotationSliceService
 from app.services.batch import BatchService
@@ -406,7 +407,28 @@ async def test_new_orm_task_defaults_to_known_empty(db_session, super_admin):
     assert task.annotation_contributor_ids == []
 
 
-async def test_same_transaction_two_actors_union(db_session, super_admin):
+async def test_old_binary_raw_task_insert_stays_unknown(db_session, super_admin):
+    owner, _ = super_admin
+    project = await create_project(db_session, owner_id=owner.id)
+    value = await db_session.scalar(
+        text(
+            "INSERT INTO tasks (id, project_id, display_id, file_name, file_path, "
+            "file_type, tags, status, is_labeled, overlap, total_annotations, "
+            "total_predictions) VALUES (:id, :project, :display, 'legacy.png', "
+            "'legacy.png', 'image', '[]'::jsonb, 'pending', false, 1, 0, 0) "
+            "RETURNING annotation_contributor_ids"
+        ),
+        {
+            "id": uuid.uuid4(),
+            "project": project.id,
+            "display": f"LEGACY-{uuid.uuid4().hex[:12]}",
+        },
+    )
+    assert value is None
+
+
+@pytest.mark.parametrize("nowait", [False, True])
+async def test_same_transaction_two_actors_union(db_session, super_admin, nowait):
     owner, _ = super_admin
     first = await create_user(
         db_session, "super_admin", "union-a@test.local", "Union A"
@@ -416,10 +438,15 @@ async def test_same_transaction_two_actors_union(db_session, super_admin):
     )
     _project, task = await _seed_task(db_session, owner)
 
-    assert await record_annotation_actor(db_session, task, first.id) is True
+    assert (
+        await record_annotation_actor(db_session, task, first.id, nowait=nowait) is True
+    )
     # A second record in the same transaction must not discard the first: the
     # helper flushes pending accumulator changes before the locking refresh.
-    assert await record_annotation_actor(db_session, task, second.id) is True
+    assert (
+        await record_annotation_actor(db_session, task, second.id, nowait=nowait)
+        is True
+    )
     await db_session.flush()
     await db_session.refresh(task)
 
@@ -541,7 +568,8 @@ async def _drop_evidence_fixture(maker, fixture: dict) -> None:
         await cleanup.commit()
 
 
-async def test_nowait_busy_lock_rolls_back_to_409(test_engine):
+@pytest.mark.parametrize("dirty", [False, True])
+async def test_nowait_busy_lock_rolls_back_to_409(test_engine, dirty):
     maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
     fixture = await _seed_evidence_fixture(maker, "busy")
     session_a = maker()
@@ -553,17 +581,25 @@ async def test_nowait_busy_lock_rolls_back_to_409(test_engine):
         )
 
         task_b = await session_b.get(Task, fixture["task"])
+        if dirty:
+            # An autoflush UPDATE must not block before the NOWAIT lock attempt.
+            task_b.total_annotations = 123
         with pytest.raises(HTTPException) as caught:
-            await record_annotation_actor(
-                session_b, task_b, fixture["other"], nowait=True
+            await asyncio.wait_for(
+                record_annotation_actor(
+                    session_b, task_b, fixture["other"], nowait=True
+                ),
+                timeout=2,
             )
         assert caught.value.status_code == 409
         assert caught.value.detail["reason"] == "task_evidence_busy"
+        assert not session_b.in_transaction()
 
         await session_a.commit()
         async with maker() as check:
             fresh = await check.get(Task, fixture["task"])
             assert fresh.annotation_contributor_ids == [str(fixture["writer"])]
+            assert fresh.total_annotations == 0
     finally:
         await session_a.close()
         await session_b.close()
@@ -576,12 +612,14 @@ async def test_stale_phase_and_prefreeze_writer_are_refreshed(test_engine):
     stale = maker()
     writer_session = maker()
     review_session = maker()
+    pending = None
     try:
         # A stale annotation-phase instance is loaded while the task is editable.
         stale_task = await stale.get(Task, fixture["task"])
         assert stale_task.status == "in_progress"
+        review_task = await review_session.get(Task, fixture["task"])
 
-        # A pre-freeze writer records and commits.
+        # A pre-freeze writer holds the task lock with uncommitted evidence.
         writer_task = await writer_session.get(Task, fixture["task"])
         assert (
             await record_annotation_actor(
@@ -589,16 +627,22 @@ async def test_stale_phase_and_prefreeze_writer_are_refreshed(test_engine):
             )
             is True
         )
-        await writer_session.commit()
 
-        # A separate transaction transitions the task to review and freezes the
-        # round; the writer must be retained.
-        review_task = await review_session.get(Task, fixture["task"])
-        review_task.status = "review"
-        frozen = freeze_review_contributor_evidence(
-            review_task, submitter_id=fixture["writer"], contributor_ids=[]
-        )
-        await review_session.commit()
+        async def submit_after_writer():
+            await refresh_task_evidence(review_session, review_task)
+            review_task.status = "review"
+            review_task.review_round_id = uuid.uuid4()
+            frozen = freeze_review_contributor_evidence(
+                review_task, submitter_id=fixture["writer"], contributor_ids=[]
+            )
+            await review_session.commit()
+            return frozen
+
+        pending = asyncio.create_task(submit_after_writer())
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(asyncio.shield(pending), timeout=0.2)
+        await writer_session.commit()
+        frozen = await asyncio.wait_for(pending, timeout=10)
         assert frozen == [str(fixture["writer"])]
 
         # The stale instance still believes it is in the annotation phase; the
@@ -615,6 +659,9 @@ async def test_stale_phase_and_prefreeze_writer_are_refreshed(test_engine):
             assert str(fixture["writer"]) in fresh.review_contributor_ids
             assert str(fixture["other"]) not in (fresh.annotation_contributor_ids or [])
     finally:
+        if pending is not None and not pending.done():
+            pending.cancel()
+            await asyncio.gather(pending, return_exceptions=True)
         await stale.close()
         await writer_session.close()
         await review_session.close()
