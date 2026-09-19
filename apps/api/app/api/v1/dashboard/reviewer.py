@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, or_
+from sqlalchemy import select, func, and_, or_
 from app.deps import (
     get_db,
     require_roles,
@@ -12,9 +12,11 @@ from app.db.models.task import Task
 from app.db.models.dataset import DatasetItem
 from app.db.models.task_batch import TaskBatch
 from app.services.storage import storage_service
+from app.services.scheduler import batch_visibility_clause
 from app.services.project_aggregates import (
     DASHBOARD_PLATFORM_ROLES,
     REVIEWER_ROLE,
+    platform_role_is_manager,
     project_scope_clause,
 )
 from app.db.enums import UserRole, TaskStatus
@@ -41,17 +43,37 @@ def _visible_project_clause(user: User):
 
 
 def _reviewable_claim_clause(user: User):
-    """Exclude review work already claimed by another reviewer.
+    """Actual actionable-review visibility plus the "do not steal a claim" rule.
 
-    Project authority is applied separately by ``_visible_project_clause``; this
-    predicate only mirrors the workbench "do not steal an active claim" rule.
+    Project authority is applied separately by ``_visible_project_clause``.  A
+    task is actionable only when its batch is in a reviewer-visible state (or it
+    is a collaborative video task), an unbatched task is only visible to its
+    assigned reviewer, and it is not already claimed by someone else.  The owner
+    bypass requires an administrative platform role, so an anomalous employee
+    owner does not gain management scope.
     """
     if user.role == UserRole.SUPER_ADMIN:
         return None
-    return or_(
-        Project.owner_id == user.id,
-        Task.reviewer_claimed_at.is_(None),
-        Task.reviewer_id == user.id,
+    manager_owner = and_(
+        platform_role_is_manager(user.role), Project.owner_id == user.id
+    )
+    visible_batch = Task.batch_id.in_(
+        select(TaskBatch.id)
+        .where(batch_visibility_clause(user, project_role=REVIEWER_ROLE))
+        .correlate(None)
+    )
+    collaborative_video = and_(
+        Task.file_type == "video",
+        Project.video_collaboration["enabled"].as_boolean().is_(True),
+    )
+    unbatched_assigned = and_(Task.batch_id.is_(None), Task.reviewer_id == user.id)
+    return and_(
+        or_(manager_owner, unbatched_assigned, visible_batch, collaborative_video),
+        or_(
+            manager_owner,
+            Task.reviewer_claimed_at.is_(None),
+            Task.reviewer_id == user.id,
+        ),
     )
 
 
