@@ -17,8 +17,11 @@ from app.db.models.project_member import ProjectMember
 from app.services.video_tracking.runner import (
     TrackerJobStateConflict,
     _assert_tracker_actor_authority,
+    accept_tracker_job,
+    decide_tracker_job,
 )
 from tests.factory import create_project, create_task, create_user
+from tests.test_video_tracker_jobs_list import _make_job, _make_video_task
 
 
 async def _add_member(
@@ -81,6 +84,78 @@ async def test_runner_guard_denies_revoked_employee_actor(
 
     with pytest.raises(TrackerJobStateConflict) as exc:
         await _assert_tracker_actor_authority(db_session, task, employee.id)
+    assert exc.value.detail["reason"] == "permission_changed"
+
+
+async def test_accept_runner_authorizes_before_replay_exit(
+    db_session: AsyncSession, super_admin
+):
+    """An idempotent ACCEPTED replay must not bypass current authority."""
+
+    owner, _ = super_admin
+    task, item = await _make_video_task(db_session, owner.id)
+    employee = await create_user(
+        db_session, "employee", f"replay-{uuid.uuid4()}@test.local", "Replay"
+    )
+    job = await _make_job(db_session, task, item, employee.id, status="accepted")
+    await db_session.commit()
+
+    with pytest.raises(TrackerJobStateConflict) as exc:
+        await accept_tracker_job(db_session, job.id, actor_id=employee.id)
+    assert exc.value.detail["reason"] == "permission_changed"
+
+    with pytest.raises(TrackerJobStateConflict) as exc:
+        await accept_tracker_job(db_session, job.id, actor_id=None)
+    assert exc.value.detail["reason"] == "permission_changed"
+
+
+async def test_accept_runner_denies_inactive_actor(
+    db_session: AsyncSession, super_admin
+):
+    owner, _ = super_admin
+    task, item = await _make_video_task(db_session, owner.id)
+    employee = await create_user(
+        db_session, "employee", f"inactive-{uuid.uuid4()}@test.local", "Inactive"
+    )
+    await _add_member(
+        db_session,
+        project_id=task.project_id,
+        user_id=employee.id,
+        role="annotator",
+        assigned_by=owner.id,
+    )
+    employee.is_active = False
+    job = await _make_job(db_session, task, item, employee.id, status="pending_review")
+    await db_session.commit()
+
+    with pytest.raises(TrackerJobStateConflict) as exc:
+        await accept_tracker_job(db_session, job.id, actor_id=employee.id)
+    assert exc.value.detail["reason"] == "permission_changed"
+
+
+async def test_decide_runner_authorizes_before_selector_checks(
+    db_session: AsyncSession, super_admin
+):
+    owner, _ = super_admin
+    task, item = await _make_video_task(db_session, owner.id)
+    employee = await create_user(
+        db_session, "employee", f"decide-{uuid.uuid4()}@test.local", "Decide"
+    )
+    job = await _make_job(db_session, task, item, employee.id, status="pending_review")
+    await db_session.commit()
+
+    with pytest.raises(TrackerJobStateConflict) as exc:
+        await decide_tracker_job(
+            db_session,
+            job.id,
+            instance_ids=["missing"],
+            from_frame=0,
+            to_frame=0,
+            decision="reject",
+            expected_source_versions={},
+            job_revision=1,
+            actor_id=employee.id,
+        )
     assert exc.value.detail["reason"] == "permission_changed"
 
 

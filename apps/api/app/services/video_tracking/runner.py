@@ -1091,6 +1091,37 @@ def _busy_lock_error(exc: BaseException) -> bool:
     return sqlstate in _BUSY_SQLSTATES
 
 
+async def _job_project_id(db: AsyncSession, job_id: uuid.UUID):
+    """Lightweight project id for a job, used for account-first membership locks."""
+
+    return (
+        await db.execute(
+            select(Task.project_id)
+            .select_from(VideoTrackerJob)
+            .join(Task, Task.id == VideoTrackerJob.task_id)
+            .where(VideoTrackerJob.id == job_id)
+        )
+    ).scalar_one_or_none()
+
+
+async def _lock_actor_membership(
+    db: AsyncSession, actor_id: uuid.UUID | None, job_id: uuid.UUID
+) -> None:
+    from fastapi import HTTPException
+
+    from app.services.project_write_guard import lock_actor_project_share
+
+    project_id = await _job_project_id(db, job_id)
+    if project_id is None:
+        return
+    try:
+        await lock_actor_project_share(db, actor_id, project_id)
+    except HTTPException as exc:
+        raise TrackerJobStateConflict(
+            "project membership is busy", reason="tracker_job_busy"
+        ) from exc
+
+
 async def _lock_actor_share(db: AsyncSession, actor_id: uuid.UUID | None):
     """Account-first bounded share lock for a tracker final write."""
 
@@ -1145,6 +1176,28 @@ async def _lock_task_bounded(db: AsyncSession, task_id: uuid.UUID):
         raise
 
 
+async def _lock_segment_bounded(db: AsyncSession, segment_id: uuid.UUID):
+    """Bounded NOWAIT segment lock for the final-write path."""
+
+    from sqlalchemy.exc import DBAPIError
+
+    try:
+        return (
+            await db.execute(
+                select(VideoSegment)
+                .where(VideoSegment.id == segment_id)
+                .with_for_update(nowait=True)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+    except DBAPIError as exc:
+        if _busy_lock_error(exc):
+            raise TrackerJobStateConflict(
+                "video segment is busy", reason="segment_lease_changed"
+            ) from exc
+        raise
+
+
 async def _assert_tracker_actor_authority(
     db: AsyncSession,
     task: Task,
@@ -1193,7 +1246,12 @@ async def _lock_tracker_review_context(
     task = await _lock_task_bounded(db, job.task_id)
     if task is None:
         raise TrackerJobStateConflict("task no longer exists", reason="task_changed")
-    effective_actor = actor_id or job.created_by
+    if actor_id is None:
+        raise TrackerJobStateConflict(
+            "an explicit actor is required for tracker final writes",
+            reason="permission_changed",
+        )
+    effective_actor = actor_id
     if task.status == "completed":
         raise TrackerJobStateConflict(
             f"task is locked in status {task.status}", reason="task_locked"
@@ -1219,14 +1277,7 @@ async def _lock_tracker_review_context(
     # capability and frozen review evidence (no creator fallback).
     await _assert_tracker_actor_authority(db, task, actor_id)
     if job.segment_id is not None:
-        segment = (
-            await db.execute(
-                select(VideoSegment)
-                .where(VideoSegment.id == job.segment_id)
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            )
-        ).scalar_one_or_none()
+        segment = await _lock_segment_bounded(db, job.segment_id)
         now = _now()
         work_start, work_end = (
             await segment_work_bounds_for_task(db, task=task, segment=segment)
@@ -1768,11 +1819,17 @@ async def decide_tracker_job(
 ) -> VideoTrackerJob | None:
     """Atomically accept/reject one explicit instance/window candidate slice."""
 
-    # Account-first bounded lock order: actor (share) -> job -> task.
+    # Account-first bounded lock order: actor (share) -> job -> task.  Authority
+    # is rechecked before the QC-region dispatch and any idempotent replay exit.
     await _lock_actor_share(db, actor_id)
+    await _lock_actor_membership(db, actor_id, job_id)
     job = await _load_job_for_update(db, job_id)
     if job is None:
         return None
+    early_task = await _lock_task_bounded(db, job.task_id)
+    if early_task is None:
+        raise TrackerJobStateConflict("task no longer exists", reason="task_changed")
+    await _assert_tracker_actor_authority(db, early_task, actor_id)
     staged = dict(job.staged_result or {})
     rows = [
         _ensure_candidate_contract(row)
@@ -2175,11 +2232,18 @@ async def accept_tracker_job(
 ) -> VideoTrackerJob | None:
     """接受候选: 把 job.staged_result 应用到 annotation (主实例回填源 + 每个新 instance 各建
     一条 track), status=ACCEPTED。幂等 (已 ACCEPTED 直接返回)。状态不符 / 无 staged → 原样返回。"""
-    # Account-first bounded lock order: actor (share) -> job -> task.
+    # Account-first bounded lock order: actor (share) -> job -> task.  Authority
+    # is rechecked before ANY replay/status early return so an idempotent replay
+    # cannot bypass current project/phase authority.
     await _lock_actor_share(db, actor_id)
+    await _lock_actor_membership(db, actor_id, job_id)
     job = await _load_job_for_update(db, job_id)
     if job is None:
         return None
+    task = await _lock_task_bounded(db, job.task_id)
+    if task is None:
+        raise ValueError("Task not found")
+    await _assert_tracker_actor_authority(db, task, actor_id)
     if job.status == VideoTrackerJobStatus.ACCEPTED.value:
         await db.commit()
         return job
@@ -2198,10 +2262,8 @@ async def accept_tracker_job(
     # v0.22.1 · B · 源轨迹可选 (无源检测 → 全新建); v0.22.2 · M · 多选批量: prompt.seeds
     # 每条可带 source_annotation_id (obj_id ↔ 源轨迹), 各实例回填各自源。
     results = _deserialize_results(rows)
-    task = await _lock_task_bounded(db, job.task_id)
-    if task is None:
-        raise ValueError("Task not found")
-    effective_actor = actor_id or job.created_by
+    # Explicit actor only; never impersonate the job creator.
+    effective_actor = actor_id
     if task.status in {"review", "completed"}:
         raise TrackerJobStateConflict(f"task is locked in status {task.status}")
     if (
@@ -2210,18 +2272,8 @@ async def accept_tracker_job(
         and task.assignee_id != effective_actor
     ):
         raise TrackerJobStateConflict("task assignment changed before accept")
-    # After the fresh Task lock, reauthorize the actual actor against current
-    # project membership/phase (no creator fallback).
-    await _assert_tracker_actor_authority(db, task, actor_id)
     if job.segment_id is not None:
-        segment = (
-            await db.execute(
-                select(VideoSegment)
-                .where(VideoSegment.id == job.segment_id)
-                .with_for_update()
-                .execution_options(populate_existing=True)
-            )
-        ).scalar_one_or_none()
+        segment = await _lock_segment_bounded(db, job.segment_id)
         now = _now()
         work_start, work_end = (
             await segment_work_bounds_for_task(db, task=task, segment=segment)

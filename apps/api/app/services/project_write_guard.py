@@ -19,10 +19,48 @@ reviewer/manager plus current, complete, non-self frozen evidence.
 from __future__ import annotations
 
 from fastapi import HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.user import User
+
+_BUSY_SQLSTATES = {"55P03", "40001", "40P01"}
+
+
+def _busy_lock_error(exc: BaseException) -> bool:
+    orig = getattr(exc, "orig", None)
+    sqlstate = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+    return sqlstate in _BUSY_SQLSTATES
+
+
+async def lock_actor_project_share(
+    db: AsyncSession, actor_id, project_id, *, nowait: bool = True
+) -> None:
+    """Account-before-resource: bounded share lock on the actor's membership.
+
+    Acquired before Task/Job locks so the final-write guard's later membership
+    re-read does not introduce a Membership-after-Task wait cycle.
+    """
+
+    from sqlalchemy.exc import DBAPIError
+
+    try:
+        await db.execute(
+            select(ProjectMember.id)
+            .where(
+                ProjectMember.project_id == project_id,
+                ProjectMember.user_id == actor_id,
+            )
+            .with_for_update(read=True, nowait=nowait)
+        )
+    except DBAPIError as exc:
+        if _busy_lock_error(exc):
+            raise HTTPException(
+                status_code=409, detail={"reason": "membership_busy"}
+            ) from exc
+        raise
 
 
 async def assert_phase_write_allowed(

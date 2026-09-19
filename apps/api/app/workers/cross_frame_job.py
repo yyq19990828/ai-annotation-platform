@@ -247,6 +247,20 @@ async def execute_cross_frame_job(
             if not actor.is_active:
                 raise RuntimeError("permission_changed")
             lock_ids = sorted({source_task_id, target_task_id}, key=str)
+            # Account/membership-before-resource: bounded share lock the actor's
+            # membership for each involved project before the Task locks, so the
+            # final-write guard's membership re-read cannot wait after a Task.
+            from app.services.project_write_guard import lock_actor_project_share
+
+            member_project_ids = set(
+                (
+                    await db.execute(
+                        select(Task.project_id).where(Task.id.in_(lock_ids))
+                    )
+                ).scalars()
+            )
+            for member_project_id in member_project_ids:
+                await lock_actor_project_share(db, actor.id, member_project_id)
             locked_tasks = list(
                 (
                     await db.execute(
