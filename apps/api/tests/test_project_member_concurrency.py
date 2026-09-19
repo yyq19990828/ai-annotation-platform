@@ -158,13 +158,18 @@ async def _seed(
         }
 
 
-async def _drop(maker: async_sessionmaker[AsyncSession], fixture: dict) -> None:
+async def _drop(
+    maker: async_sessionmaker[AsyncSession],
+    fixture: dict,
+    extra_user_ids: tuple[uuid.UUID, ...] = (),
+) -> None:
     user_ids = [
         fixture["owner"],
         fixture["admin"],
         fixture["member_user"],
         fixture["annotator_receiver"],
         fixture["reviewer_receiver"],
+        *extra_user_ids,
     ]
     project_ids = [pid for pid in (fixture["project"], fixture["other_project"]) if pid]
     async with maker() as cleanup:
@@ -795,3 +800,232 @@ async def test_concurrent_duplicate_change_only_one_wins(test_engine):
         await first.close()
         await second.close()
         await _drop(maker, fixture)
+
+
+# ---------------------------------------------------------------------------
+# Follow-up review regressions
+# ---------------------------------------------------------------------------
+
+
+async def test_pending_only_inherited_reviewer_batch_handoff(test_engine):
+    """A batch reviewer default used by pending work is handed off and reassigned."""
+
+    maker = _maker(test_engine)
+    fixture = await _seed(maker, annotator_role="reviewer", with_annotation_work=False)
+    try:
+        async with maker() as seeding:
+            batch = await seeding.get(TaskBatch, fixture["batch"])
+            batch.reviewer_id = fixture["member_user"]
+            batch.assigned_user_ids = [str(fixture["member_user"])]
+            pending = await create_task(
+                seeding, project_id=fixture["project"], status="pending"
+            )
+            # No reviewer override: the task inherits the batch default.
+            pending.batch_id = fixture["batch"]
+            await seeding.commit()
+            pending_id = pending.id
+
+        session = maker()
+        try:
+            preview = await _preview(
+                session,
+                fixture,
+                target_role="annotator",
+                replacement_reviewer_id=fixture["reviewer_receiver"],
+            )
+            assert preview["blockers"] == [], preview["blockers"]
+            assert (
+                str(fixture["batch"])
+                in preview["resource_snapshot"]["batch_reviewer_ids"]
+            )
+            changed = await _change(
+                session,
+                fixture,
+                target_role="annotator",
+                expected_version=1,
+                preview_token=preview["preview_token"],
+                replacement_reviewer_id=fixture["reviewer_receiver"],
+            )
+            assert changed.role == "annotator"
+        finally:
+            await session.close()
+
+        async with maker() as check:
+            batch = await check.get(TaskBatch, fixture["batch"])
+            assert batch.reviewer_id == fixture["reviewer_receiver"]
+            assert str(fixture["reviewer_receiver"]) in batch.assigned_user_ids
+            assert str(fixture["member_user"]) not in batch.assigned_user_ids
+            pending_task = await check.get(Task, pending_id)
+            # Pending work keeps inheriting the (now reassigned) default.
+            assert pending_task.reviewer_id is None
+    finally:
+        await _drop(maker, fixture)
+
+
+async def test_lock_bounding_ignores_terminal_history_and_expired_locks(test_engine):
+    """Only unfinished dependencies and live locks are locked/released."""
+
+    maker = _maker(test_engine)
+    fixture = await _seed(maker)
+    holder = maker()
+    try:
+        async with maker() as seeding:
+            terminal = await create_task(
+                seeding, project_id=fixture["project"], status="completed"
+            )
+            terminal.batch_id = fixture["batch"]
+            terminal.assignee_id = fixture["member_user"]
+            terminal.assignee_is_override = False
+            seeding.add(
+                TaskLock(
+                    task_id=terminal.id,
+                    user_id=fixture["member_user"],
+                    expire_at=datetime(2000, 1, 1, tzinfo=timezone.utc),
+                )
+            )
+            await seeding.commit()
+            terminal_id = terminal.id
+
+        # An external writer holds terminal history; the bounded mutation must
+        # not need that row.
+        await holder.scalar(
+            select(Task).where(Task.id == terminal_id).with_for_update()
+        )
+
+        session = maker()
+        try:
+            preview = await _preview(
+                session,
+                fixture,
+                target_role="reviewer",
+                replacement_annotator_id=fixture["annotator_receiver"],
+            )
+            assert "active_locks" not in preview["blockers"]
+            changed = await _change(
+                session,
+                fixture,
+                target_role="reviewer",
+                expected_version=1,
+                preview_token=preview["preview_token"],
+                replacement_annotator_id=fixture["annotator_receiver"],
+            )
+            assert changed.version == 2
+        finally:
+            await session.close()
+        await holder.rollback()
+
+        async with maker() as check:
+            history = await check.get(Task, terminal_id)
+            assert history.assignee_id == fixture["member_user"]
+            expired = await check.scalar(
+                select(TaskLock).where(TaskLock.task_id == terminal_id)
+            )
+            assert expired is not None
+    finally:
+        await holder.close()
+        await _drop(maker, fixture)
+
+
+async def test_stale_actor_object_cannot_authorize_after_deactivation(test_engine):
+    """A stale in-memory actor cannot authorize once the locked row is inactive."""
+
+    maker = _maker(test_engine)
+    fixture = await _seed(maker, with_annotation_work=False)
+    try:
+        stale_session = maker()
+        try:
+            stale_actor = await stale_session.get(User, fixture["owner"])
+            assert stale_actor.is_active is True
+            async with maker() as deactivate:
+                owner = await deactivate.get(User, fixture["owner"])
+                owner.is_active = False
+                await deactivate.commit()
+
+            session = maker()
+            try:
+                project = await session.get(Project, fixture["project"])
+                with pytest.raises(Exception) as caught:
+                    await change_role(
+                        session,
+                        project=project,
+                        actor=stale_actor,
+                        member_id=fixture["member_row"],
+                        target_role="reviewer",
+                        expected_version=1,
+                        preview_token="irrelevant",
+                        reason="stale actor",
+                        replacement_annotator_id=None,
+                        replacement_reviewer_id=None,
+                    )
+                assert getattr(caught.value, "status_code", None) == 401
+            finally:
+                await session.close()
+        finally:
+            await stale_session.close()
+    finally:
+        await _drop(maker, fixture)
+
+
+async def test_preview_and_apply_agree_on_target_platform_incompatibility(
+    test_engine,
+):
+    """A platform viewer cannot be promoted and preview reports it as a blocker."""
+
+    maker = _maker(test_engine)
+    fixture = await _seed(maker, with_annotation_work=False)
+    viewer_id = None
+    try:
+        async with maker() as seeding:
+            viewer = await create_user(
+                seeding,
+                "viewer",
+                f"align-view-{uuid.uuid4().hex[:8]}@test.local",
+                "View",
+            )
+            viewer_member = ProjectMember(
+                project_id=fixture["project"],
+                user_id=viewer.id,
+                role="viewer",
+                assigned_by=fixture["owner"],
+            )
+            seeding.add(viewer_member)
+            await seeding.commit()
+            viewer_id = viewer.id
+            viewer_member_id = viewer_member.id
+
+        session = maker()
+        try:
+            project = await session.get(Project, fixture["project"])
+            actor = await session.get(User, fixture["admin"])
+            preview = await preview_role_change(
+                session,
+                project=project,
+                actor=actor,
+                member_id=viewer_member_id,
+                target_role="annotator",
+                replacement_annotator_id=None,
+                replacement_reviewer_id=None,
+            )
+            assert "target_role_incompatible" in preview["blockers"]
+
+            with pytest.raises(Exception) as caught:
+                await change_role(
+                    session,
+                    project=project,
+                    actor=actor,
+                    member_id=viewer_member_id,
+                    target_role="annotator",
+                    expected_version=preview["current_version"],
+                    preview_token=preview["preview_token"],
+                    reason="align",
+                    replacement_annotator_id=None,
+                    replacement_reviewer_id=None,
+                )
+            assert getattr(caught.value, "status_code", None) == 409
+            assert "target_role_incompatible" in [
+                entry["code"] for entry in caught.value.detail["blockers"]
+            ]
+        finally:
+            await session.close()
+    finally:
+        await _drop(maker, fixture, extra_user_ids=(viewer_id,) if viewer_id else ())

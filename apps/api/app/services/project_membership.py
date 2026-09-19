@@ -77,6 +77,7 @@ UNFINISHED_REVIEW_STATUSES = (TaskStatus.REVIEW.value,)
 
 _BLOCKER_LABELS = {
     "same_role": "目标职责与当前职责相同",
+    "target_role_incompatible": "账号平台角色与目标项目职责不兼容",
     "unfinished_annotation_work": "成员仍有未完成的标注工作，需显式指派接收人",
     "unfinished_review_work": "成员仍有未完成的审核工作，需显式指派接收人",
     "active_locks": "成员持有效工作锁，需在交接中释放后才能变更职责",
@@ -223,22 +224,18 @@ async def _lock_replacement_memberships_nowait(
     return {member.user_id: member for member in rows}
 
 
-async def _lock_batches_nowait(
-    db: AsyncSession, *, project_id: uuid.UUID, user_ids: Iterable[uuid.UUID | None]
+async def _lock_batch_ids_nowait(
+    db: AsyncSession, *, project_id: uuid.UUID, batch_ids: Iterable[uuid.UUID]
 ) -> list[TaskBatch]:
-    ids = sorted({uid for uid in user_ids if uid is not None})
+    """Lock only the batches that are active dependencies of unfinished work."""
+
+    ids = sorted({uuid.UUID(str(bid)) for bid in batch_ids})
     if not ids:
         return []
     try:
         rows = await db.scalars(
             select(TaskBatch)
-            .where(
-                TaskBatch.project_id == project_id,
-                or_(
-                    TaskBatch.annotator_id.in_(ids),
-                    TaskBatch.reviewer_id.in_(ids),
-                ),
-            )
+            .where(TaskBatch.project_id == project_id, TaskBatch.id.in_(ids))
             .order_by(TaskBatch.id)
             .with_for_update(nowait=True)
             .execution_options(populate_existing=True)
@@ -253,31 +250,21 @@ async def _lock_batches_nowait(
     return list(rows)
 
 
-async def _lock_tasks_nowait(
+async def _lock_task_ids_nowait(
     db: AsyncSession,
     *,
     project_id: uuid.UUID,
-    user_ids: Iterable[uuid.UUID | None],
-    extra_task_ids: Iterable[uuid.UUID] = (),
+    task_ids: Iterable[uuid.UUID],
 ) -> list[Task]:
-    ids = sorted({uid for uid in user_ids if uid is not None})
-    extra = sorted({tid for tid in extra_task_ids})
-    filters = []
-    if ids:
-        filters.append(
-            or_(
-                Task.assignee_id.in_(ids),
-                Task.reviewer_id.in_(ids),
-            )
-        )
-    if extra:
-        filters.append(Task.id.in_(extra))
-    if not filters:
+    """Lock only the affected unfinished/locked task rows, never full history."""
+
+    ids = sorted({uuid.UUID(str(tid)) for tid in task_ids})
+    if not ids:
         return []
     try:
         rows = await db.scalars(
             select(Task)
-            .where(Task.project_id == project_id, or_(*filters))
+            .where(Task.project_id == project_id, Task.id.in_(ids))
             .order_by(Task.id)
             .with_for_update(nowait=True)
             .execution_options(populate_existing=True)
@@ -292,17 +279,20 @@ async def _lock_tasks_nowait(
     return list(rows)
 
 
-async def _lock_task_locks_nowait(
-    db: AsyncSession, *, project_id: uuid.UUID, user_ids: Iterable[uuid.UUID | None]
+async def _lock_live_task_locks_nowait(
+    db: AsyncSession, *, project_id: uuid.UUID, user_id: uuid.UUID
 ) -> list[TaskLock]:
-    ids = sorted({uid for uid in user_ids if uid is not None})
-    if not ids:
-        return []
+    """Lock only live (unexpired) locks held by the member in this project."""
+
     try:
         rows = await db.scalars(
             select(TaskLock)
             .join(Task, Task.id == TaskLock.task_id)
-            .where(Task.project_id == project_id, TaskLock.user_id.in_(ids))
+            .where(
+                Task.project_id == project_id,
+                TaskLock.user_id == user_id,
+                TaskLock.expire_at > _utcnow(),
+            )
             .order_by(TaskLock.task_id, TaskLock.user_id)
             .with_for_update(nowait=True)
             .execution_options(populate_existing=True)
@@ -628,7 +618,10 @@ async def build_member_resource_snapshot(
         db,
         project_id=project_row.id,
         column=TaskBatch.reviewer_id,
-        statuses=UNFINISHED_REVIEW_STATUSES,
+        # A reviewer default is prospectively used by *any* unfinished task,
+        # including pending/in-progress annotation work, not only tasks that
+        # already entered review.
+        statuses=(*UNFINISHED_ANNOTATION_STATUSES, *UNFINISHED_REVIEW_STATUSES),
         inherit_filter=_inherits_review_default(user_id),
         user_id=user_id,
     )
@@ -878,6 +871,12 @@ async def evaluate_role_change(
 
     if target_role == member.role:
         blockers.append(_blocker("same_role"))
+    if not membership_role_compatible(
+        snapshot["member_account"]["platform_role"], target_role
+    ):
+        # Surface the same incompatibility in preview and apply instead of a
+        # 400 on the write path only.
+        blockers.append(_blocker("target_role_incompatible"))
 
     annotation_receiver, annotation_error = await _resolve_receiver(
         db,
@@ -981,11 +980,12 @@ async def evaluate_role_change(
             )
 
     # Losing the last reviewer must cover remaining unassigned review work as
-    # well as the member's own target-owned review work.
+    # well as the member's own target-owned review work and active batch
+    # reviewer defaults.
     if (
         member.role == ProjectRole.REVIEWER.value
         and review_removed
-        and (review_task_ids or snapshot["unassigned_review_task_ids"])
+        and (has_review_work or snapshot["unassigned_review_task_ids"])
     ):
         replacement_ready = (
             reviewer_error is None and replacement_reviewer_id is not None
@@ -1005,7 +1005,7 @@ def _handoff_blockers(blockers: list[dict[str, Any]]) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-async def _assert_actor_can_manage(*, actor: User, project: Project) -> None:
+async def _assert_actor_can_manage(*, actor: User | None, project: Project) -> None:
     """Recheck actor activity and manager authority *after* locks are held."""
 
     if actor is None or not actor.is_active:
@@ -1036,13 +1036,13 @@ async def add_member(
         raise HTTPException(status_code=400, detail="非法项目职责")
 
     accounts = await _lock_accounts_nowait(db, [actor.id, target_user_id])
-    locked_actor = accounts.get(actor.id) or actor
+    locked_actor = accounts.get(actor.id)
     locked_project = await _lock_project_nowait(db, project.id)
     await _assert_actor_can_manage(actor=locked_actor, project=locked_project)
 
+    # Use only the locked account row; a missing target is a hard 404 rather
+    # than a stale identity-map fallback.
     target = accounts.get(target_user_id)
-    if target is None:
-        target = await db.get(User, target_user_id, populate_existing=True)
     if target is None or not target.is_active:
         raise HTTPException(status_code=404, detail="目标用户不存在")
     # Platform/project compatibility is rechecked from the locked account row.
@@ -1199,14 +1199,16 @@ async def _handoff_annotation_work(
         )
     batch_ids = sorted({uuid.UUID(str(bid)) for bid in active_batch_ids})
     if batch_ids:
-        # Materialize the old default onto terminal tasks that only inherited it
-        # (legacy NULL task assignee) so changing the batch default cannot
-        # retroactively rewrite their historical attribution.
+        # Materialize the old default onto tasks past the editable annotation
+        # phase that only inherited it, so changing the batch default cannot
+        # retroactively rewrite their historical attribution.  Unfinished
+        # annotation rows were reassigned to the receiver above.
         await db.execute(
             update(Task)
             .where(
                 Task.batch_id.in_(batch_ids),
                 Task.assignee_id.is_(None),
+                Task.status.not_in(UNFINISHED_ANNOTATION_STATUSES),
             )
             .values(assignee_id=from_user_id)
         )
@@ -1244,13 +1246,16 @@ async def _handoff_review_work(
         )
     batch_ids = sorted({uuid.UUID(str(bid)) for bid in active_batch_ids})
     if batch_ids:
-        # Preserve the effective reviewer on terminal tasks that only inherited
-        # the batch default before the default changes.
+        # Preserve the effective reviewer on completed history that only
+        # inherited the batch default.  Pending/in-progress rows keep a NULL
+        # reviewer so they inherit the *new* default; review rows were moved to
+        # the receiver above.
         await db.execute(
             update(Task)
             .where(
                 Task.batch_id.in_(batch_ids),
                 Task.reviewer_id.is_(None),
+                Task.status == TaskStatus.COMPLETED.value,
             )
             .values(reviewer_id=from_user_id)
         )
@@ -1313,8 +1318,10 @@ async def change_role(
             replacement_reviewer_id,
         ],
     )
-    locked_actor = accounts.get(actor.id) or actor
+    locked_actor = accounts.get(actor.id)
     locked_project = await _lock_project_nowait(db, project.id)
+    # Use only the freshly locked account; never fall back to the caller's
+    # possibly stale ORM instance.
     await _assert_actor_can_manage(actor=locked_actor, project=locked_project)
 
     member = await _lock_membership_nowait(
@@ -1329,25 +1336,14 @@ async def change_role(
             },
         )
 
-    target_user = accounts.get(member.user_id) or await db.get(
-        User, member.user_id, populate_existing=True
-    )
+    target_user = accounts.get(member.user_id)
     if target_user is None or not target_user.is_active:
         raise HTTPException(status_code=409, detail="目标成员账号已停用，请刷新后重试")
-    assert_membership_role_compatible(target_user.role, target_role)
 
     await _lock_replacement_memberships_nowait(
         db,
         project_id=locked_project.id,
         user_ids=[replacement_annotator_id, replacement_reviewer_id],
-    )
-    involved_user_ids = [
-        member.user_id,
-        replacement_annotator_id,
-        replacement_reviewer_id,
-    ]
-    await _lock_batches_nowait(
-        db, project_id=locked_project.id, user_ids=involved_user_ids
     )
     pre_annotation_ids = await _annotation_task_ids(
         db, project_id=locked_project.id, user_id=member.user_id
@@ -1358,17 +1354,36 @@ async def change_role(
     pre_lock_ids = await _active_lock_task_ids(
         db, project_id=locked_project.id, user_id=member.user_id
     )
-    await _lock_tasks_nowait(
+    pre_batch_annotator_ids = await _active_batch_ids(
         db,
         project_id=locked_project.id,
-        user_ids=involved_user_ids,
-        extra_task_ids=[*pre_annotation_ids, *pre_review_ids, *pre_lock_ids],
+        column=TaskBatch.annotator_id,
+        statuses=UNFINISHED_ANNOTATION_STATUSES,
+        inherit_filter=_inherits_annotation_default(member.user_id),
+        user_id=member.user_id,
     )
-    await _acquire_task_advisory_nowait(
-        db, task_ids=[*pre_annotation_ids, *pre_review_ids, *pre_lock_ids]
+    pre_batch_reviewer_ids = await _active_batch_ids(
+        db,
+        project_id=locked_project.id,
+        column=TaskBatch.reviewer_id,
+        statuses=(*UNFINISHED_ANNOTATION_STATUSES, *UNFINISHED_REVIEW_STATUSES),
+        inherit_filter=_inherits_review_default(member.user_id),
+        user_id=member.user_id,
     )
-    await _lock_task_locks_nowait(
-        db, project_id=locked_project.id, user_ids=involved_user_ids
+    # Bound locks to the actual unfinished dependencies and live locks instead
+    # of every historical task/batch the account ever touched.
+    await _lock_batch_ids_nowait(
+        db,
+        project_id=locked_project.id,
+        batch_ids=[*pre_batch_annotator_ids, *pre_batch_reviewer_ids],
+    )
+    affected_task_ids = [*pre_annotation_ids, *pre_review_ids, *pre_lock_ids]
+    await _lock_task_ids_nowait(
+        db, project_id=locked_project.id, task_ids=affected_task_ids
+    )
+    await _acquire_task_advisory_nowait(db, task_ids=affected_task_ids)
+    await _lock_live_task_locks_nowait(
+        db, project_id=locked_project.id, user_id=member.user_id
     )
 
     # Recheck the membership version and rebuild the canonical snapshot under
@@ -1426,7 +1441,9 @@ async def change_role(
                 active_batch_ids=snapshot["batch_annotator_ids"],
             )
     if review_removed and (
-        snapshot["review_task_ids"] or snapshot["review_claim_task_ids"]
+        snapshot["review_task_ids"]
+        or snapshot["review_claim_task_ids"]
+        or snapshot["batch_reviewer_ids"]
     ):
         if replacement_reviewer_id is not None:
             await _handoff_review_work(
@@ -1497,16 +1514,12 @@ async def remove_member(
         raise HTTPException(status_code=404, detail="成员不存在")
 
     accounts = await _lock_accounts_nowait(db, [actor.id, pre_member.user_id])
-    locked_actor = accounts.get(actor.id) or actor
+    locked_actor = accounts.get(actor.id)
     locked_project = await _lock_project_nowait(db, project.id)
     await _assert_actor_can_manage(actor=locked_actor, project=locked_project)
 
     member = await _lock_membership_nowait(
         db, project_id=locked_project.id, member_id=member_id
-    )
-    involved_user_ids = [member.user_id]
-    await _lock_batches_nowait(
-        db, project_id=locked_project.id, user_ids=involved_user_ids
     )
     pre_annotation_ids = await _annotation_task_ids(
         db, project_id=locked_project.id, user_id=member.user_id
@@ -1517,17 +1530,34 @@ async def remove_member(
     pre_lock_ids = await _active_lock_task_ids(
         db, project_id=locked_project.id, user_id=member.user_id
     )
-    await _lock_tasks_nowait(
+    pre_batch_annotator_ids = await _active_batch_ids(
         db,
         project_id=locked_project.id,
-        user_ids=involved_user_ids,
-        extra_task_ids=[*pre_annotation_ids, *pre_review_ids, *pre_lock_ids],
+        column=TaskBatch.annotator_id,
+        statuses=UNFINISHED_ANNOTATION_STATUSES,
+        inherit_filter=_inherits_annotation_default(member.user_id),
+        user_id=member.user_id,
     )
-    await _acquire_task_advisory_nowait(
-        db, task_ids=[*pre_annotation_ids, *pre_review_ids, *pre_lock_ids]
+    pre_batch_reviewer_ids = await _active_batch_ids(
+        db,
+        project_id=locked_project.id,
+        column=TaskBatch.reviewer_id,
+        statuses=(*UNFINISHED_ANNOTATION_STATUSES, *UNFINISHED_REVIEW_STATUSES),
+        inherit_filter=_inherits_review_default(member.user_id),
+        user_id=member.user_id,
     )
-    await _lock_task_locks_nowait(
-        db, project_id=locked_project.id, user_ids=involved_user_ids
+    await _lock_batch_ids_nowait(
+        db,
+        project_id=locked_project.id,
+        batch_ids=[*pre_batch_annotator_ids, *pre_batch_reviewer_ids],
+    )
+    affected_task_ids = [*pre_annotation_ids, *pre_review_ids, *pre_lock_ids]
+    await _lock_task_ids_nowait(
+        db, project_id=locked_project.id, task_ids=affected_task_ids
+    )
+    await _acquire_task_advisory_nowait(db, task_ids=affected_task_ids)
+    await _lock_live_task_locks_nowait(
+        db, project_id=locked_project.id, user_id=member.user_id
     )
 
     member = await _lock_membership_nowait(
