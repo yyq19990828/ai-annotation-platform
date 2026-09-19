@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.enums import PlatformRole, ProjectRole
@@ -84,11 +84,21 @@ def _build_async_job_query(
         )
         query = query.where(
             AsyncJob.user_id == current_user.id,
-            or_(AsyncJob.project_id.is_(None), project_scope),
+            or_(
+                # Genuine global non-export jobs stay visible; a global export
+                # row has no legitimate mode and must fail closed.
+                and_(
+                    AsyncJob.kind != EXPORT_JOB_KIND,
+                    AsyncJob.project_id.is_(None),
+                ),
+                project_scope,
+            ),
             or_(
                 AsyncJob.kind != EXPORT_JOB_KIND,
-                AsyncJob.project_id.is_(None),
-                export_scope,
+                and_(
+                    AsyncJob.project_id.is_not(None),
+                    export_scope,
+                ),
             ),
         )
     if status:
@@ -124,6 +134,10 @@ async def _can_access_job(db: AsyncSession, *, job: AsyncJob, user: User) -> boo
     if user.role == PlatformRole.SUPER_ADMIN.value:
         return True
     if job.project_id is None:
+        # Annotation export has no legitimate global mode: a malformed/legacy
+        # export row without an actual project must not expose its signed URL.
+        if job.kind == EXPORT_JOB_KIND:
+            return False
         return job.user_id == user.id
     project = await db.get(Project, job.project_id)
     if project is None:

@@ -56,42 +56,6 @@ async def _review_task_authority(db: AsyncSession, task: Task, actor: User) -> N
     raise HTTPException(status_code=403, detail="permission_changed")
 
 
-async def _assert_target_write_allowed(
-    db: AsyncSession, task: Task, actor: User
-) -> None:
-    """Canonical phase + evidence authorization for one cross-frame target.
-
-    Reuses the shared task-editability and effective-assignee helpers so an
-    annotator only writes their own pending/in-progress task, a reviewer/viewer
-    cannot write annotation-phase work, and a review-phase write additionally
-    validates the frozen contributor evidence (including the effective
-    annotator) against the *current* locked membership.
-    """
-
-    from app.api.v1.tasks._shared import (
-        _assert_effective_task_assignee,
-        _assert_task_editable,
-        _effective_task_assignee_id,
-    )
-    from app.services.annotation_evidence import assert_review_evidence_current
-
-    access = await _resolve_task_access(db, task, actor, lock=True)
-    _assert_task_editable(task, actor, access=access)
-    effective_annotator_id = await _effective_task_assignee_id(db, task)
-    if task.status == "review":
-        assert_review_evidence_current(
-            task, actor.id, effective_annotator_id=effective_annotator_id
-        )
-        return
-    _assert_effective_task_assignee(
-        actor,
-        effective_annotator_id,
-        action="propagate",
-        project_id=task.project_id,
-        access=access,
-    )
-
-
 @celery_app.task(bind=True, name="app.workers.cross_frame_job.run_cross_frame_job")
 def run_cross_frame_job(self, job_id: str) -> None:
     asyncio.run(
@@ -320,7 +284,13 @@ async def execute_cross_frame_job(
             # contributor evidence.  Reviewer/viewer cannot write annotation
             # work.
             try:
-                await _assert_target_write_allowed(db, target_task, actor)
+                from app.services.project_write_guard import (
+                    assert_phase_write_allowed,
+                )
+
+                await assert_phase_write_allowed(
+                    db, target_task, actor, action="propagate"
+                )
             except HTTPException as exc:
                 raise RuntimeError("target_task_locked") from exc
 

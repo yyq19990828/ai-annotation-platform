@@ -113,29 +113,35 @@ async def _is_privileged(db: AsyncSession, task: Task, user: User) -> bool:
     return bool(project and is_privileged_for_project(user, project))
 
 
-async def _reauthorize_privileged(
+async def _reauthorize_final_write(
     db: AsyncSession,
     job_id: uuid.UUID,
     actor_id: uuid.UUID | None,
+    *,
+    privileged: bool,
 ) -> None:
-    """Recheck manager authority before a caller-asserted privileged final write.
+    """Recheck the actual final-write authority against fresh state.
 
-    The route computes ``privileged`` before the final apply; re-resolve fresh
-    account and project state so a revoked manager cannot finish the write and
-    an employee is never impersonated as an owner.
+    The route resolves authority before the final apply; re-resolve the current
+    account, project role and phase/evidence for the actual task so a revoked or
+    downgraded actor cannot finish the write and an employee is never
+    impersonated as an owner.
     """
+
+    from app.services.project_write_guard import assert_phase_write_allowed
 
     row = await db.get(VideoTrackerJob, job_id)
     task = await db.get(Task, row.task_id) if row is not None else None
-    actor = await db.get(User, actor_id) if actor_id is not None else None
-    if (
-        row is None
-        or task is None
-        or actor is None
-        or not actor.is_active
-        or not await _is_privileged(db, task, actor)
-    ):
+    if row is None or task is None:
+        raise HTTPException(status_code=404, detail="Video tracker job not found")
+    if actor_id is None:
+        if not privileged:
+            raise HTTPException(status_code=403, detail="项目权限已变更")
+        return
+    actor = await db.get(User, actor_id)
+    if actor is None or not actor.is_active:
         raise HTTPException(status_code=403, detail="项目权限已变更")
+    await assert_phase_write_allowed(db, task, actor, action="tracker_write")
 
 
 def _lock_valid_for_user(row: VideoSegment, user: User, now: datetime) -> bool:
@@ -1219,8 +1225,7 @@ async def accept_tracker_job(
     privileged: bool = False,
 ) -> VideoTrackerJobOut:
     """v0.21.28 · 接受候选: 把 job.staged_result 应用到 annotation, status=ACCEPTED。"""
-    if privileged:
-        await _reauthorize_privileged(db, job_id, actor_id)
+    await _reauthorize_final_write(db, job_id, actor_id, privileged=privileged)
     try:
         row = await _runner.accept_tracker_job(
             db, job_id, actor_id=actor_id, privileged=privileged
@@ -1253,8 +1258,7 @@ async def decide_tracker_job(
     actor_id: uuid.UUID | None = None,
     privileged: bool = False,
 ) -> VideoTrackerJobOut:
-    if privileged:
-        await _reauthorize_privileged(db, job_id, actor_id)
+    await _reauthorize_final_write(db, job_id, actor_id, privileged=privileged)
     try:
         row = await _runner.decide_tracker_job(
             db,

@@ -1328,10 +1328,19 @@ async def test_member_task_trends_deduplicate_cross_day_resubmissions_and_approv
 @pytest.mark.asyncio
 @pytest.mark.parametrize("transition", ["withdraw", "reopen"])
 async def test_legacy_video_coverage_survives_cleared_submission_timestamp(
-    httpx_client, db_session, project_admin, annotator, transition
+    httpx_client, db_session, project_admin, transition
 ):
+    from tests.conftest import _create_user
+
     owner, owner_token = project_admin
-    worker, worker_token = annotator
+    # Platform employee with an explicit project role; the legacy global
+    # annotator role is no longer a valid live account identity.
+    worker, worker_token = await _create_user(
+        db_session,
+        "employee",
+        f"legacy-video-{uuid.uuid4().hex[:8]}@test.local",
+        "Legacy video worker",
+    )
     project = _project(owner.id)
     project.data_type = "video"
     db_session.add(project)

@@ -524,9 +524,12 @@ async def _assert_export_task_scope(
             Task.id.in_(task_ids),
         )
     else:
-        query = visible_tasks_stmt(project_id, user=actor, project=project).where(
-            Task.id.in_(task_ids)
-        )
+        query = visible_tasks_stmt(
+            project_id,
+            user=actor,
+            project=project,
+            project_role=access.project_role,
+        ).where(Task.id.in_(task_ids))
     visible_ids = set((await db.execute(query)).scalars().all())
     if visible_ids != set(task_ids):
         raise ValueError("export task scope is no longer visible")
