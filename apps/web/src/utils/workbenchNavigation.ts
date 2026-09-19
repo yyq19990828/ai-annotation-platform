@@ -260,6 +260,18 @@ export function buildReviewWorkbenchUrl(
   return `/projects/${projectId}/review${qs ? `?${qs}` : ""}`;
 }
 
+/** List-entry hint only; destination routes still resolve current capabilities. */
+export function buildProjectEntryUrl(
+  projectId: string,
+  projectRole: "annotator" | "reviewer" | "viewer" | null | undefined,
+  opts: { returnTo?: string | null } = {},
+) {
+  if (projectRole === "viewer") return `/projects/${projectId}/data-manager`;
+  return projectRole === "reviewer"
+    ? buildReviewWorkbenchUrl(projectId, opts)
+    : buildWorkbenchUrl(projectId, opts);
+}
+
 export function updateWorkbenchUrlSearch(
   location: { pathname: string; search?: string; hash?: string },
   opts: {

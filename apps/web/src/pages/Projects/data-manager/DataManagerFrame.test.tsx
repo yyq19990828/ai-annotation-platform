@@ -26,6 +26,7 @@ describe("DataManagerFrame", () => {
     );
 
     expect(screen.getByRole("heading", { name: "Inspection" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "返回项目设置" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /项目概览/ })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: /数据浏览/ })).toHaveAttribute(
       "aria-current",
@@ -53,5 +54,7 @@ describe("DataManagerFrame", () => {
     );
 
     expect(screen.queryByRole("button", { name: /成员绩效/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "返回项目设置" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "返回项目总览" })).toBeInTheDocument();
   });
 });

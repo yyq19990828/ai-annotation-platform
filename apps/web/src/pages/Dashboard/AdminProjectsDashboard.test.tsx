@@ -31,7 +31,7 @@ vi.mock("./ExportModal", () => ({
 }));
 
 vi.mock("@/utils/workbenchNavigation", () => ({
-  buildWorkbenchUrl: (id: string) => mockBuildWorkbenchUrl(id),
+  buildProjectEntryUrl: (id: string) => mockBuildWorkbenchUrl(id),
   currentWorkbenchReturnTo: () => "/dashboard",
 }));
 

@@ -12,11 +12,7 @@ import { useApproveTask, useRejectTask } from "@/hooks/useTasks";
 import { useQueryClient } from "@tanstack/react-query";
 import { ApiError } from "@/api/client";
 import type { ReviewTaskItem, RecentReviewItem } from "@/api/dashboard";
-import {
-  buildReviewWorkbenchUrl,
-  buildWorkbenchUrl,
-  currentWorkbenchReturnTo,
-} from "@/utils/workbenchNavigation";
+import { buildReviewWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { promptRejectReason } from "@/pages/Review/rejectReasonDialog";
 import { PageContainer } from "@/components/layout/PageContainer";
 import {
@@ -420,7 +416,7 @@ export function ReviewerDashboard() {
                   item={r}
                   onClick={() =>
                     navigate(
-                      buildWorkbenchUrl(r.project_id, {
+                      buildReviewWorkbenchUrl(r.project_id, {
                         taskId: r.task_id,
                         returnTo: currentWorkbenchReturnTo(location),
                       }),

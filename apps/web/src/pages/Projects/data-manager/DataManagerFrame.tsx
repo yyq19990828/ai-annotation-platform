@@ -51,10 +51,12 @@ export function DataManagerFrame({
             <button
               type="button"
               className="mb-1 inline-flex min-h-7 items-center gap-1 border-0 bg-transparent p-0 text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              onClick={() => navigate(`/projects/${projectId}/settings`)}
+              onClick={() =>
+                navigate(canViewMembers ? `/projects/${projectId}/settings` : "/dashboard")
+              }
             >
               <Icon name="chevLeft" size={12} />
-              返回项目设置
+              {canViewMembers ? "返回项目设置" : "返回项目总览"}
             </button>
             <div className="flex min-w-0 items-baseline gap-2">
               <h1 className="truncate text-lg font-semibold tracking-tight">{projectName}</h1>

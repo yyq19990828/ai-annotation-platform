@@ -614,7 +614,8 @@ export function EntityDataManagerLens({
     filterReady,
   ]);
 
-  const canManageProject = role === "super_admin" || user?.id === projectOwnerId;
+  const canManageProject =
+    role === "super_admin" || (role === "project_admin" && user?.id === projectOwnerId);
   const canEditSelected = Boolean(
     selectedView?.id &&
     (selectedView.visibility === "private"

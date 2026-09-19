@@ -241,7 +241,7 @@ export function ProjectDataManagerPage() {
   const { data: project, isLoading, error } = useProject(id);
   const dataScrollRef = useRef<HTMLDivElement>(null);
   const schemaQ = useDataManagerSchema(id, "tasks");
-  const { role } = usePermissions();
+  const projectAccess = useProjectAccess(id);
   const user = useAuthStore((state) => state.user);
   const [dataDirty, setDataDirty] = useState(false);
   const [pendingSection, setPendingSection] = useState<DataManagerSection | null>(null);
@@ -249,7 +249,7 @@ export function ProjectDataManagerPage() {
   const requestedScope = urlState.lens;
   const availableScopes = schemaQ.data?.available_entity_scopes ?? ["tasks"];
   const scope = availableScopes.includes(requestedScope) ? requestedScope : "tasks";
-  const canViewMembers = role === "super_admin" || user?.id === project?.owner_id;
+  const canViewMembers = projectAccess.hasCapability("performance.read");
   const requestedSection: DataManagerSection = urlState.section ?? "data";
   const section: DataManagerSection =
     requestedSection === "members" && !canViewMembers ? "data" : requestedSection;
@@ -804,14 +804,12 @@ function TaskDataManagerPage({
     views.find((view) => view.key === "all")?.task_count ??
     0;
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
-  const canManageProject =
-    role === "super_admin" || Boolean(project && user?.id === project.owner_id);
   const projectAccess = useProjectAccess(id);
+  const canManageProject = projectAccess.hasCapability("project.manage");
   // Data Manager reads stay project.read; management actions need project.manage
   // and selected-task export needs export.annotations (reviewer, not annotator).
-  const canManageProjectTasks = canManageProject || projectAccess.hasCapability("project.manage");
-  const canExportProjectTasks =
-    canManageProject || projectAccess.hasCapability("export.annotations");
+  const canManageProjectTasks = canManageProject;
+  const canExportProjectTasks = projectAccess.hasCapability("export.annotations");
   const showProjectTaskActions = canManageProjectTasks || canExportProjectTasks;
   const canEditSelected = Boolean(
     selectedView?.id &&
