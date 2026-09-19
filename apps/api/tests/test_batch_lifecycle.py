@@ -1301,7 +1301,7 @@ class TestAdminLock:
         batch.admin_lock_reason = "locked"
         await db_session.commit()
 
-        result = await get_next_task(user, p.id, db_session)
+        result = await get_next_task(user, p.id, db_session, project_role="annotator")
         assert result is None
 
     @pytest.mark.asyncio
