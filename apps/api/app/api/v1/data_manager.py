@@ -9,11 +9,13 @@ from app.deps import (
     assert_project_visible,
     get_current_user,
     get_db,
+    require_project_capability,
     require_project_owner,
     require_project_visible,
 )
 from app.db.models.task import Task
 from app.db.models.user import User
+from app.services.project_access import ProjectAccess, ProjectCapability
 from app.schemas.data_manager import (
     DataManagerMatchesRequest,
     DataManagerMatchesResponse,
@@ -125,6 +127,9 @@ async def export_data_manager_tasks(
     project=Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(
+        require_project_capability(ProjectCapability.EXPORT_ANNOTATIONS.value)
+    ),
     idempotency_key: str | None = Header(
         default=None,
         alias="Idempotency-Key",
@@ -135,9 +140,12 @@ async def export_data_manager_tasks(
     rows = (
         (
             await db.execute(
-                visible_tasks_stmt(project_id, user=actor, project=project).where(
-                    Task.id.in_(task_ids)
-                )
+                visible_tasks_stmt(
+                    project_id,
+                    user=actor,
+                    project=project,
+                    project_role=access.project_role,
+                ).where(Task.id.in_(task_ids))
             )
         )
         .scalars()

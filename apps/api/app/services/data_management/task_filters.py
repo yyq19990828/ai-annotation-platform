@@ -1088,11 +1088,24 @@ def _comment_count_sq() -> ColumnElement[int]:
     return task_comment_count_sq()
 
 
-def apply_task_visibility(stmt: Select, user: User, project: Project) -> Select:
-    """Apply the canonical project task visibility scope to an arbitrary Task query."""
+def apply_task_visibility(
+    stmt: Select,
+    user: User,
+    project: Project,
+    *,
+    project_role: str | None = None,
+) -> Select:
+    """Apply the canonical project task visibility scope to an arbitrary Task query.
+
+    ``project_role`` is the caller's *resolved* membership role.  Callers under
+    the project-scoped model must resolve it (for example through
+    ``resolve_project_access``) and pass it; when omitted a non-privileged query
+    fails closed.  The B3 export worker must pass the same value as the request
+    that enqueued the job.
+    """
     if not is_privileged_for_project(user, project):
         stmt = stmt.outerjoin(TaskBatch, Task.batch_id == TaskBatch.id).where(
-            task_visibility_clause(user)
+            task_visibility_clause(user, project_role=project_role)
         )
     return stmt
 
@@ -1102,7 +1115,17 @@ def visible_tasks_stmt(
     *,
     user: User,
     project: Project,
+    project_role: str | None = None,
 ) -> Select:
+    """Task-id statement visible to ``user``; pass the resolved ``project_role``.
+
+    Contract published for B3 ``workers/export.py``: resolve project access for
+    the initiating actor and pass ``project_role=access.project_role`` so the
+    worker applies the same predicate as the API request.
+    """
     return apply_task_visibility(
-        select(Task.id).where(Task.project_id == project_id), user, project
+        select(Task.id).where(Task.project_id == project_id),
+        user,
+        project,
+        project_role=project_role,
     )
