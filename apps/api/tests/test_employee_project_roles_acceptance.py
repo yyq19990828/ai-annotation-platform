@@ -113,3 +113,60 @@ async def test_employee_annotates_a_reviews_b_and_cannot_access_c(
     assert str(employee.id) in task_a.review_contributor_ids
     assert task_b.status == "completed"
     assert employee.role == "employee"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("actor_role", ["employee", "project_admin", "super_admin"])
+@pytest.mark.parametrize("known_evidence", [False, True])
+async def test_review_http_never_bypasses_self_or_unknown_evidence(
+    httpx_client, db_session, actor_role, known_evidence
+):
+    is_manager = actor_role != "employee"
+    owner = await create_user(
+        db_session,
+        actor_role if is_manager else "project_admin",
+        f"owner-{uuid.uuid4()}@test.local",
+        "Owner",
+    )
+    actor = (
+        owner
+        if is_manager
+        else await create_user(
+            db_session, "employee", f"reviewer-{uuid.uuid4()}@test.local", "Reviewer"
+        )
+    )
+    author = await create_user(
+        db_session, "employee", f"author-{uuid.uuid4()}@test.local", "Author"
+    )
+    project = await create_project(db_session, owner_id=owner.id)
+    if not is_manager:
+        db_session.add(
+            ProjectMember(project_id=project.id, user_id=actor.id, role="reviewer")
+        )
+    db_session.add(
+        ProjectMember(project_id=project.id, user_id=author.id, role="annotator")
+    )
+    task = await create_task(db_session, project_id=project.id, status="review")
+    task.assignee_id, task.reviewer_id = author.id, actor.id
+    task.annotation_contributor_ids = [str(actor.id)] if known_evidence else None
+    task.review_contributor_ids = [str(actor.id), str(author.id)]
+    task.review_submitter_id = author.id
+    task.review_round_id = uuid.uuid4()
+    await db_session.flush()
+    headers = {
+        "Authorization": "Bearer "
+        + create_access_token(subject=str(actor.id), role=actor.role)
+    }
+    expected_status = 403 if known_evidence else 409
+    expected_reason = (
+        "self_review_denied" if known_evidence else "review_contributors_unknown"
+    )
+    for operation in ("claim", "approve", "reject"):
+        response = await httpx_client.post(
+            f"/api/v1/tasks/{task.id}/review/{operation}", headers=headers
+        )
+        assert response.status_code == expected_status, response.text
+        assert response.json()["detail"]["reason"] == expected_reason
+    await db_session.refresh(task)
+    assert task.status == "review"
+    assert task.reviewer_claimed_at is None
