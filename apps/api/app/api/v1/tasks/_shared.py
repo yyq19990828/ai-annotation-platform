@@ -7,7 +7,7 @@ from fastapi import HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.enums import MANAGER_PLATFORM_ROLES, ProjectRole, UserRole
+from app.db.enums import ProjectRole, UserRole
 from app.db.models.user import User
 from app.db.models.task import Task
 from app.db.models.annotation import Annotation
@@ -18,9 +18,9 @@ from app.schemas.task import (
     VideoMetadata,
 )
 from app.schemas.image_pyramid import ImagePyramidSummary
+from app.services.project_access import ProjectAccess, resolve_project_access
 from app.services.scheduler import (
     effective_task_assignee_id,
-    is_privileged_for_project,
     visible_batch_statuses_for_project_role,
     annotator_can_rework_task,
 )
@@ -154,28 +154,42 @@ def _record_first_review_fact(
     return True
 
 
-def _is_manager_user(user: User) -> bool:
-    return user.role in MANAGER_PLATFORM_ROLES
+def _assert_access_binding(
+    access: ProjectAccess, *, user: User, project_id: uuid.UUID
+) -> None:
+    """Fail closed when the resolved access does not match user and resource."""
+
+    if access.user_id != user.id or access.project_id != project_id:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "access_context_mismatch"},
+        )
 
 
 def _assert_task_editable(
     task: Task,
     user: User | None = None,
     *,
-    project_role: str | None = None,
+    access: ProjectAccess | None = None,
 ) -> None:
     """v0.6.5: 已提交质检 / 已通过审核的任务对所有 annotation 写动作锁死。
     标注员要继续编辑必须先 withdraw（review 态）或 reopen（completed 态）。
     M2: 审核员可在 status=review 时直接微调标注（审计记 TASK_REVIEWER_EDIT）。
 
-    ``project_role`` 是已解析的项目职责（B2 路由传入）。非管理账号缺少该上下文时
-    一律 fail closed，绝不回退到全局 annotator/reviewer。
+    ``access`` is the verified project access (B2 routes pass it).  Only
+    ``access.is_manager`` is management: a foreign-project administrator
+    membership must not bypass task assignment or review checks.  A non-manager
+    without a matching access fails closed; the global role is never a fallback.
     """
-    if user is not None and not _is_manager_user(user):
-        if project_role is None:
-            raise HTTPException(status_code=403, detail="缺少项目职责上下文")
+    if user is not None and access is not None:
+        _assert_access_binding(access, user=user, project_id=task.project_id)
+
+    is_manager = bool(access is not None and access.is_manager)
+    if user is not None and not is_manager:
+        if access is None:
+            raise HTTPException(status_code=403, detail="缺少项目权限上下文")
         if (
-            project_role == ProjectRole.ANNOTATOR.value
+            access.project_role == ProjectRole.ANNOTATOR.value
             and task.assignee_id is not None
             and task.assignee_id != user.id
         ):
@@ -185,7 +199,9 @@ def _assert_task_editable(
     if task.status not in _LOCKED_STATUSES:
         return
     if task.status == "review" and user is not None:
-        if project_role == ProjectRole.REVIEWER.value or _is_manager_user(user):
+        if is_manager or (
+            access is not None and access.project_role == ProjectRole.REVIEWER.value
+        ):
             return
     raise HTTPException(
         status_code=409,
@@ -267,10 +283,9 @@ async def _has_current_project_membership_role(
 
 
 async def _assert_current_project_member(db: AsyncSession, project, user: User) -> None:
-    if is_privileged_for_project(user, project):
-        return
-    if not await _has_current_project_membership(db, project.id, user.id, lock=True):
-        raise HTTPException(status_code=404, detail="Task not found")
+    """Assert the account has any valid access (manager or member)."""
+
+    await resolve_project_access(db, user=user, project=project, lock_membership=True)
 
 
 async def _effective_task_assignee_id(db: AsyncSession, task: Task) -> uuid.UUID | None:
@@ -284,23 +299,28 @@ def _assert_effective_task_assignee(
     *,
     action: str,
     allow_open_pool: bool = False,
-    project_role: str | None = None,
+    project_id: uuid.UUID | None = None,
+    access: ProjectAccess | None = None,
 ) -> None:
     """Only the effective annotator may act.
 
-    ``project_role`` is the resolved membership role (B2 routes pass it).  A
-    non-manager without it fails closed; the global role is never a fallback.
+    ``access`` is the verified project access (B2 routes pass it).  Only
+    ``access.is_manager`` is management; a foreign-project administrator
+    membership cannot act as the effective assignee.  A non-manager without a
+    matching access fails closed.
     """
 
-    if _is_manager_user(user):
-        return
-    if project_role is None:
-        raise HTTPException(status_code=403, detail="缺少项目职责上下文")
-    if project_role == ProjectRole.ANNOTATOR.value and (
-        effective_assignee_id == user.id
-        or (allow_open_pool and effective_assignee_id is None)
-    ):
-        return
+    if access is not None:
+        _assert_access_binding(
+            access, user=user, project_id=project_id or access.project_id
+        )
+        if access.is_manager:
+            return
+        if access.project_role == ProjectRole.ANNOTATOR.value and (
+            effective_assignee_id == user.id
+            or (allow_open_pool and effective_assignee_id is None)
+        ):
+            return
     raise HTTPException(status_code=403, detail=f"only effective assignee can {action}")
 
 
@@ -316,10 +336,10 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
     project = await db.get(Project, task.project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    if is_privileged_for_project(user, project):
+    access = await resolve_project_access(db, user=user, project=project)
+    if access.is_manager:
         return
-    await _assert_current_project_member(db, project, user)
-    project_role = await _project_role_for_user(db, project.id, user.id)
+    project_role = access.project_role
     if task.file_type == "video" and bool(
         (project.video_collaboration or {}).get("enabled")
     ):
@@ -375,7 +395,11 @@ async def _visible_task_ids(
     """
     if not task_ids:
         return set()
-    if is_privileged_for_project(user, project):
+    try:
+        access = await resolve_project_access(db, user=user, project=project)
+    except HTTPException:
+        return set()
+    if access.is_manager:
         result = await db.execute(
             select(Task.id).where(
                 Task.project_id == project.id,
@@ -383,9 +407,7 @@ async def _visible_task_ids(
             )
         )
         return set(result.scalars().all())
-    if not await _has_current_project_membership(db, project.id, user.id):
-        return set()
-    project_role = await _project_role_for_user(db, project.id, user.id)
+    project_role = access.project_role
 
     rows = (
         await db.execute(

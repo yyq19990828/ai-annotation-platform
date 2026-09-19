@@ -141,17 +141,6 @@ class BatchService:
                         "user_id": str(user_id),
                     },
                 )
-            if not membership_role_compatible(user.role, assignment_role):
-                raise HTTPException(
-                    status_code=400,
-                    detail={
-                        "reason": "assignment_role_mismatch",
-                        "message": "接收账号的平台角色与分派职责不匹配",
-                        "assignment_role": assignment_role,
-                        "user_id": str(user_id),
-                        "user_role": user.role,
-                    },
-                )
             member = members_by_user_id.get(user_id)
             if member is None or member.role != assignment_role:
                 raise HTTPException(
@@ -161,6 +150,17 @@ class BatchService:
                         "message": "接收账号不具备目标项目的对应成员职责",
                         "assignment_role": assignment_role,
                         "user_id": str(user_id),
+                    },
+                )
+            if not membership_role_compatible(user.role, assignment_role):
+                raise HTTPException(
+                    status_code=400,
+                    detail={
+                        "reason": "assignment_role_mismatch",
+                        "message": "接收账号的平台角色与分派职责不匹配",
+                        "assignment_role": assignment_role,
+                        "user_id": str(user_id),
+                        "user_role": user.role,
                     },
                 )
 

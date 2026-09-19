@@ -293,3 +293,63 @@ def clear_review_contributor_evidence(task: Task) -> None:
     """
     task.review_contributor_ids = None
     task.review_submitter_id = None
+
+
+def current_review_evidence(task: Task) -> tuple[list[str], str] | None:
+    """Return ``(frozen_contributors, submitter_id)`` or ``None`` when unknown.
+
+    Unknown covers a missing round, a non-canonical / incomplete contributor
+    array, or a missing submitter.  Authorization callers must treat ``None``
+    as unavailable work, never as an empty contributor set.
+    """
+
+    if task.review_round_id is None:
+        return None
+    contributors = canonical_actor_set(task.review_contributor_ids)
+    submitter = canonical_actor_id(task.review_submitter_id)
+    if not contributors or submitter is None:
+        return None
+    return sorted(contributors), submitter
+
+
+def assert_review_evidence_current(
+    task: Task,
+    actor_id: object,
+    *,
+    effective_annotator_id: object | None = None,
+) -> None:
+    """Authorize a review write against the current frozen evidence.
+
+    Call this *before* any owner/super-admin privileged return so a manager
+    cannot review work they contributed to.  Unknown or incomplete evidence is
+    a 409; a frozen contributor, the round submitter or the effective annotator
+    is a 403.  Historical performance attribution must keep using
+    ``_review_round_contributor_snapshot``; this guard only authorizes.
+    """
+
+    actor = canonical_actor_id(actor_id)
+    evidence = current_review_evidence(task)
+    if evidence is None:
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "review_contributors_unknown"},
+        )
+    contributors, submitter = evidence
+    contributor_set = set(contributors)
+    known = known_annotation_contributor_ids(task)
+    if known is not None and not known.issubset(contributor_set):
+        raise HTTPException(
+            status_code=409,
+            detail={"reason": "review_contributors_incomplete"},
+        )
+    effective_annotator = canonical_actor_id(effective_annotator_id)
+    if (
+        actor is None
+        or actor in contributor_set
+        or actor == submitter
+        or (effective_annotator is not None and actor == effective_annotator)
+    ):
+        raise HTTPException(
+            status_code=403,
+            detail={"reason": "self_review_denied"},
+        )

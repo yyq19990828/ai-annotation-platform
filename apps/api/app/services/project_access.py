@@ -252,9 +252,16 @@ async def resolve_project_access(
     # Every other platform role, including an anomalous non-administrative
     # owner, needs a valid membership.  Ownership alone never grants visibility
     # or authority.
-    stmt = select(ProjectMember).where(
-        ProjectMember.project_id == project.id,
-        ProjectMember.user_id == user.id,
+    # Always refresh the row: an identity-map entry cached before a role change
+    # or membership removal must never remain authoritative.  Under FOR SHARE
+    # the refreshed role/version is the locked, current value.
+    stmt = (
+        select(ProjectMember)
+        .where(
+            ProjectMember.project_id == project.id,
+            ProjectMember.user_id == user.id,
+        )
+        .execution_options(populate_existing=True)
     )
     if lock_membership:
         stmt = stmt.with_for_update(read=True)

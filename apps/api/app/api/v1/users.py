@@ -19,7 +19,7 @@ from app.core.security import hash_password
 from app.deps import get_db, require_roles
 from app.db.models.user import User
 from app.db.models.group import Group
-from app.db.enums import PLATFORM_ROLES, TaskStatus, UserRole
+from app.db.enums import PLATFORM_ROLES, UserRole
 from app.schemas.user import (
     OffboardingCommitRequest,
     OffboardingPreview,
@@ -48,6 +48,7 @@ from app.services.management import (
     fetch_lifecycle_blocked_ids,
     fetch_managed_user_ids,
     fetch_user_page,
+    platform_role_change_blockers,
     role_impact_preview,
     user_scope_clause,
     user_stats as management_user_stats,
@@ -805,102 +806,6 @@ class RoleChangePayload(BaseModel):
     role: str
 
 
-async def _assert_platform_demotion_allowed(
-    db: AsyncSession, *, target: User, new_role: str
-) -> None:
-    """Block incompatible memberships, ownership or unfinished work on demotion.
-
-    A platform-role edit never rewrites project roles; outstanding
-    responsibilities must be handed off explicitly through the project member
-    role endpoints first.
-    """
-
-    from app.db.enums import PlatformRole, ProjectRole
-    from app.db.models.project import Project
-    from app.db.models.project_member import ProjectMember
-    from app.db.models.task import Task
-    from app.db.models.task_batch import TaskBatch
-    from app.services.scheduler import (
-        effective_task_assignee_expr,
-        effective_task_reviewer_expr,
-    )
-
-    if new_role in (PlatformRole.SUPER_ADMIN.value, PlatformRole.PROJECT_ADMIN.value):
-        # Administrative identities receive management from ownership; they do
-        # not carry project work memberships.
-        work_memberships = await db.execute(
-            select(ProjectMember.project_id).where(
-                ProjectMember.user_id == target.id,
-                ProjectMember.role != ProjectRole.VIEWER.value,
-            )
-        )
-        if work_memberships.first() is not None:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "reason": "incompatible_memberships",
-                    "message": "账号仍持有标注/质检项目职责，不能改为管理角色",
-                },
-            )
-        return
-
-    if new_role == PlatformRole.EMPLOYEE.value:
-        return
-
-    # viewer: no work responsibility, no ownership, no unfinished task.
-    work_memberships = await db.execute(
-        select(ProjectMember.project_id).where(
-            ProjectMember.user_id == target.id,
-            ProjectMember.role != ProjectRole.VIEWER.value,
-        )
-    )
-    if work_memberships.first() is not None:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "reason": "incompatible_memberships",
-                "message": "账号仍持有标注/质检项目职责，请先在项目中变更职责",
-            },
-        )
-    owned = await db.scalar(
-        select(func.count(Project.id)).where(Project.owner_id == target.id)
-    )
-    if int(owned or 0) > 0:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "reason": "owns_projects",
-                "message": "账号仍是项目负责人，请先转移项目",
-            },
-        )
-    unfinished_statuses = (
-        TaskStatus.PENDING.value,
-        TaskStatus.IN_PROGRESS.value,
-        TaskStatus.REJECTED.value,
-        TaskStatus.REVIEW.value,
-    )
-    unfinished = await db.scalar(
-        select(func.count(Task.id))
-        .outerjoin(TaskBatch, TaskBatch.id == Task.batch_id)
-        .where(
-            Task.project_id.is_not(None),
-            Task.status.in_(unfinished_statuses),
-            or_(
-                effective_task_assignee_expr() == target.id,
-                effective_task_reviewer_expr() == target.id,
-            ),
-        )
-    )
-    if int(unfinished or 0) > 0:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "reason": "unfinished_responsibilities",
-                "message": "账号仍有未完成的标注/质检工作，请先交接",
-            },
-        )
-
-
 @router.get("/{user_id}/role/preview", response_model=RoleImpactPreview)
 async def preview_user_role_change(
     user_id: UUID,
@@ -948,13 +853,9 @@ async def change_user_role(
     if user.id == actor.id:
         raise HTTPException(status_code=400, detail="不能修改自己的角色")
 
-    old_role = user.role
-    new_role = payload.role
-    if old_role == new_role:
-        return user
-
-    # Revalidate the actor and target under account locks, then block an
-    # incompatible demotion (memberships, ownership or unfinished work).
+    # Revalidate the actor and target under account locks.  Recompute the
+    # current role and the no-op case only after the fresh reload so a stale
+    # ORM identity cannot decide the mutation.
     from app.services.user_lifecycle import UserLifecycleService
 
     await UserLifecycleService.lock_accounts(db, [actor.id, user.id])
@@ -969,7 +870,21 @@ async def change_user_role(
     if fresh_user is None or not fresh_user.is_active:
         raise HTTPException(status_code=404, detail="用户不存在")
     user = fresh_user
-    await _assert_platform_demotion_allowed(db, target=user, new_role=new_role)
+
+    old_role = user.role
+    new_role = payload.role
+    if old_role == new_role:
+        return user
+
+    blockers = await platform_role_change_blockers(db, target=user, new_role=new_role)
+    if blockers:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason": "platform_role_change_blocked",
+                "blockers": blockers,
+            },
+        )
 
     # —— super_admin 兜底：最后一名 super_admin 不可被降级 ——
     if (

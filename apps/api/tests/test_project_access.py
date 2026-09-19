@@ -114,6 +114,49 @@ async def test_access_capability_matrix(
     assert "performance.read" in admin_access["capabilities"]
 
 
+async def test_membership_refresh_beats_stale_identity_map(
+    super_admin, db_session: AsyncSession
+):
+    """A cached membership must never stay authoritative after a change."""
+
+    from sqlalchemy import update
+
+    from app.services.project_access import resolve_project_access
+
+    admin, _ = super_admin
+    project = await create_project(db_session, owner_id=admin.id, name="Scroll QA")
+    employee = await create_user(
+        db_session, "employee", f"acc-scroll-{uuid.uuid4()}@test.local", "Scroll"
+    )
+    member = await _add_member(
+        db_session,
+        project_id=project.id,
+        user=employee,
+        role="annotator",
+        assigned_by=admin.id,
+    )
+
+    first = await resolve_project_access(db_session, user=employee, project=project)
+    assert first.project_role == "annotator"
+    assert first.membership_version == 1
+
+    # Change the row out-of-band so the identity map still holds the old role.
+    await db_session.execute(
+        update(ProjectMember)
+        .where(ProjectMember.id == member.id)
+        .values(role="reviewer", version=2)
+        .execution_options(synchronize_session=False)
+    )
+    await db_session.flush()
+
+    refreshed = await resolve_project_access(
+        db_session, user=employee, project=project, lock_membership=True
+    )
+    assert refreshed.project_role == "reviewer"
+    assert refreshed.membership_version == 2
+    assert "review.write" in refreshed.capabilities
+
+
 async def test_non_member_access_is_hidden(
     httpx_client: httpx.AsyncClient, super_admin, db_session: AsyncSession
 ):

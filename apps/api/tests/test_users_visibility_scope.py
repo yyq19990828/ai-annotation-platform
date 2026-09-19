@@ -49,9 +49,9 @@ async def _seed_scope_world(db: AsyncSession, project_admin, super_admin):
     admin, _ = super_admin
 
     own_project = await create_project(db, owner_id=manager.id, name="PA Own")
-    member = await create_user(db, "annotator", "own-member@e.test", "Own Member")
+    member = await create_user(db, "employee", "own-member@e.test", "Own Member")
     inactive_member = await create_user(
-        db, "reviewer", "own-inactive@e.test", "Own Inactive"
+        db, "employee", "own-inactive@e.test", "Own Inactive"
     )
     inactive_member.is_active = False
     viewer_member = await create_user(db, "viewer", "own-viewer@e.test", "Own Viewer")
@@ -79,17 +79,17 @@ async def _seed_scope_world(db: AsyncSession, project_admin, super_admin):
     )
 
     unassigned_annotator = await create_user(
-        db, "annotator", "free-annotator@e.test", "Free Annotator"
+        db, "employee", "free-annotator@e.test", "Free Annotator"
     )
     unassigned_reviewer = await create_user(
-        db, "reviewer", "free-reviewer@e.test", "Free Reviewer"
+        db, "employee", "free-reviewer@e.test", "Free Reviewer"
     )
     unassigned_viewer = await create_user(
         db, "viewer", "free-viewer@e.test", "Free Viewer"
     )
     other_pa = await create_user(db, "project_admin", "other-pa@e.test", "Other PA")
     inactive_annotator = await create_user(
-        db, "annotator", "inactive-annotator@e.test", "Inactive Annotator"
+        db, "employee", "inactive-annotator@e.test", "Inactive Annotator"
     )
     inactive_annotator.is_active = False
     inactive_super_admin = await create_user(
@@ -99,7 +99,7 @@ async def _seed_scope_world(db: AsyncSession, project_admin, super_admin):
 
     foreign_project = await create_project(db, owner_id=admin.id, name="Foreign")
     foreign_member = await create_user(
-        db, "annotator", "foreign-member@e.test", "Foreign Member"
+        db, "employee", "foreign-member@e.test", "Foreign Member"
     )
     db.add(
         ProjectMember(
@@ -675,10 +675,10 @@ async def test_legacy_picker_semantics_unchanged(
 ):
     world = await _seed_scope_world(db_session, project_admin, super_admin)
 
-    # role=annotator&status=active keeps the wide candidate list (assign modal).
+    # role=employee&status=active keeps the wide candidate list (assign modal).
     candidates = await httpx_client.get(
         "/api/v1/users",
-        params={"role": "annotator", "status": "active"},
+        params={"role": "employee", "status": "active"},
         headers=_headers(project_admin),
     )
     assert candidates.status_code == 200, candidates.text
