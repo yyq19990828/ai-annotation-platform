@@ -5,6 +5,7 @@ import uuid
 import pytest
 
 from app.core.security import create_access_token
+from app.db.models.annotation import Annotation
 from app.db.models.project_member import ProjectMember
 from tests.factory import create_batch, create_project, create_task, create_user
 
@@ -170,3 +171,50 @@ async def test_review_http_never_bypasses_self_or_unknown_evidence(
     await db_session.refresh(task)
     assert task.status == "review"
     assert task.reviewer_claimed_at is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("platform_role", "project_role"),
+    [("employee", "reviewer"), ("employee", "viewer"), ("viewer", "viewer")],
+)
+async def test_top_level_bulk_annotation_requires_annotation_phase_capability(
+    httpx_client, db_session, platform_role, project_role
+):
+    owner = await create_user(
+        db_session, "project_admin", f"owner-{uuid.uuid4()}@test.local", "Owner"
+    )
+    actor = await create_user(
+        db_session, platform_role, f"reader-{uuid.uuid4()}@test.local", "Reader"
+    )
+    project = await create_project(db_session, owner_id=owner.id)
+    db_session.add(
+        ProjectMember(project_id=project.id, user_id=actor.id, role=project_role)
+    )
+    batch = await create_batch(db_session, project_id=project.id, status="active")
+    task = await create_task(db_session, project_id=project.id, status="in_progress")
+    task.batch_id = batch.id
+    annotation = Annotation(
+        project_id=project.id,
+        task_id=task.id,
+        user_id=owner.id,
+        annotation_type="bbox",
+        class_name="car",
+        geometry={"type": "bbox", "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
+    )
+    db_session.add(annotation)
+    await db_session.flush()
+    headers = {
+        "Authorization": "Bearer "
+        + create_access_token(subject=str(actor.id), role=actor.role)
+    }
+    response = await httpx_client.post(
+        "/api/v1/annotations/bulk-update",
+        headers=headers,
+        json={"ids": [str(annotation.id)], "patch": {"is_hidden": True}},
+    )
+    assert response.status_code == 403, response.text
+    await db_session.refresh(annotation)
+    await db_session.refresh(task)
+    assert annotation.is_hidden is False
+    assert str(actor.id) not in (task.annotation_contributor_ids or [])
