@@ -544,9 +544,10 @@ async def test_claimed_reviewer_can_decide_job_created_by_annotator(
         headers=_bearer(reviewer_token),
     )
     # The entry route's phase capability guard rejects a completed task before
-    # the service status guard, so the response is 403 with a permission detail.
+    # the service status guard, so the response is 403 with the canonical
+    # missing-capability detail (annotation.write).
     assert response.status_code == 403, response.text
-    assert "permission" in str(response.json()["detail"]).lower(), response.text
+    assert "annotation.write" in str(response.json()["detail"]), response.text
 
 
 async def test_migration_0145_has_review_scope_guards(db_session):
