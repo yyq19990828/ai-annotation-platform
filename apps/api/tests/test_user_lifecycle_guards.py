@@ -142,7 +142,7 @@ async def test_manager_cannot_list_unrelated_disabled_candidates(
     target.disabled_kind = "suspended"
     await db_session.flush()
     response = await httpx_client.get(
-        f"/api/v1/users?role=annotator&status={account_status}",
+        f"/api/v1/users?role=employee&status={account_status}",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200
@@ -150,7 +150,7 @@ async def test_manager_cannot_list_unrelated_disabled_candidates(
     projects[0].owner_id = manager.id
     await db_session.flush()
     response = await httpx_client.get(
-        f"/api/v1/users?role=annotator&status={account_status}",
+        f"/api/v1/users?role=employee&status={account_status}",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert str(target.id) in {row["id"] for row in response.json()}

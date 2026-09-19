@@ -475,7 +475,7 @@ async def test_pa_lifecycle_blocked_for_task_straddling_annotator(
 
     world = await _seed_scope_world(db_session, project_admin, super_admin)
     straddler = await create_user(
-        db_session, "annotator", "straddler@e.test", "Task Straddler"
+        db_session, "employee", "straddler@e.test", "Task Straddler"
     )
     db_session.add(
         Task(
@@ -523,13 +523,13 @@ async def test_pa_delete_transfer_receiver_must_cover_task_projects(
     headers = _headers(project_admin)
 
     target = await create_user(
-        db_session, "annotator", "leaving-member@e.test", "Leaving Member"
+        db_session, "employee", "leaving-member@e.test", "Leaving Member"
     )
     receiver = await create_user(
-        db_session, "annotator", "covering-member@e.test", "Covering Member"
+        db_session, "employee", "covering-member@e.test", "Covering Member"
     )
     outsider = await create_user(
-        db_session, "annotator", "outside-receiver@e.test", "Outside Receiver"
+        db_session, "employee", "outside-receiver@e.test", "Outside Receiver"
     )
     db_session.add_all(
         [

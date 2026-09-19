@@ -1105,9 +1105,7 @@ async def delete_user(
 
     if actor.role == UserRole.PROJECT_ADMIN.value:
         if user.role not in _PA_ASSIGNABLE_ROLES:
-            raise HTTPException(
-                status_code=403, detail="项目管理员仅能删除标注员/审核员账号"
-            )
+            raise HTTPException(status_code=403, detail="项目管理员仅能删除员工账号")
         if not await _project_admin_manages_target(db, actor=actor, target=user):
             raise HTTPException(status_code=403, detail="该用户不在你管理的项目内")
         if not await _target_only_in_actor_projects(db, actor=actor, target=user):
