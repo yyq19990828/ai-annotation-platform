@@ -35,18 +35,44 @@ def _busy_lock_error(exc: BaseException) -> bool:
     return sqlstate in _BUSY_SQLSTATES
 
 
-async def lock_actor_project_share(
+async def lock_actor_account(
+    db: AsyncSession, actor_id, *, nowait: bool = True
+) -> None:
+    """Account-first bounded FOR SHARE lock on the acting account."""
+
+    from sqlalchemy.exc import DBAPIError
+
+    try:
+        await db.execute(
+            select(User.id)
+            .where(User.id == actor_id)
+            .with_for_update(read=True, nowait=nowait)
+        )
+    except DBAPIError as exc:
+        if _busy_lock_error(exc):
+            raise HTTPException(
+                status_code=409, detail={"reason": "account_busy"}
+            ) from exc
+        raise
+
+
+async def lock_actor_scope(
     db: AsyncSession, actor_id, project_id, *, nowait: bool = True
 ) -> None:
-    """Account-before-resource: bounded share lock on the actor's membership.
+    """Account-first bounded share locks for a final write.
 
-    Acquired before Task/Job locks so the final-write guard's later membership
-    re-read does not introduce a Membership-after-Task wait cycle.
+    Order is account -> membership, matching the lifecycle model, so a later
+    resource lock cannot introduce a membership-after-resource wait cycle.
     """
 
     from sqlalchemy.exc import DBAPIError
 
     try:
+        await db.execute(
+            select(User.id)
+            .where(User.id == actor_id)
+            .with_for_update(read=True, nowait=nowait)
+        )
         await db.execute(
             select(ProjectMember.id)
             .where(
@@ -61,6 +87,14 @@ async def lock_actor_project_share(
                 status_code=409, detail={"reason": "membership_busy"}
             ) from exc
         raise
+
+
+async def lock_actor_project_share(
+    db: AsyncSession, actor_id, project_id, *, nowait: bool = True
+) -> None:
+    """Backwards-compatible alias for :func:`lock_actor_scope`."""
+
+    await lock_actor_scope(db, actor_id, project_id, nowait=nowait)
 
 
 async def assert_phase_write_allowed(

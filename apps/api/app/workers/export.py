@@ -74,6 +74,9 @@ async def _complete_from_cache(
     download_name: str,
     cache_key: str,
 ) -> None:
+    # Final result/URL boundary: reauthorize current account + membership
+    # immediately before issuing the cache-hit download URL.
+    await _reauthorize_export_final_write(db, job_uuid)
     download_url = storage_service.generate_download_url(
         hit.object_key,
         expires_in=PRESIGN_EXPIRES_SECONDS,
@@ -535,6 +538,42 @@ async def _assert_export_task_scope(
         raise ValueError("export task scope is no longer visible")
 
 
+async def _reauthorize_export_final_write(
+    db: AsyncSession, job_uuid: uuid.UUID
+) -> None:
+    """Recheck account + membership under account-first ordering before a URL.
+
+    The initial scope check runs before the (potentially long) build; a
+    revocation during that window must prevent final result creation and
+    signed-URL issuance.  Account is locked/refreshed before the membership
+    share lock, matching the lifecycle ordering.
+    """
+
+    from fastapi import HTTPException
+
+    from app.db.models.user import User
+    from app.services.project_access import ProjectCapability, resolve_project_access
+    from app.services.project_write_guard import lock_actor_scope
+
+    job = await db.get(AsyncJob, job_uuid)
+    if job is None or job.project_id is None or job.user_id is None:
+        raise ValueError("export scope is no longer valid")
+    actor = await db.get(User, job.user_id)
+    project = await db.get(Project, job.project_id)
+    if actor is None or not actor.is_active or project is None:
+        raise ValueError("export scope owner is unavailable")
+    try:
+        await lock_actor_scope(db, actor.id, project.id)
+    except HTTPException as exc:
+        raise ValueError("export scope is busy") from exc
+    try:
+        access = await resolve_project_access(db, user=actor, project=project)
+    except HTTPException as exc:
+        raise ValueError("export project access is no longer valid") from exc
+    if ProjectCapability.EXPORT_ANNOTATIONS.value not in access.capabilities:
+        raise ValueError("export capability is no longer valid")
+
+
 async def _run_export(
     *,
     project_id: str,
@@ -764,6 +803,9 @@ async def _run_export(
                 await async_job_svc.update_progress(db, job_uuid, 90)
                 await db.commit()
 
+                # Final result/URL boundary after the long build: reauthorize
+                # the initiating account and membership before issuing the URL.
+                await _reauthorize_export_final_write(db, job_uuid)
                 download_url = storage_service.generate_download_url(
                     object_key,
                     expires_in=PRESIGN_EXPIRES_SECONDS,

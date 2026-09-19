@@ -243,6 +243,19 @@ async def execute_cross_frame_job(
         try:
             # 每帧进入写事务前恢复 actor：上一帧 rollback 会过期
             # Session 内对象，同时这也让运行中被停用的账号不再继续写入。
+            # Account-first: bounded FOR SHARE NOWAIT on the acting account
+            # before membership/Task locks so a concurrent global disable cannot
+            # race the frame commit.  A busy account rolls back to a terminal
+            # item via the outer handler instead of a wait cycle.
+            from app.services.project_write_guard import (
+                lock_actor_account,
+                lock_actor_project_share,
+            )
+
+            try:
+                await lock_actor_account(db, actor.id)
+            except HTTPException as exc:
+                raise RuntimeError("permission_changed") from exc
             await db.refresh(actor)
             if not actor.is_active:
                 raise RuntimeError("permission_changed")
@@ -250,7 +263,6 @@ async def execute_cross_frame_job(
             # Account/membership-before-resource: bounded share lock the actor's
             # membership for each involved project before the Task locks, so the
             # final-write guard's membership re-read cannot wait after a Task.
-            from app.services.project_write_guard import lock_actor_project_share
 
             member_project_ids = set(
                 (
