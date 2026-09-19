@@ -33,6 +33,7 @@ from app.db.models.user_invitation import UserInvitation
 from scripts.audit_project_roles import (
     AUDIT_REPORT_VERSION,
     _json_default,
+    active_manager_predicate,
     collect_report,
     read_only_audit_session,
 )
@@ -831,6 +832,67 @@ async def test_audit_recognizes_active_managers_without_membership(
     assert str(ids["super_admin_member"]) in _item_user_ids(
         roles["administrator_memberships"]
     )
+
+
+async def test_active_manager_predicate_fails_closed(test_engine) -> None:
+    """Exercise the pure-SQL manager rule on synthetic relation rows.
+
+    No tables are read: ``ua`` and ``p`` are built from VALUES rows so the
+    missing-project, missing-user, NULL-role and inactive-account branches are
+    asserted directly against a real PostgreSQL connection.
+    """
+    predicate = active_manager_predicate("ua")
+    sql = (
+        "SELECT c.name, c.expected, NOT (" + predicate + ") AS is_gap "
+        "FROM (VALUES "
+        "(1, 'active super_admin', false, "
+        "'00000000-0000-0000-0000-000000000001'::uuid, "
+        "'00000000-0000-0000-0000-0000000000a1'::uuid), "
+        "(2, 'active admin owner', false, "
+        "'00000000-0000-0000-0000-000000000002'::uuid, "
+        "'00000000-0000-0000-0000-0000000000a1'::uuid), "
+        "(3, 'active admin non-owner', true, "
+        "'00000000-0000-0000-0000-000000000003'::uuid, "
+        "'00000000-0000-0000-0000-0000000000a1'::uuid), "
+        "(4, 'active employee', true, "
+        "'00000000-0000-0000-0000-000000000004'::uuid, "
+        "'00000000-0000-0000-0000-0000000000a1'::uuid), "
+        "(5, 'inactive super_admin', true, "
+        "'00000000-0000-0000-0000-000000000005'::uuid, "
+        "'00000000-0000-0000-0000-0000000000a1'::uuid), "
+        "(6, 'NULL role', true, "
+        "'00000000-0000-0000-0000-000000000006'::uuid, "
+        "'00000000-0000-0000-0000-0000000000a1'::uuid), "
+        "(7, 'missing user', true, "
+        "'00000000-0000-0000-0000-0000000000ff'::uuid, "
+        "'00000000-0000-0000-0000-0000000000a1'::uuid), "
+        "(8, 'missing project super_admin', true, "
+        "'00000000-0000-0000-0000-000000000001'::uuid, "
+        "'00000000-0000-0000-0000-0000000000ff'::uuid), "
+        "(9, 'missing project admin owner', true, "
+        "'00000000-0000-0000-0000-000000000002'::uuid, "
+        "'00000000-0000-0000-0000-0000000000ff'::uuid)"
+        ") AS c(sort, name, expected, active_id, project_id) "
+        "LEFT JOIN (VALUES "
+        "('00000000-0000-0000-0000-000000000001'::uuid, true, 'super_admin'), "
+        "('00000000-0000-0000-0000-000000000002'::uuid, true, 'project_admin'), "
+        "('00000000-0000-0000-0000-000000000003'::uuid, true, 'project_admin'), "
+        "('00000000-0000-0000-0000-000000000004'::uuid, true, 'employee'), "
+        "('00000000-0000-0000-0000-000000000005'::uuid, false, 'super_admin'), "
+        "('00000000-0000-0000-0000-000000000006'::uuid, true, NULL)"
+        ") AS ua(id, is_active, role) ON ua.id = c.active_id "
+        "LEFT JOIN (VALUES "
+        "('00000000-0000-0000-0000-0000000000a1'::uuid, "
+        "'00000000-0000-0000-0000-000000000002'::uuid)"
+        ") AS p(id, owner_id) ON p.id = c.project_id "
+        "ORDER BY c.sort"
+    )
+    async with test_engine.connect() as conn:
+        rows = (await conn.execute(text(sql))).mappings().all()
+
+    assert len(rows) == 9
+    for row in rows:
+        assert bool(row["is_gap"]) is bool(row["expected"]), row["name"]
 
 
 def test_audit_runs_before_0173_migration(test_db_url, apply_migrations) -> None:
