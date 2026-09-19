@@ -11,11 +11,10 @@ from app.api.v1.tasks import (
     _attach_image_pyramids_batch,
     _task_with_url,
 )
-from app.deps import assert_project_visible, get_current_user, get_db
-from app.db.enums import UserRole
-from app.db.models.project import Project
+from app.deps import get_current_user, get_db
 from app.db.models.project_task_view import ProjectTaskView
 from app.db.models.user import User
+from app.services.project_access import ProjectAccess, resolve_project_access_by_id
 from app.schemas.task_view import (
     DataManagerTaskOut,
     ProjectTaskQueryRequest,
@@ -47,16 +46,16 @@ from app.services.user_brief import resolve_briefs
 router = APIRouter()
 
 
-def _can_manage_project(user: User, project: Project) -> bool:
-    return user.role == UserRole.SUPER_ADMIN or project.owner_id == user.id
+def _can_manage_project(access: ProjectAccess) -> bool:
+    return access.is_manager
 
 
-def _assert_can_write_view(user: User, project: Project, view: ProjectTaskView) -> None:
+def _assert_can_write_view(access: ProjectAccess, view: ProjectTaskView) -> None:
     if view.visibility == "private":
-        if view.owner_id == user.id or user.role == UserRole.SUPER_ADMIN:
+        if view.owner_id == access.user_id or access.is_super_admin:
             return
         raise HTTPException(status_code=403, detail="Only the view owner can edit it")
-    if _can_manage_project(user, project):
+    if _can_manage_project(access):
         return
     raise HTTPException(
         status_code=403, detail="Only project admins can edit shared views"
@@ -105,7 +104,9 @@ async def list_task_views(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    project = await assert_project_visible(project_id, db, user)
+    project, access = await resolve_project_access_by_id(
+        db, user=user, project_id=project_id
+    )
     build_data_manager_schema(project, entity_scope)
     svc = TaskViewService(db)
     builtins = (
@@ -194,8 +195,10 @@ async def create_task_view(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    project = await assert_project_visible(project_id, db, user)
-    if payload.visibility == "project" and not _can_manage_project(user, project):
+    project, access = await resolve_project_access_by_id(
+        db, user=user, project_id=project_id
+    )
+    if payload.visibility == "project" and not _can_manage_project(access):
         raise HTTPException(
             status_code=403, detail="Only project admins can create shared views"
         )
@@ -234,7 +237,9 @@ async def get_task_view(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    project = await assert_project_visible(project_id, db, user)
+    project, access = await resolve_project_access_by_id(
+        db, user=user, project_id=project_id
+    )
     svc = TaskViewService(db)
     view = await svc.get_view(project_id, view_id, user.id)
     invalid = (
@@ -273,12 +278,14 @@ async def update_task_view(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    project = await assert_project_visible(project_id, db, user)
+    project, access = await resolve_project_access_by_id(
+        db, user=user, project_id=project_id
+    )
     svc = TaskViewService(db)
     view = await svc.get_view(project_id, view_id, user.id)
-    _assert_can_write_view(user, project, view)
+    _assert_can_write_view(access, view)
     next_visibility = payload.visibility
-    if next_visibility == "project" and not _can_manage_project(user, project):
+    if next_visibility == "project" and not _can_manage_project(access):
         raise HTTPException(
             status_code=403, detail="Only project admins can share views"
         )
@@ -315,10 +322,12 @@ async def delete_task_view(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    project = await assert_project_visible(project_id, db, user)
+    project, access = await resolve_project_access_by_id(
+        db, user=user, project_id=project_id
+    )
     svc = TaskViewService(db)
     view = await svc.get_view(project_id, view_id, user.id)
-    _assert_can_write_view(user, project, view)
+    _assert_can_write_view(access, view)
     await AuditService.log(
         db,
         actor=user,
@@ -347,11 +356,13 @@ async def copy_task_view(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    project = await assert_project_visible(project_id, db, user)
+    project, access = await resolve_project_access_by_id(
+        db, user=user, project_id=project_id
+    )
     svc = TaskViewService(db)
     source = await svc.get_view(project_id, view_id, user.id)
     visibility = payload.visibility or source.visibility
-    if visibility == "project" and not _can_manage_project(user, project):
+    if visibility == "project" and not _can_manage_project(access):
         raise HTTPException(
             status_code=403, detail="Only project admins can create shared views"
         )
@@ -389,7 +400,9 @@ async def query_project_tasks(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    project = await assert_project_visible(project_id, db, user)
+    project, access = await resolve_project_access_by_id(
+        db, user=user, project_id=project_id
+    )
     validate_filter(payload.filter_json, project=project, user=user)
     validate_sort(_sort_to_json(payload.sort_json))
     validate_columns(payload.columns_json)
@@ -502,7 +515,9 @@ async def query_task_view_tasks(
     db: AsyncSession = Depends(get_db),
     user: User = Depends(get_current_user),
 ):
-    await assert_project_visible(project_id, db, user)
+    _project, _access = await resolve_project_access_by_id(
+        db, user=user, project_id=project_id
+    )
     svc = TaskViewService(db)
     view = await svc.get_view(project_id, view_id, user.id)
     if view.entity_scope != "tasks":

@@ -16,10 +16,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import (
     assert_request_scopes,
+    get_current_user,
     get_db,
     get_gpu_dispatch_context_factory,
     get_gpu_shadow_session_factory,
+    project_access_for_path,
     require_roles,
+    require_project_capability,
     require_project_visible,
     require_project_owner,
 )
@@ -67,12 +70,18 @@ from app.services.ml_interaction_proxy import (
 )
 from app.services.ml_routing.client import RoutedMLBackendClient
 from app.services.prediction import PredictionService, to_video_bbox_result
+from app.services.project_access import ProjectAccess, ProjectCapability
 from app.services.storage import StorageService
 from app.services.audit import AuditService
 from app.services.ai_mask_receipt import issue_ai_mask_receipt
 from app.services.ai_mask_prompt import resolve_authorized_mask_prompt
 from app.services.ai_mask_session import issue_ai_mask_session
-from app.api.v1.tasks._shared import _assert_task_visible
+from app.api.v1.tasks._shared import (
+    _assert_review_adjustment_evidence,
+    _assert_task_visible,
+    _resolve_task_access,
+    _task_write_allowed,
+)
 from app.observability.metrics import (
     mask_ai_operation,
     mask_ai_prompt_family,
@@ -87,7 +96,34 @@ _setup_cache: dict[uuid.UUID, tuple[float, dict]] = {}
 
 router = APIRouter()
 
-_MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
+
+def _assert_ml_backend_read(access: ProjectAccess) -> None:
+    """Backend read access mirrors the previous manager/reviewer/annotator set.
+
+    A project viewer keeps the existing read-only project surfaces but not the
+    ML backend catalog used by the Workbench.
+    """
+
+    if access.is_manager or access.project_role in {"annotator", "reviewer"}:
+        return
+    raise HTTPException(status_code=403, detail="缺少项目权限: task.read")
+
+
+async def _assert_annotation_write_access(
+    db: AsyncSession, task: Task, user: User
+) -> ProjectAccess:
+    """Annotation-phase AI access for a task's actual project.
+
+    Reviewers are admitted only for a review adjustment with frozen non-self
+    evidence; plain annotation-phase work denies reviewers.
+    """
+
+    access = await _resolve_task_access(db, task, user, lock_membership=True)
+    if not _task_write_allowed(task, access, allow_review_adjustment=True):
+        raise HTTPException(status_code=403, detail="缺少项目权限: annotation.write")
+    await _assert_review_adjustment_evidence(db, task, user, access)
+    return access
+
 
 # v0.23.5 · WS-D · D2 · cap on uploaded frame bytes (predict-frame /
 # interactive-annotating-frame). Bounds memory regardless of a lying/missing
@@ -287,15 +323,13 @@ async def create_ml_backend(
 @router.get(
     "",
     response_model=list[MLBackendOut],
-    dependencies=[Depends(require_project_visible)],
 )
 async def list_ml_backends(
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(
-        require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
-    ),
+    access: ProjectAccess = Depends(project_access_for_path),
 ):
+    _assert_ml_backend_read(access)
     svc = MLBackendService(db)
     backends = await svc.list_enabled_for_project(project_id)
     return [_out(b, project_id) for b in backends]
@@ -304,12 +338,13 @@ async def list_ml_backends(
 @router.get(
     "/available",
     response_model=ProjectMLBackendList,
-    dependencies=[Depends(require_project_visible)],
 )
 async def list_available_ml_backends(
     project_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MANAGERS)),
+    _access: ProjectAccess = Depends(
+        require_project_capability(ProjectCapability.PROJECT_MANAGE.value)
+    ),
 ):
     """v0.19.0 ADR-0044 · 项目设置「启用勾选清单」: 列出全部全局 backend + 本项目启用态/覆盖。
 
@@ -340,7 +375,7 @@ async def set_ml_backend_enablement(
     data: ProjectMLBackendEnablement,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MANAGERS)),
+    current_user: User = Depends(get_current_user),
 ):
     """v0.19.0 ADR-0044 · 切换本项目对某全局 backend 的启用 + 写项目级覆盖 (阈值/变体)。
 
@@ -384,16 +419,14 @@ async def set_ml_backend_enablement(
 @router.get(
     "/{backend_id}",
     response_model=MLBackendOut,
-    dependencies=[Depends(require_project_visible)],
 )
 async def get_ml_backend(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(
-        require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
-    ),
+    access: ProjectAccess = Depends(project_access_for_path),
 ):
+    _assert_ml_backend_read(access)
     svc = MLBackendService(db)
     backend = await svc.get(backend_id)
     if not backend or not await svc.is_enabled(project_id, backend_id):
@@ -476,7 +509,7 @@ async def delete_ml_backend(
     backend_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MANAGERS)),
+    current_user: User = Depends(get_current_user),
 ):
     # v0.19.0 ADR-0044 · 项目作用域的「删除」= 为本项目停用全局 backend (不删全局注册项;
     # 删全局项是 superadmin 的 admin 端点, 见 PR3)。
@@ -635,7 +668,7 @@ async def warmup_ml_backend(
     dispatch_context_factory: GPUDispatchContextFactory = Depends(
         get_gpu_dispatch_context_factory
     ),
-    current_user: User = Depends(require_roles(*_MANAGERS)),
+    current_user: User = Depends(get_current_user),
 ):
     """v0.14.14 协议 §4.4 · 转发 POST /warmup 到 backend.
 
@@ -976,20 +1009,18 @@ def _interactive_prompt_summary(context: dict) -> dict:
 
 @router.get(
     "/{backend_id}/setup",
-    dependencies=[Depends(require_project_visible)],
 )
 async def get_ml_backend_setup(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(
-        require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
-    ),
+    access: ProjectAccess = Depends(project_access_for_path),
 ):
     """v0.10.1 · 代理 backend /setup, 返回 JSON Schema 自描述能力 (供前端 useMLCapabilities).
 
     30s TTL 进程内缓存; backend 升级/重启后最坏延迟 30s. 删除/更新 backend 时 invalidate.
     """
+    _assert_ml_backend_read(access)
     svc = MLBackendService(db)
     backend = await svc.get(backend_id)
     if not backend or not await svc.is_enabled(project_id, backend_id):
@@ -1001,21 +1032,19 @@ async def get_ml_backend_setup(
 @router.get(
     "/{backend_id}/capabilities",
     response_model=BackendCapabilities,
-    dependencies=[Depends(require_project_visible)],
 )
 async def get_ml_backend_capabilities(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(
-        require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
-    ),
+    access: ProjectAccess = Depends(project_access_for_path),
 ):
     """v0.14.9 · 能力声明协议 v2: 探 /setup (复用 setup 缓存链路) → 派生能力快照.
 
     返回含 models[] / infra / modalities + 扁平并集字段, 供前端多模型目录消费.
     权限同 /setup 端点 (managers + reviewer + annotator)。/setup 不可达时 502.
     """
+    _assert_ml_backend_read(access)
     svc = MLBackendService(db)
     backend = await svc.get(backend_id)
     if not backend or not await svc.is_enabled(project_id, backend_id):
@@ -1034,7 +1063,7 @@ async def refresh_ml_backend_capabilities(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MANAGERS)),
+    current_user: User = Depends(get_current_user),
 ):
     """v0.14.9 · 强制刷新能力快照: 先 invalidate setup 缓存再重探 + 派生.
 
@@ -1059,7 +1088,7 @@ async def check_health(
     project_id: uuid.UUID,
     backend_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MANAGERS)),
+    current_user: User = Depends(get_current_user),
 ):
     svc = MLBackendService(db)
     backend = await svc.get(backend_id)
@@ -1112,7 +1141,7 @@ async def predict_test(
     dispatch_context_factory: GPUDispatchContextFactory = Depends(
         get_gpu_dispatch_context_factory
     ),
-    current_user: User = Depends(require_roles(*_MANAGERS)),
+    current_user: User = Depends(get_current_user),
 ):
     svc = MLBackendService(db)
     backend = await svc.get(backend_id)
@@ -1159,9 +1188,7 @@ async def interactive_annotating(
     dispatch_context_factory: GPUDispatchContextFactory = Depends(
         get_gpu_dispatch_context_factory
     ),
-    current_user: User = Depends(
-        require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
-    ),
+    current_user: User = Depends(get_current_user),
 ):
     svc = MLBackendService(db)
     backend = await svc.get(backend_id)
@@ -1175,7 +1202,8 @@ async def interactive_annotating(
 
     await _require_ai_interactive_enabled(db, project_id)
     task = await _get_task_in_project(db, body.task_id, project_id)
-    await _assert_task_visible(db, task, current_user)
+    access = await _assert_annotation_write_access(db, task, current_user)
+    await _assert_task_visible(db, task, current_user, access=access)
     if (body.context or {}).get("mask_prompt_source") is not None:
         assert_request_scopes(request, "annotations:read")
 
@@ -1307,9 +1335,7 @@ async def predict_frame(
     dispatch_context_factory: GPUDispatchContextFactory = Depends(
         get_gpu_dispatch_context_factory
     ),
-    current_user: User = Depends(
-        require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
-    ),
+    current_user: User = Depends(get_current_user),
 ):
     """v0.21.4 · 对客户端传入的「视频当前帧」JPEG 跑图像 backend, 落单帧 ``video_bbox`` 候选。
 
@@ -1330,7 +1356,8 @@ async def predict_frame(
 
     await _require_ai_interactive_enabled(db, project_id)
     task = await _get_task_in_project(db, task_id, project_id)
-    await _assert_task_visible(db, task, current_user)
+    access = await _assert_annotation_write_access(db, task, current_user)
+    await _assert_task_visible(db, task, current_user, access=access)
 
     try:
         cfg = json.loads(config) if config else {}
@@ -1432,9 +1459,7 @@ async def interactive_annotating_frame(
     dispatch_context_factory: GPUDispatchContextFactory = Depends(
         get_gpu_dispatch_context_factory
     ),
-    current_user: User = Depends(
-        require_roles(*_MANAGERS, UserRole.REVIEWER, UserRole.ANNOTATOR)
-    ),
+    current_user: User = Depends(get_current_user),
 ):
     """视频当前帧的**交互式** SAM 提示 (point / interactive_box / exemplar)。
 
@@ -1463,7 +1488,8 @@ async def interactive_annotating_frame(
 
     await _require_ai_interactive_enabled(db, project_id)
     task = await _get_task_in_project(db, task_id, project_id)
-    await _assert_task_visible(db, task, current_user)
+    access = await _assert_annotation_write_access(db, task, current_user)
+    await _assert_task_visible(db, task, current_user, access=access)
 
     if len(context.encode()) > MAX_INTERACTIVE_CONTEXT_BODY_BYTES:
         raise HTTPException(
@@ -1675,7 +1701,7 @@ async def set_project_ml_backend_pool_enablement(
     data: ProjectMLBackendPoolEnablement,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_MANAGERS)),
+    current_user: User = Depends(get_current_user),
 ):
     """切换本项目对某服务池的启用 + 写项目级变体覆盖 (pool 级, ADR-0050 §12.2)。
 

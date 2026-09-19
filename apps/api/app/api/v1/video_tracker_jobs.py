@@ -14,6 +14,11 @@ from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.tasks import _assert_task_visible
+from app.api.v1.tasks._shared import (
+    _assert_review_adjustment_evidence,
+    _resolve_task_access,
+    _task_write_allowed,
+)
 from app.db.enums import UserRole
 from app.db.models.project import Project
 from app.db.models.task import Task
@@ -35,7 +40,7 @@ from app.schemas.video_tracker_job import (
     VideoTrackerJobOut,
 )
 from app.services.audit import AuditAction, AuditService
-from app.services.scheduler import is_privileged_for_project
+from app.services.project_access import ProjectAccess
 from app.services.raster_mask_storage import load_coco_rle
 from app.services.video_tracking.jobs import (
     accept_tracker_job,
@@ -147,14 +152,6 @@ def _decode_cursor(cursor: str) -> tuple[datetime, uuid.UUID]:
         raise HTTPException(status_code=400, detail=f"invalid cursor: {exc}")
 
 
-_ANNOTATORS = (
-    UserRole.SUPER_ADMIN,
-    UserRole.PROJECT_ADMIN,
-    UserRole.REVIEWER,
-    UserRole.ANNOTATOR,
-)
-
-
 async def _load_visible_job_task(
     db: AsyncSession, job_id: uuid.UUID, user: User
 ) -> tuple[Task, VideoTrackerJobOut]:
@@ -173,16 +170,31 @@ async def _load_visible_job_task_row(
     return task, row
 
 
+async def _assert_job_write_access(
+    db: AsyncSession, task: Task, user: User
+) -> ProjectAccess:
+    """Resolve current project authority for a tracker-job mutation.
+
+    Reviewers are admitted only for a review-phase adjustment with frozen
+    non-self evidence; annotation-phase work denies reviewers.  The membership is
+    locked ``FOR SHARE`` so a concurrent role change cannot commit mid-flight.
+    """
+
+    access = await _resolve_task_access(db, task, user, lock_membership=True)
+    if not _task_write_allowed(task, access, allow_review_adjustment=True):
+        raise HTTPException(status_code=403, detail="缺少项目权限: annotation.write")
+    await _assert_review_adjustment_evidence(db, task, user, access)
+    return access
+
+
 async def _assert_can_cancel(
     db: AsyncSession,
     task: Task,
     body: VideoTrackerJob | VideoTrackerJobOut,
     user: User,
+    access: ProjectAccess,
 ) -> None:
-    project = await db.get(Project, task.project_id)
-    if body.created_by == user.id or (
-        project and is_privileged_for_project(user, project)
-    ):
+    if body.created_by == user.id or access.is_manager:
         return
     raise HTTPException(
         status_code=403, detail="Video tracker job belongs to another user"
@@ -194,14 +206,14 @@ async def _assert_can_decide(
     task: Task,
     body: VideoTrackerJob,
     user: User,
+    access: ProjectAccess,
 ) -> None:
-    project = await db.get(Project, task.project_id)
     if task.status == "completed":
         raise HTTPException(
             status_code=409,
             detail={"reason": "task_locked", "status": task.status},
         )
-    if project and is_privileged_for_project(user, project):
+    if access.is_manager:
         return
     if task.status == "review":
         if task.reviewer_id == user.id and task.reviewer_claimed_at is not None:
@@ -358,10 +370,11 @@ async def cancel_video_tracker_job(
     job_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
 ):
     task, row = await _load_visible_job_task_row(db, job_id, current_user)
-    await _assert_can_cancel(db, task, row, current_user)
+    access = await _assert_job_write_access(db, task, current_user)
+    await _assert_can_cancel(db, task, row, current_user, access)
     job_kind = row.job_kind
     status_before = row.status
     commit_started = time.monotonic()
@@ -450,22 +463,22 @@ async def accept_video_tracker_job(
     job_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
 ):
     """v0.21.28 · 接受候选: 把 job 暂存结果落库 (主实例回填源轨迹 + 新轨迹建), status=ACCEPTED。"""
     task, row = await _load_visible_job_task_row(db, job_id, current_user)
-    await _assert_can_cancel(db, task, row, current_user)
+    access = await _assert_job_write_access(db, task, current_user)
+    await _assert_can_cancel(db, task, row, current_user, access)
     if row.job_kind == "correction":
         raise HTTPException(
             status_code=409,
             detail={"reason": "correction_requires_local_decision"},
         )
-    project = await db.get(Project, task.project_id)
     body = await accept_tracker_job(
         db,
         job_id,
         actor_id=current_user.id,
-        privileged=bool(project and is_privileged_for_project(current_user, project)),
+        privileged=access.is_manager,
     )
     await AuditService.log(
         db,
@@ -490,11 +503,12 @@ async def discard_video_tracker_job(
     job_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
 ):
     """v0.21.28 · 丢弃候选: status=DISCARDED, 清 staged_result, annotation 零改动。"""
     task, row = await _load_visible_job_task_row(db, job_id, current_user)
-    await _assert_can_cancel(db, task, row, current_user)
+    access = await _assert_job_write_access(db, task, current_user)
+    await _assert_can_cancel(db, task, row, current_user, access)
     if row.job_kind == "correction":
         raise HTTPException(
             status_code=409,
@@ -525,13 +539,13 @@ async def decide_video_tracker_candidates(
     body: VideoTrackerDecisionRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
 ):
     """Accept or reject an instance/window or QC issue region selector."""
 
     task, visible = await _load_visible_job_task_row(db, job_id, current_user)
-    await _assert_can_decide(db, task, visible, current_user)
-    project = await db.get(Project, task.project_id)
+    access = await _assert_job_write_access(db, task, current_user)
+    await _assert_can_decide(db, task, visible, current_user, access)
     staged = visible.staged_result or {}
     output_geometry = str(staged.get("output_geometry") or "unknown")
     observe_decision = visible.job_kind == "correction" or output_geometry == "mask"
@@ -542,9 +556,7 @@ async def decide_video_tracker_candidates(
             job_id,
             body,
             actor_id=current_user.id,
-            privileged=bool(
-                project and is_privileged_for_project(current_user, project)
-            ),
+            privileged=access.is_manager,
         )
     except HTTPException as exc:
         if observe_decision:

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response,
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.api.v1.tasks._shared import _REVIEWERS, _assert_task_visible, _visible_task_ids
+from app.api.v1.tasks._shared import _assert_task_visible, _visible_task_ids
 from app.db.models.annotation import Annotation
 from app.db.models.async_job import AsyncJob
 from app.db.models.mask_qc import MaskQCIssue, MaskQCRun
@@ -19,11 +19,17 @@ from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
 from app.deps import (
+    get_current_user,
     get_db,
+    require_project_capability,
     require_project_visible,
-    require_roles,
     require_scopes,
     require_active_task_actor,
+)
+from app.services.project_access import (
+    ProjectAccess,
+    ProjectCapability,
+    resolve_project_access,
 )
 from app.schemas.mask_qc import (
     MASK_QC_RULE_CODES,
@@ -68,9 +74,29 @@ from app.services.mask_repair import (
     request_repair_rollback,
     resume_repair_batch,
 )
-from app.services.scheduler import is_privileged_for_project
 
 router = APIRouter(dependencies=[Depends(require_active_task_actor)])
+
+
+def _assert_review_authority(access: ProjectAccess) -> None:
+    """Mask QC reads/writes require a manager or a project reviewer."""
+
+    if access.is_manager or ProjectCapability.REVIEW_WRITE.value in access.capabilities:
+        return
+    raise HTTPException(status_code=403, detail="缺少项目权限: review.write")
+
+
+async def _resolve_task_review_access(
+    db: AsyncSession, *, task: Task, user: User
+) -> tuple[Project, ProjectAccess]:
+    """Resolve and enforce review authority for a task's actual project."""
+
+    project = await db.get(Project, task.project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    access = await resolve_project_access(db, user=user, project=project)
+    _assert_review_authority(access)
+    return project, access
 
 
 def _raise_mask_repair_error(exc: MaskRepairError) -> None:
@@ -138,10 +164,11 @@ async def _assert_run_scope_visible(
     *,
     project: Project,
     user: User,
+    access: ProjectAccess,
     request: MaskQCRunRequest,
 ) -> None:
     if request.scope == "project":
-        if not is_privileged_for_project(user, project):
+        if not access.is_manager:
             raise HTTPException(
                 status_code=403,
                 detail="project-wide Mask QC requires project owner",
@@ -176,7 +203,7 @@ async def _assert_run_scope_visible(
     if {task.id for task in rows} != task_ids:
         raise HTTPException(status_code=404, detail="Task not found")
     for task in rows:
-        await _assert_task_visible(db, task, user)
+        await _assert_task_visible(db, task, user, access=access)
 
 
 @router.post(
@@ -188,10 +215,13 @@ async def create_run(
     body: MaskQCRunRequest,
     project: Project = Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(
+        require_project_capability(ProjectCapability.REVIEW_WRITE.value)
+    ),
 ) -> MaskQCRunOut:
     await _assert_run_scope_visible(
-        db, project=project, user=current_user, request=body
+        db, project=project, user=current_user, access=access, request=body
     )
     try:
         run, job, created = await create_mask_qc_run(
@@ -219,7 +249,10 @@ async def create_run(
 async def get_project_issues(
     project: Project = Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(
+        require_project_capability(ProjectCapability.REVIEW_WRITE.value)
+    ),
     limit: int = Query(default=50, ge=1, le=200),
     cursor: str | None = None,
     issue_status: Literal["open", "resolved", "wont_fix", "stale"] | None = Query(
@@ -239,15 +272,15 @@ async def get_project_issues(
         task = await db.get(Task, task_id)
         if task is None or task.project_id != project.id:
             raise HTTPException(status_code=404, detail="Task not found")
-        await _assert_task_visible(db, task, current_user)
-    elif not is_privileged_for_project(current_user, project):
+        await _assert_task_visible(db, task, current_user, access=access)
+    elif not access.is_manager:
         all_task_ids = list(
             (
                 await db.execute(select(Task.id).where(Task.project_id == project.id))
             ).scalars()
         )
         allowed_task_ids = await _visible_task_ids(
-            db, project, current_user, all_task_ids
+            db, project, current_user, all_task_ids, access=access
         )
 
     try:
@@ -287,15 +320,15 @@ async def get_project_issues(
 async def get_task_summary(
     task_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
 ) -> TaskMaskQCSummary:
     task = await db.get(Task, task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    await _assert_task_visible(db, task, current_user)
-    project = await db.get(Project, task.project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="Project not found")
+    project, access = await _resolve_task_review_access(
+        db, task=task, user=current_user
+    )
+    await _assert_task_visible(db, task, current_user, access=access)
     return TaskMaskQCSummary.model_validate(
         await task_qc_summary(db, task=task, project=project)
     )
@@ -316,11 +349,12 @@ async def get_mask_compare(
     candidate_digest: str | None = None,
     candidate_instance_id: str | None = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
 ) -> MaskCompareOut:
-    annotation, _task = await _load_visible_compare_annotation(
+    annotation, task = await _load_visible_compare_annotation(
         db, annotation_id=annotation_id, user=current_user
     )
+    await _resolve_task_review_access(db, task=task, user=current_user)
     try:
         return await build_mask_compare(
             db,
@@ -349,11 +383,12 @@ async def get_mask_compare_content(
     digest: str = Query(pattern=r"^[0-9a-f]{64}$"),
     frame_index: int | None = Query(default=None, ge=0),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
 ) -> Response:
-    annotation, _task = await _load_visible_compare_annotation(
+    annotation, task = await _load_visible_compare_annotation(
         db, annotation_id=annotation_id, user=current_user
     )
+    await _resolve_task_review_access(db, task=task, user=current_user)
     try:
         side = await resolve_annotation_side(
             db,
@@ -388,7 +423,7 @@ async def get_issue_region_content(
     request: Request,
     digest: str = Query(pattern=r"^[0-9a-f]{64}$"),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
 ) -> Response:
     issue = await db.get(MaskQCIssue, issue_id)
     if issue is None:
@@ -396,6 +431,7 @@ async def get_issue_region_content(
     annotation, task = await _load_visible_compare_annotation(
         db, annotation_id=issue.annotation_id, user=current_user
     )
+    await _resolve_task_review_access(db, task=task, user=current_user)
     if task.id != issue.task_id or annotation.project_id != issue.project_id:
         raise HTTPException(
             status_code=409, detail={"reason": "mask_qc_issue_scope_conflict"}
@@ -424,7 +460,7 @@ async def get_issue_region_content(
 async def get_issue(
     issue_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
 ) -> MaskQCIssueOut:
     issue = await db.get(MaskQCIssue, issue_id)
     if issue is None:
@@ -432,7 +468,10 @@ async def get_issue(
     task = await db.get(Task, issue.task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    await _assert_task_visible(db, task, current_user)
+    _project, access = await _resolve_task_review_access(
+        db, task=task, user=current_user
+    )
+    await _assert_task_visible(db, task, current_user, access=access)
     return await _issue_out(db, issue)
 
 
@@ -441,7 +480,7 @@ async def patch_issue(
     issue_id: uuid.UUID,
     body: MaskQCIssuePatch,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
 ) -> MaskQCIssueOut:
     issue = (
         await db.execute(
@@ -453,7 +492,10 @@ async def patch_issue(
     task = await db.get(Task, issue.task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    await _assert_task_visible(db, task, current_user)
+    _project, access = await _resolve_task_review_access(
+        db, task=task, user=current_user
+    )
+    await _assert_task_visible(db, task, current_user, access=access)
     if await effective_issue_status(db, issue) == "stale":
         raise HTTPException(
             status_code=409,
@@ -476,6 +518,7 @@ async def _assert_repair_issues_visible(
     *,
     project: Project,
     user: User,
+    access: ProjectAccess,
     issue_ids: list[uuid.UUID],
 ) -> None:
     rows = list(
@@ -493,7 +536,7 @@ async def _assert_repair_issues_visible(
         (await db.execute(select(Task).where(Task.id.in_(task_ids)))).scalars()
     )
     for task in tasks:
-        await _assert_task_visible(db, task, user)
+        await _assert_task_visible(db, task, user, access=access)
 
 
 async def _load_visible_repair_batch(
@@ -505,6 +548,11 @@ async def _load_visible_repair_batch(
     batch = await db.get(MaskRepairBatch, repair_id)
     if batch is None:
         raise HTTPException(status_code=404, detail="Mask repair batch not found")
+    project = await db.get(Project, batch.project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Project not found")
+    access = await resolve_project_access(db, user=user, project=project)
+    _assert_review_authority(access)
     task_ids = {
         uuid.UUID(str(item["task_id"]))
         for item in (batch.plan_json or {}).get("items") or []
@@ -516,7 +564,7 @@ async def _load_visible_repair_batch(
     if len(tasks) != len(task_ids):
         raise HTTPException(status_code=404, detail="Mask repair task not found")
     for task in tasks:
-        await _assert_task_visible(db, task, user)
+        await _assert_task_visible(db, task, user, access=access)
     return batch
 
 
@@ -559,12 +607,16 @@ async def dry_run_mask_repairs(
     request: Request,
     project: Project = Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(
+        require_project_capability(ProjectCapability.REVIEW_WRITE.value)
+    ),
 ) -> MaskRepairDryRunResponse:
     await _assert_repair_issues_visible(
         db,
         project=project,
         user=current_user,
+        access=access,
         issue_ids=[action.issue_id for action in body.actions],
     )
     response = await create_repair_plan(
@@ -601,7 +653,10 @@ async def execute_mask_repairs(
     request: Request,
     project: Project = Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
+    _access: ProjectAccess = Depends(
+        require_project_capability(ProjectCapability.REVIEW_WRITE.value)
+    ),
 ) -> MaskRepairBatchOut:
     try:
         batch, should_dispatch = await execute_repair_plan(
@@ -638,7 +693,7 @@ async def execute_mask_repairs(
 async def get_mask_repair_batch(
     repair_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
 ) -> MaskRepairBatchOut:
     batch = await _load_visible_repair_batch(db, repair_id=repair_id, user=current_user)
     return batch_out(batch)
@@ -654,7 +709,7 @@ async def resume_mask_repairs(
     repair_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
 ) -> MaskRepairBatchOut:
     await _load_visible_repair_batch(db, repair_id=repair_id, user=current_user)
     try:
@@ -688,7 +743,7 @@ async def rollback_mask_repairs(
     body: MaskRepairRollbackRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
 ) -> MaskRepairBatchOut:
     await _load_visible_repair_batch(db, repair_id=repair_id, user=current_user)
     try:
