@@ -673,11 +673,14 @@ class TaskViewService:
         stmt: Select,
         user: User,
         project: Project,
+        *,
+        project_role: str | None = None,
     ) -> Select:
-        # 与 tasks.list_tasks 对齐: 非特权用户 (annotator/reviewer) 通过 Data Manager
-        # 查询时只能看自己任务级/批次级可见性范围内的任务, 不能看到全项目任务。
+        # 与 tasks.list_tasks 对齐: 非特权用户 (annotator/reviewer/viewer) 通过 Data
+        # Manager 查询时只能看自己任务级/批次级可见性范围内的任务, 不能看到全项目任务。
         # 显式分派的 unbatched task 也必须保留在这个授权关系中。
-        return apply_task_visibility(stmt, user, project)
+        # ``project_role`` 是调用方解析出的成员职责; 缺失时非特权查询 fail closed。
+        return apply_task_visibility(stmt, user, project, project_role=project_role)
 
     async def count_for_filter(
         self,
@@ -686,6 +689,7 @@ class TaskViewService:
         *,
         user: User,
         project: Project,
+        project_role: str | None = None,
     ) -> int:
         clause = compile_filter(filter_json, project=project, user=user)
         stmt = (
@@ -693,7 +697,7 @@ class TaskViewService:
             .select_from(Task)
             .where(Task.project_id == project_id, clause)
         )
-        stmt = self._apply_visibility(stmt, user, project)
+        stmt = self._apply_visibility(stmt, user, project, project_role=project_role)
         total = await self.db.scalar(stmt)
         return int(total or 0)
 
@@ -704,6 +708,7 @@ class TaskViewService:
         *,
         user: User,
         project: Project,
+        project_role: str | None = None,
     ) -> list[int]:
         """一次扫描算出多个 filter 的计数 (内置 + 已保存视图)，避免 N+1 往返。"""
         if not filters:
@@ -715,7 +720,7 @@ class TaskViewService:
             for i, f in enumerate(filters)
         ]
         stmt = select(*cols).select_from(Task).where(Task.project_id == project_id)
-        stmt = self._apply_visibility(stmt, user, project)
+        stmt = self._apply_visibility(stmt, user, project, project_role=project_role)
         row = (await self.db.execute(stmt)).one()
         return [int(v or 0) for v in row]
 
@@ -730,11 +735,15 @@ class TaskViewService:
         offset: int,
         user: User,
         project: Project,
+        project_role: str | None = None,
     ) -> tuple[list[Any], int]:
         clause = compile_filter(filter_json, project=project, user=user)
         base = Task.project_id == project_id
         count_stmt = self._apply_visibility(
-            select(func.count()).select_from(Task).where(base, clause), user, project
+            select(func.count()).select_from(Task).where(base, clause),
+            user,
+            project,
+            project_role=project_role,
         )
         total = await self.db.scalar(count_stmt)
         requested = set(columns_json)
@@ -816,7 +825,7 @@ class TaskViewService:
         if "scene_total_frames" in requested:
             projection.append(_scene_total_frames_sq().label("scene_total_frames"))
         q = select(*projection).where(base, clause)
-        q = self._apply_visibility(q, user, project)
+        q = self._apply_visibility(q, user, project, project_role=project_role)
         q = apply_sort(q, sort_json).limit(limit).offset(offset)
         rows = (await self.db.execute(q)).all()
         return rows, int(total or 0)
