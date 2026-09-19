@@ -3,8 +3,8 @@
 import asyncio
 import uuid
 
-from alembic import command
 from alembic.config import Config
+from alembic.script import ScriptDirectory
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -13,11 +13,13 @@ from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.user import User
 from tests.factory import create_project, create_user
+from tests.test_migration_0173_project_role_preparation import _replay
 
 
 def test_assignment_override_backfill_and_roundtrip(test_db_url, apply_migrations):
     config = Config("alembic.ini")
     config.set_main_option("sqlalchemy.url", test_db_url)
+    migration = ScriptDirectory.from_config(config).get_revision("0171").module
     saved = {}
     expected = {
         "inherited": (False, False),
@@ -69,6 +71,11 @@ def test_assignment_override_backfill_and_roundtrip(test_db_url, apply_migration
                             )
                         )
                 elif action == "verify":
+                    # Replay only the targeted revision in a rollback-only
+                    # transaction, leaving irreversible 0174 and its data intact.
+                    connection = await db.connection()
+                    await connection.run_sync(_replay, migration, "downgrade")
+                    await connection.run_sync(_replay, migration, "upgrade")
                     rows = await db.scalars(
                         select(Task).where(Task.project_id == saved["project"])
                     )
@@ -79,6 +86,8 @@ def test_assignment_override_backfill_and_roundtrip(test_db_url, apply_migration
                         )
                         for row in rows
                     } == expected
+                    await db.rollback()
+                    return
                 else:
                     if "project" in saved:
                         await db.execute(
@@ -102,9 +111,6 @@ def test_assignment_override_backfill_and_roundtrip(test_db_url, apply_migration
 
     try:
         asyncio.run(step("seed"))
-        command.downgrade(config, "0170")
-        command.upgrade(config, "head")
         asyncio.run(step("verify"))
     finally:
-        command.upgrade(config, "head")
         asyncio.run(step("cleanup"))
