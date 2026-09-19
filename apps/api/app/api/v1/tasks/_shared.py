@@ -378,6 +378,26 @@ async def _resolve_task_access(
     )
 
 
+def assert_annotation_write_allowed(
+    task: Task,
+    access: ProjectAccess,
+    *,
+    allow_review_adjustment: bool = True,
+) -> None:
+    """Fail closed unless ``access`` may write annotation-phase content.
+
+    Reuses the same predicate as the FastAPI write dependency so a mutation
+    owner reached outside a task-id dependency (for example a bulk endpoint that
+    derives its single task from the payload) enforces the annotation-phase
+    capability instead of only task-state editability.
+    """
+
+    if not _task_write_allowed(
+        task, access, allow_review_adjustment=allow_review_adjustment
+    ):
+        raise HTTPException(status_code=403, detail="缺少项目权限: annotation.write")
+
+
 async def _assert_review_adjustment_evidence(
     db: AsyncSession,
     task: Task,

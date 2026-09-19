@@ -30,9 +30,11 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.tasks._shared import (
+    _assert_review_adjustment_evidence,
     _assert_task_editable,
     _assert_task_visible,
     _resolve_task_access,
+    assert_annotation_write_allowed,
 )
 from app.config import settings
 from app.db.models.annotation import Annotation
@@ -292,7 +294,9 @@ async def upload_task_mask_content(
     ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="task not found")
-    access = await _resolve_task_access(db, task, user)
+    access = await _resolve_task_access(db, task, user, lock_membership=True)
+    assert_annotation_write_allowed(task, access)
+    await _assert_review_adjustment_evidence(db, task, user, access)
     await _assert_task_visible(db, task, user, access=access)
     _assert_task_editable(task, user, access=access)
     if (
@@ -477,7 +481,9 @@ async def bulk_update_annotations(
     - 不允许 bulk 改 tool_unit_id (会破坏 class_name 校验链)
     """
     task = await _load_single_task_for_ids(db, payload.ids)
-    access = await _resolve_task_access(db, task, user)
+    access = await _resolve_task_access(db, task, user, lock_membership=True)
+    assert_annotation_write_allowed(task, access)
+    await _assert_review_adjustment_evidence(db, task, user, access)
     await _assert_task_visible(db, task, user, access=access)
     _assert_task_editable(task, user, access=access)
 
