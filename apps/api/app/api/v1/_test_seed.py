@@ -447,8 +447,8 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     await _cleanup_e2e_fixtures(db)
 
     admin = await create_user(db, "super_admin", "admin@e2e.test", "E2E Admin")
-    annotator = await create_user(db, "annotator", "anno@e2e.test", "E2E Annotator")
-    reviewer = await create_user(db, "reviewer", "rev@e2e.test", "E2E Reviewer")
+    annotator = await create_user(db, "employee", "anno@e2e.test", "E2E Annotator")
+    reviewer = await create_user(db, "employee", "rev@e2e.test", "E2E Reviewer")
     project = await create_project(db, owner_id=admin.id, name="E2E Demo Project")
     # Mask E2E 走兼容 polygon 提交；能力握手要求项目显式开启
     # region 工具。保留 bbox 绑定，避免改变其他工作台 E2E 的基础数据。
@@ -778,7 +778,7 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
         return existing or await create_user(db, role, email, name)
 
     admin = await _user("super_admin", "admin@e2e.test", "E2E Admin")
-    annotator = await _user("annotator", "anno@e2e.test", "E2E Annotator")
+    annotator = await _user("employee", "anno@e2e.test", "E2E Annotator")
 
     # 幂等:删旧 lidar fixture(name='E2E Lidar Project',含 task/annotation/锁/草稿链)。
     old_pids = [

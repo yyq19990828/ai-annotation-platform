@@ -116,6 +116,22 @@ async def test_seed_reset_returns_fixture_payload(httpx_client):
     assert isinstance(body["task_ids"], list)
     assert len(body["task_ids"]) == 5
 
+    for project_role in ("annotator", "reviewer"):
+        login = await httpx_client.post(
+            "/api/v1/__test/seed/login",
+            json={"email": body[f"{project_role}_email"]},
+        )
+        assert login.status_code == 200, login.text
+        identity = login.json()
+        assert identity["user"]["role"] == "employee"
+        access = await httpx_client.get(
+            f"/api/v1/projects/{body['project_id']}/access",
+            headers={"Authorization": f"Bearer {identity['access_token']}"},
+        )
+        assert access.status_code == 200, access.text
+        assert access.json()["project_role"] == project_role
+        assert access.json()["platform_role"] == "employee"
+
 
 async def test_filtering_seed_route_is_guarded_and_hidden_from_openapi(
     httpx_client, app_module
