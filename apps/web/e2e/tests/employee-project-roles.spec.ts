@@ -346,8 +346,9 @@ test.describe("project-scoped employee roles", () => {
     expect(replay.status(), await replay.text()).toBe(409);
   });
 
-  test("revoking the current project keeps local drafts and leaves another project usable", async ({
+  test("revoking the current project rejects the queued draft and leaves another project usable", async ({
     page,
+    context,
     request,
     seed,
   }) => {
@@ -357,17 +358,19 @@ test.describe("project-scoped employee roles", () => {
 
     await seed.injectToken(page, data.employee_email);
     await page.setViewportSize({ width: 1440, height: 900 });
-
-    // Force a network failure so the unsaved bbox becomes a durable local draft.
     const annotatePath = `/api/v1/tasks/${data.open_pool_task_id}/annotations`;
-    await page.route(
-      (url) => url.pathname === annotatePath,
-      (route) =>
-        route.request().method() === "POST" ? route.abort("connectionfailed") : route.fallback(),
-    );
+
+    // Load D's open-pool workbench while online, then go offline so the save
+    // fails as a real network error and becomes a durable local draft.  Staying
+    // offline also prevents the pre-revocation drain from succeeding before the
+    // membership is removed.
     await page.goto(
       `/projects/${data.projects.d.project_id}/annotate?task=${data.open_pool_task_id}`,
     );
+    await expect(page.getByTestId("workbench-stage")).toHaveAttribute("data-image-ready", "true", {
+      timeout: 20_000,
+    });
+    await context.setOffline(true);
     await drawAndSaveBbox(page);
     await expect
       .poll(async () => (await readOfflineQueue(page)).length, { timeout: 15_000 })
@@ -406,9 +409,18 @@ test.describe("project-scoped employee roles", () => {
     );
     expect([403, 404]).toContain(revokedAccess.status());
 
-    // The unrelated authorized project B still works, and the revoked project's
-    // draft is retained rather than silently discarded.
+    // Back online in an unrelated authorized project: the queued D save now
+    // reaches the real API and is rejected on authority (403), not merely by a
+    // network abort, while its draft stays queued and project B still works.
+    const rejectedDraft = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === annotatePath && response.request().method() === "POST",
+      { timeout: 20_000 },
+    );
+    await context.setOffline(false);
     await page.goto(`/projects/${data.projects.b.project_id}/review?task=${data.review_task_id}`);
+    const rejected = await rejectedDraft;
+    expect(rejected.status(), await rejected.text()).toBe(403);
     await expect(page.getByTestId("review-approve")).toBeVisible({ timeout: 20_000 });
     await expect
       .poll(
