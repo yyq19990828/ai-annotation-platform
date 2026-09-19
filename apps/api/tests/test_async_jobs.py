@@ -653,10 +653,7 @@ class TestAsyncJobsAPI:
 
         user, token = project_admin
         aj = await async_job_svc.create_job(
-            db_session,
-            kind="export",
-            user_id=user.id,
-            result={},
+            db_session, kind="export", user_id=user.id, payload={}
         )
         await async_job_svc.mark_complete(
             db_session, aj.id, result={"download_url": "https://download.invalid/x"}

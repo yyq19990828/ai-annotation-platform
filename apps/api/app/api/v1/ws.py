@@ -99,8 +99,9 @@ async def _notification_message_allowed(token: str, data) -> bool:
 
     A row already published to Redis is re-resolved against the recipient's
     current project access before it is forwarded; restricted rows whose access
-    was revoked are dropped.  ``notifications.sync`` control frames and
-    unidentifiable frames pass through.
+    was revoked are dropped.  Only the explicit ``notifications.sync`` control
+    frame is allowed without a verifiable row id; malformed or unidentifiable
+    payloads fail closed.
     """
 
     user = await _authenticate_socket_token(token)
@@ -110,14 +111,14 @@ async def _notification_message_allowed(token: str, data) -> bool:
         raw = data.decode() if isinstance(data, bytes) else data
         message = json.loads(raw)
     except Exception:
-        return True
+        return False
     if not isinstance(message, dict):
-        return True
+        return False
     if message.get("type") == "notifications.sync":
         return True
     raw_id = message.get("id")
     if not raw_id:
-        return True
+        return False
     try:
         notification_id = uuid.UUID(str(raw_id))
     except (TypeError, ValueError):

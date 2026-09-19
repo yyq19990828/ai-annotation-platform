@@ -494,6 +494,12 @@ async def test_claimed_reviewer_can_decide_job_created_by_annotator(
     task.status = "review"
     task.reviewer_id = reviewer_user.id
     task.reviewer_claimed_at = datetime.now(timezone.utc)
+    # Frozen review evidence: the reviewer is not a contributor, so the
+    # self-review guard admits a legitimate claimed-reviewer decision.
+    task.annotation_contributor_ids = [str(owner.id)]
+    task.review_round_id = uuid.uuid4()
+    task.review_contributor_ids = [str(owner.id)]
+    task.review_submitter_id = str(owner.id)
     await db_session.commit()
 
     payload = {

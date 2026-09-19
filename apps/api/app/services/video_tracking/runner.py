@@ -1082,6 +1082,43 @@ def _geometry_sha256(geometry: dict) -> str:
     return f"sha256:{hashlib.sha256(raw).hexdigest()}"
 
 
+async def _assert_tracker_actor_authority(
+    db: AsyncSession,
+    task: Task,
+    actor_id: uuid.UUID | None,
+) -> None:
+    """Recheck the actual final-write actor after the Task/Job locks.
+
+    Requires an explicit actor (never the job creator), refreshes the account
+    and re-resolves the current project membership/phase/frozen evidence.
+    Raises ``TrackerJobStateConflict`` so the existing route error mapping is
+    unchanged and no partial write is applied.
+    """
+
+    from fastapi import HTTPException
+
+    from app.db.models.user import User
+    from app.services.project_write_guard import assert_phase_write_allowed
+
+    if actor_id is None:
+        raise TrackerJobStateConflict(
+            "an explicit actor is required for tracker final writes",
+            reason="permission_changed",
+        )
+    actor = await db.get(User, actor_id)
+    if actor is None or not actor.is_active:
+        raise TrackerJobStateConflict(
+            "tracker actor is unavailable", reason="permission_changed"
+        )
+    try:
+        await assert_phase_write_allowed(db, task, actor, action="tracker_write")
+    except HTTPException as exc:
+        raise TrackerJobStateConflict(
+            "project authority changed before tracker write",
+            reason="permission_changed",
+        ) from exc
+
+
 async def _lock_tracker_review_context(
     db: AsyncSession,
     job: VideoTrackerJob,
@@ -1121,6 +1158,10 @@ async def _lock_tracker_review_context(
         raise TrackerJobStateConflict(
             "task assignment changed before review", reason="task_assignment_changed"
         )
+    # After the fresh Task lock and the specific claim/assignment checks,
+    # reauthorize the actual actor against current project membership, phase
+    # capability and frozen review evidence (no creator fallback).
+    await _assert_tracker_actor_authority(db, task, actor_id)
     if job.segment_id is not None:
         segment = (
             await db.execute(
@@ -2116,6 +2157,9 @@ async def accept_tracker_job(
         and task.assignee_id != effective_actor
     ):
         raise TrackerJobStateConflict("task assignment changed before accept")
+    # After the fresh Task lock, reauthorize the actual actor against current
+    # project membership/phase (no creator fallback).
+    await _assert_tracker_actor_authority(db, task, actor_id)
     if job.segment_id is not None:
         segment = (
             await db.execute(

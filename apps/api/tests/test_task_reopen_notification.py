@@ -77,13 +77,23 @@ async def test_reopen_notifies_original_reviewer(
     _, task = await _seed_project_and_task(
         db_session, owner_id=ann_user.id, assignee_id=ann_user.id
     )
-    db_session.add(
-        ProjectMember(
-            project_id=task.project_id,
-            user_id=rev_user.id,
-            role="reviewer",
-            assigned_by=ann_user.id,
-        )
+    db_session.add_all(
+        [
+            # The employee owner acts through a membership; the reviewer needs
+            # an explicit reviewer role for claim/approve.
+            ProjectMember(
+                project_id=task.project_id,
+                user_id=ann_user.id,
+                role="annotator",
+                assigned_by=ann_user.id,
+            ),
+            ProjectMember(
+                project_id=task.project_id,
+                user_id=rev_user.id,
+                role="reviewer",
+                assigned_by=ann_user.id,
+            ),
+        ]
     )
     tid = str(task.id)
     await db_session.commit()
