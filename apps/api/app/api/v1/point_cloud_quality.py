@@ -122,12 +122,14 @@ async def _assert_request_visible(
 
 
 async def _assert_issue_visible(
-    db: AsyncSession, issue: PointCloudQualityIssue, user: User
+    db: AsyncSession, issue: PointCloudQualityIssue, user: User, *, lock: bool = False
 ) -> tuple[Project, ProjectAccess]:
     project = await db.get(Project, issue.project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    access = await resolve_project_access(db, user=user, project=project)
+    access = await resolve_project_access(
+        db, user=user, project=project, lock_membership=lock
+    )
     if access.is_manager:
         return project, access
     if issue.task_id is None:
@@ -153,6 +155,10 @@ async def create_run(
         require_project_capability(ProjectCapability.REVIEW_WRITE.value)
     ),
 ):
+    # Re-resolve current authority under a membership lock for the write path.
+    access = await resolve_project_access(
+        db, user=current_user, project=project, lock_membership=True
+    )
     await _assert_request_visible(
         db, project=project, user=current_user, access=access, body=body
     )
@@ -299,10 +305,16 @@ async def patch_issue(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    issue = await db.get(PointCloudQualityIssue, issue_id)
+    issue = (
+        await db.execute(
+            select(PointCloudQualityIssue)
+            .where(PointCloudQualityIssue.id == issue_id)
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
     if issue is None:
         raise HTTPException(status_code=404, detail="Quality issue not found")
-    _project, access = await _assert_issue_visible(db, issue, current_user)
+    _project, access = await _assert_issue_visible(db, issue, current_user, lock=True)
     _assert_review_authority(access)
     if await refresh_issue_staleness(db, issue):
         raise HTTPException(
@@ -363,6 +375,9 @@ async def create_project_evaluation(
         require_project_capability(ProjectCapability.PROJECT_MANAGE.value)
     ),
 ):
+    await resolve_project_access(
+        db, user=current_user, project=project, lock_membership=True
+    )
     try:
         evaluation = await create_evaluation(
             db,
@@ -445,6 +460,9 @@ async def promote_project_evaluation(
         require_project_capability(ProjectCapability.PROJECT_MANAGE.value)
     ),
 ):
+    await resolve_project_access(
+        db, user=current_user, project=project, lock_membership=True
+    )
     try:
         evaluation, locked_project = await promote_evaluation(
             db,

@@ -17,7 +17,7 @@ from app.api.v1.tasks import _assert_task_visible
 from app.api.v1.tasks._shared import (
     _assert_review_adjustment_evidence,
     _resolve_task_access,
-    _task_write_allowed,
+    assert_annotation_write_allowed,
 )
 from app.db.enums import UserRole
 from app.db.models.project import Project
@@ -170,21 +170,33 @@ async def _load_visible_job_task_row(
     return task, row
 
 
-async def _assert_job_write_access(
-    db: AsyncSession, task: Task, user: User
-) -> ProjectAccess:
-    """Resolve current project authority for a tracker-job mutation.
+async def _lock_visible_job_task_row(
+    db: AsyncSession, job_id: uuid.UUID, user: User
+) -> tuple[Task, VideoTrackerJob, ProjectAccess]:
+    """Lock and refresh the job's task at the mutation boundary.
 
-    Reviewers are admitted only for a review-phase adjustment with frozen
-    non-self evidence; annotation-phase work denies reviewers.  The membership is
-    locked ``FOR SHARE`` so a concurrent role change cannot commit mid-flight.
+    Tracker mutations are short: lock the task row ``FOR UPDATE`` first, then
+    acquire the membership ``FOR SHARE`` and re-check the current phase plus the
+    frozen review evidence.  This keeps the route preflight from relying on an
+    unlocked ``db.get`` snapshot and preserves the task-before-membership order.
     """
 
+    row = await get_tracker_job(db, job_id)
+    task = (
+        await db.execute(
+            select(Task)
+            .where(Task.id == row.task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=404, detail="Video tracker job not found")
     access = await _resolve_task_access(db, task, user, lock_membership=True)
-    if not _task_write_allowed(task, access, allow_review_adjustment=True):
-        raise HTTPException(status_code=403, detail="缺少项目权限: annotation.write")
+    assert_annotation_write_allowed(task, access)
     await _assert_review_adjustment_evidence(db, task, user, access)
-    return access
+    await _assert_task_visible(db, task, user, access=access)
+    return task, row, access
 
 
 async def _assert_can_cancel(
@@ -372,8 +384,7 @@ async def cancel_video_tracker_job(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    task, row = await _load_visible_job_task_row(db, job_id, current_user)
-    access = await _assert_job_write_access(db, task, current_user)
+    task, row, access = await _lock_visible_job_task_row(db, job_id, current_user)
     await _assert_can_cancel(db, task, row, current_user, access)
     job_kind = row.job_kind
     status_before = row.status
@@ -466,8 +477,7 @@ async def accept_video_tracker_job(
     current_user: User = Depends(get_current_user),
 ):
     """v0.21.28 · 接受候选: 把 job 暂存结果落库 (主实例回填源轨迹 + 新轨迹建), status=ACCEPTED。"""
-    task, row = await _load_visible_job_task_row(db, job_id, current_user)
-    access = await _assert_job_write_access(db, task, current_user)
+    task, row, access = await _lock_visible_job_task_row(db, job_id, current_user)
     await _assert_can_cancel(db, task, row, current_user, access)
     if row.job_kind == "correction":
         raise HTTPException(
@@ -506,8 +516,7 @@ async def discard_video_tracker_job(
     current_user: User = Depends(get_current_user),
 ):
     """v0.21.28 · 丢弃候选: status=DISCARDED, 清 staged_result, annotation 零改动。"""
-    task, row = await _load_visible_job_task_row(db, job_id, current_user)
-    access = await _assert_job_write_access(db, task, current_user)
+    task, row, access = await _lock_visible_job_task_row(db, job_id, current_user)
     await _assert_can_cancel(db, task, row, current_user, access)
     if row.job_kind == "correction":
         raise HTTPException(
@@ -543,8 +552,7 @@ async def decide_video_tracker_candidates(
 ):
     """Accept or reject an instance/window or QC issue region selector."""
 
-    task, visible = await _load_visible_job_task_row(db, job_id, current_user)
-    access = await _assert_job_write_access(db, task, current_user)
+    task, visible, access = await _lock_visible_job_task_row(db, job_id, current_user)
     await _assert_can_decide(db, task, visible, current_user, access)
     staged = visible.staged_result or {}
     output_geometry = str(staged.get("output_geometry") or "unknown")

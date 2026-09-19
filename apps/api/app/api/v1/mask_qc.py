@@ -87,14 +87,19 @@ def _assert_review_authority(access: ProjectAccess) -> None:
 
 
 async def _resolve_task_review_access(
-    db: AsyncSession, *, task: Task, user: User
+    db: AsyncSession, *, task: Task, user: User, lock: bool = False
 ) -> tuple[Project, ProjectAccess]:
-    """Resolve and enforce review authority for a task's actual project."""
+    """Resolve and enforce review authority for a task's actual project.
+
+    ``lock=True`` acquires the membership ``FOR SHARE`` for a write boundary.
+    """
 
     project = await db.get(Project, task.project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    access = await resolve_project_access(db, user=user, project=project)
+    access = await resolve_project_access(
+        db, user=user, project=project, lock_membership=lock
+    )
     _assert_review_authority(access)
     return project, access
 
@@ -489,11 +494,18 @@ async def patch_issue(
     ).scalar_one_or_none()
     if issue is None:
         raise HTTPException(status_code=404, detail="Mask QC issue not found")
-    task = await db.get(Task, issue.task_id)
+    task = (
+        await db.execute(
+            select(Task)
+            .where(Task.id == issue.task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     _project, access = await _resolve_task_review_access(
-        db, task=task, user=current_user
+        db, task=task, user=current_user, lock=True
     )
     await _assert_task_visible(db, task, current_user, access=access)
     if await effective_issue_status(db, issue) == "stale":
@@ -544,6 +556,7 @@ async def _load_visible_repair_batch(
     *,
     repair_id: uuid.UUID,
     user: User,
+    lock: bool = False,
 ) -> MaskRepairBatch:
     batch = await db.get(MaskRepairBatch, repair_id)
     if batch is None:
@@ -551,7 +564,9 @@ async def _load_visible_repair_batch(
     project = await db.get(Project, batch.project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    access = await resolve_project_access(db, user=user, project=project)
+    access = await resolve_project_access(
+        db, user=user, project=project, lock_membership=lock
+    )
     _assert_review_authority(access)
     task_ids = {
         uuid.UUID(str(item["task_id"]))
@@ -658,6 +673,11 @@ async def execute_mask_repairs(
         require_project_capability(ProjectCapability.REVIEW_WRITE.value)
     ),
 ) -> MaskRepairBatchOut:
+    # Write boundary: hold the current membership FOR SHARE (and lock the project
+    # row) while the repair plan mutates annotations.
+    await resolve_project_access(
+        db, user=current_user, project=project, lock_membership=True
+    )
     try:
         batch, should_dispatch = await execute_repair_plan(
             db,
@@ -711,7 +731,9 @@ async def resume_mask_repairs(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> MaskRepairBatchOut:
-    await _load_visible_repair_batch(db, repair_id=repair_id, user=current_user)
+    await _load_visible_repair_batch(
+        db, repair_id=repair_id, user=current_user, lock=True
+    )
     try:
         batch = await resume_repair_batch(db, batch_id=repair_id, actor=current_user)
     except MaskRepairError as exc:
@@ -745,7 +767,9 @@ async def rollback_mask_repairs(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> MaskRepairBatchOut:
-    await _load_visible_repair_batch(db, repair_id=repair_id, user=current_user)
+    await _load_visible_repair_batch(
+        db, repair_id=repair_id, user=current_user, lock=True
+    )
     try:
         batch = await request_repair_rollback(
             db,

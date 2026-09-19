@@ -14,10 +14,17 @@ HTTP tests, run by the coordinator in the isolated test environment.
 from __future__ import annotations
 
 import uuid
+from types import SimpleNamespace
 
 import pytest
+from fastapi import HTTPException
+from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.v1.mask_qc import _resolve_task_review_access
+from app.api.v1.ml_backends import _reacquire_write_boundary
+from app.api.v1.tasks._shared import assert_annotation_write_allowed
+from app.api.v1.video_tracker_jobs import _lock_visible_job_task_row
 from app.core.security import create_access_token
 from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.prediction import FailedPrediction
@@ -26,6 +33,7 @@ from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.user import User
 from app.db.models.video_tracker_job import VideoTrackerJob
+from app.services.project_access import ProjectAccess, ProjectCapability
 from tests.factory import create_project, create_task, create_user
 
 pytestmark = pytest.mark.asyncio
@@ -532,3 +540,153 @@ async def test_ml_backend_read_scope(
         f"/api/v1/projects/{project.id}/ml-backends", headers=_headers(outsider)
     )
     assert hidden.status_code == 404
+
+
+# ── final-write freshness: revocation after the preflight is denied ──────────
+
+
+def test_canonical_annotation_write_predicate_denies_reviewer_annotation_phase():
+    """The canonical predicate denies a reviewer outside a review adjustment."""
+
+    task = SimpleNamespace(status="in_progress")
+    access = ProjectAccess(
+        user_id=uuid.uuid4(),
+        project_id=uuid.uuid4(),
+        platform_role="employee",
+        project_role="reviewer",
+        membership_id=uuid.uuid4(),
+        membership_version=1,
+        access_kind="member",
+        capabilities=frozenset({ProjectCapability.REVIEW_WRITE.value}),
+    )
+
+    with pytest.raises(HTTPException) as exc:
+        assert_annotation_write_allowed(task, access)
+    assert exc.value.status_code == 403
+
+
+async def test_reacquire_write_boundary_denies_revoked_membership(
+    db_session: AsyncSession, super_admin
+):
+    """Re-locking the task at the write boundary sees a revocation immediately."""
+
+    admin, _ = super_admin
+    project = await create_project(db_session, owner_id=admin.id, name="Fresh ML")
+    task = await create_task(db_session, project_id=project.id, status="in_progress")
+    annotator = await _employee(db_session, prefix="fresh-ml")
+    await _add_member(
+        db_session, project_id=project.id, user=annotator, role="annotator", by=admin.id
+    )
+    task.assignee_id = annotator.id
+    await db_session.flush()
+
+    _task, access = await _reacquire_write_boundary(db_session, task.id, annotator)
+    assert access.project_role == "annotator"
+
+    await db_session.execute(
+        delete(ProjectMember).where(
+            ProjectMember.project_id == project.id,
+            ProjectMember.user_id == annotator.id,
+        )
+    )
+    await db_session.flush()
+
+    with pytest.raises(HTTPException) as exc:
+        await _reacquire_write_boundary(db_session, task.id, annotator)
+    assert exc.value.status_code in {403, 404}
+
+
+async def test_lock_tracker_task_denies_reviewer_and_revoked_member(
+    db_session: AsyncSession, super_admin
+):
+    """Tracker mutations lock the task and reject reviewer/revoked authority."""
+
+    admin, _ = super_admin
+    item, task = await _seed_video_item_task(db_session, owner_id=admin.id)
+    annotator = await _employee(db_session, prefix="fresh-trk")
+    await _add_member(
+        db_session,
+        project_id=task.project_id,
+        user=annotator,
+        role="annotator",
+        by=admin.id,
+    )
+    task.assignee_id = annotator.id
+    reviewer = await _employee(db_session, prefix="fresh-trk-rev")
+    await _add_member(
+        db_session,
+        project_id=task.project_id,
+        user=reviewer,
+        role="reviewer",
+        by=admin.id,
+    )
+    task.reviewer_id = reviewer.id
+    job = VideoTrackerJob(
+        task_id=task.id,
+        dataset_item_id=item.id,
+        created_by=annotator.id,
+        status="queued",
+        job_kind="tracking",
+        model_key="sam2",
+        direction="forward",
+        from_frame=0,
+        to_frame=5,
+        event_channel="project",
+    )
+    db_session.add(job)
+    await db_session.flush()
+
+    _task, _row, access = await _lock_visible_job_task_row(
+        db_session, job.id, annotator
+    )
+    assert access.project_role == "annotator"
+
+    # A project reviewer cannot perform annotation-phase tracker work.
+    with pytest.raises(HTTPException) as reviewer_exc:
+        await _lock_visible_job_task_row(db_session, job.id, reviewer)
+    assert reviewer_exc.value.status_code == 403
+
+    await db_session.execute(
+        delete(ProjectMember).where(
+            ProjectMember.project_id == task.project_id,
+            ProjectMember.user_id == annotator.id,
+        )
+    )
+    await db_session.flush()
+    with pytest.raises(HTTPException) as revoked_exc:
+        await _lock_visible_job_task_row(db_session, job.id, annotator)
+    assert revoked_exc.value.status_code in {403, 404}
+
+
+async def test_mask_qc_locked_review_access_denies_revoked_reviewer(
+    db_session: AsyncSession, super_admin
+):
+    """The locked QC review boundary re-reads the membership before mutating."""
+
+    admin, _ = super_admin
+    project = await create_project(db_session, owner_id=admin.id, name="Fresh QC")
+    task = await create_task(db_session, project_id=project.id, status="review")
+    reviewer = await _employee(db_session, prefix="fresh-qc")
+    await _add_member(
+        db_session, project_id=project.id, user=reviewer, role="reviewer", by=admin.id
+    )
+    task.reviewer_id = reviewer.id
+    await db_session.flush()
+
+    _project, access = await _resolve_task_review_access(
+        db_session, task=task, user=reviewer, lock=True
+    )
+    assert access.project_role == "reviewer"
+
+    await db_session.execute(
+        delete(ProjectMember).where(
+            ProjectMember.project_id == project.id,
+            ProjectMember.user_id == reviewer.id,
+        )
+    )
+    await db_session.flush()
+    with pytest.raises(HTTPException) as exc:
+        await _resolve_task_review_access(
+            db_session, task=task, user=reviewer, lock=True
+        )
+    assert exc.value.status_code in {403, 404}

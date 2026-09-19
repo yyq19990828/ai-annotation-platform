@@ -12,6 +12,7 @@ from aap_protocol_v2 import (
     canonical_rle_bytes,
 )
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import (
@@ -80,7 +81,7 @@ from app.api.v1.tasks._shared import (
     _assert_review_adjustment_evidence,
     _assert_task_visible,
     _resolve_task_access,
-    _task_write_allowed,
+    assert_annotation_write_allowed,
 )
 from app.observability.metrics import (
     mask_ai_operation,
@@ -119,10 +120,36 @@ async def _assert_annotation_write_access(
     """
 
     access = await _resolve_task_access(db, task, user, lock_membership=True)
-    if not _task_write_allowed(task, access, allow_review_adjustment=True):
-        raise HTTPException(status_code=403, detail="缺少项目权限: annotation.write")
+    assert_annotation_write_allowed(task, access)
     await _assert_review_adjustment_evidence(db, task, user, access)
     return access
+
+
+async def _reacquire_write_boundary(
+    db: AsyncSession, task_id: uuid.UUID, user: User
+) -> tuple[Task, ProjectAccess]:
+    """Re-acquire task and locked membership at the final write boundary.
+
+    Long-running ML compute must not hold database locks.  Immediately before a
+    restricted write or response we lock the task row, refresh it, and
+    re-resolve the current membership and review-phase frozen evidence so a
+    concurrent revocation or role change cannot slip a stale authority through.
+    """
+
+    task = (
+        await db.execute(
+            select(Task)
+            .where(Task.id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    access = await _resolve_task_access(db, task, user, lock_membership=True)
+    assert_annotation_write_allowed(task, access)
+    await _assert_review_adjustment_evidence(db, task, user, access)
+    return task, access
 
 
 # v0.23.5 · WS-D · D2 · cap on uploaded frame bytes (predict-frame /
@@ -1274,6 +1301,9 @@ async def interactive_annotating(
         outcome="success",
         duration_seconds=time.monotonic() - inference_started,
     )
+    # Do not return restricted candidates from a revoked/role-changed authority:
+    # re-acquire the task row and locked membership at the response boundary.
+    await _reacquire_write_boundary(db, task.id, current_user)
     encode_started = time.monotonic()
     try:
         response_body = _interactive_response(
@@ -1422,6 +1452,9 @@ async def predict_frame(
     video_shapes = to_video_bbox_result(raw_shapes, frame_index)
 
     score = next((r.score for r in results if r.score is not None), None)
+    # Final mutation boundary: re-acquire the task row and locked membership so a
+    # revocation or role change during inference cannot persist a prediction.
+    await _reacquire_write_boundary(db, task.id, current_user)
     pred_svc = PredictionService(db)
     prediction = await pred_svc.create_from_ml_result(
         task_id=task.id,
@@ -1609,6 +1642,9 @@ async def interactive_annotating_frame(
         outcome="success",
         duration_seconds=time.monotonic() - inference_started,
     )
+    # Do not return restricted candidates from a revoked/role-changed authority:
+    # re-acquire the task row and locked membership at the response boundary.
+    await _reacquire_write_boundary(db, task.id, current_user)
     encode_started = time.monotonic()
     try:
         response_body = _interactive_response(
