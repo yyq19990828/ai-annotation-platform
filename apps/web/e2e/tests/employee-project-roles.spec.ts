@@ -464,11 +464,15 @@ test.describe("project-scoped employee roles", () => {
     await expect(page.getByTestId("employee-tab-annotate")).toBeVisible({ timeout: 20_000 });
 
     // Annotate pane shows only the employee's annotator projects (A and D);
-    // review-only B must not appear, and C is not visible at all.
-    await expect(page.getByText("E2E Project Roles A")).toBeVisible({ timeout: 20_000 });
-    await expect(page.getByText("E2E Project Roles D")).toBeVisible();
-    await expect(page.getByText("E2E Project Roles B")).toHaveCount(0);
-    await expect(page.getByText("E2E Project Roles C")).toHaveCount(0);
+    // review-only B must not appear, and C is not visible at all.  The project
+    // name also shows up inside sub-headers and batch labels, so match the
+    // project card text exactly instead of by substring.
+    await expect(page.getByText("E2E Project Roles A", { exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
+    await expect(page.getByText("E2E Project Roles D", { exact: true })).toBeVisible();
+    await expect(page.getByText("E2E Project Roles B", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("E2E Project Roles C", { exact: true })).toHaveCount(0);
 
     // Review pane shows B's pending review work and no annotator project.  The
     // project name also appears inside the priority/batch labels, so match the
@@ -477,9 +481,9 @@ test.describe("project-scoped employee roles", () => {
     await expect(page.getByText("E2E Project Roles B", { exact: true })).toBeVisible({
       timeout: 20_000,
     });
-    await expect(page.getByText("E2E Project Roles A")).toHaveCount(0);
-    await expect(page.getByText("E2E Project Roles D")).toHaveCount(0);
-    await expect(page.getByText("E2E Project Roles C")).toHaveCount(0);
+    await expect(page.getByText("E2E Project Roles A", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("E2E Project Roles D", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("E2E Project Roles C", { exact: true })).toHaveCount(0);
   });
 
   test("viewer project entry reaches the read-only data manager", async ({ page, seed }) => {
