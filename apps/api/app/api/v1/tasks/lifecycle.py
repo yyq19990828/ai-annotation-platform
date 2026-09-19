@@ -194,6 +194,10 @@ async def skip_task(
     _assert_task_editable(task, current_user)
 
     now = datetime.now(timezone.utc)
+    # A2 · capture the inherited batch assignee before the legacy path replaces
+    # an empty assignee with the actual actor; the frozen evidence must include
+    # both the effective assignee and the submitter.
+    inherited_assignee_id = await _effective_task_assignee_id(db, task)
     if task.assignee_id is None:
         task.assignee_id = current_user.id
         task.assigned_at = await _submission_assignment_start(
@@ -225,8 +229,14 @@ async def skip_task(
 
     contributor_ids = await _task_contributor_snapshot(db, task)
     _capture_first_review_contributor_snapshot(task, contributor_ids)
+    freeze_contributor_ids = list(contributor_ids)
+    if (
+        inherited_assignee_id is not None
+        and str(inherited_assignee_id) not in freeze_contributor_ids
+    ):
+        freeze_contributor_ids.append(str(inherited_assignee_id))
     freeze_review_contributor_evidence(
-        task, submitter_id=current_user.id, contributor_ids=contributor_ids
+        task, submitter_id=current_user.id, contributor_ids=freeze_contributor_ids
     )
     await AuditService.log(
         db,

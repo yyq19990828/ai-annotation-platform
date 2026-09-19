@@ -127,11 +127,12 @@ class Task(Base):
     first_review_contributor_ids: Mapped[list | None] = mapped_column(
         JSONB, nullable=True
     )
-    # 项目级员工角色 · 增量 A：可空贡献者证据（只加列，不由本增量写入）。
-    # NULL = 未知/legacy；没有任何默认值把历史行标记为完整。annotation 累积与
-    # review 冻结的写入逻辑属于后续增量。
+    # 项目级员工角色 · 增量 A/B：可空贡献者证据。NULL = 未知/legacy；数据库列无
+    # server default，历史行保持未知。ORM/Core 新建行用 Python-only default=list 落
+    # 已知空集合（旧二进制不写此列 → NULL）。annotation 累积与 review 冻结逻辑见
+    # services/annotation_evidence.py。
     annotation_contributor_ids: Mapped[list | None] = mapped_column(
-        JSONB, nullable=True
+        JSONB, nullable=True, default=list
     )
     review_contributor_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     review_submitter_id: Mapped[uuid.UUID | None] = mapped_column(

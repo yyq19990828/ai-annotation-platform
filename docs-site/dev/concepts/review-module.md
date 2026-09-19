@@ -272,7 +272,8 @@ approve 还受 Mask QC 摘要新鲜度、阻断项与 warning 确认门禁约束
 写入规则（`app/services/annotation_evidence.py`）：
 
 - 每一次标注阶段写动作（create / update / delete、批量写、撤销/恢复、转换、导入、AI 采纳、视频/场景命令、多相机、tracker 接收）都在同一事务里把实际 actor 累积到 `annotation_contributor_ids`，不读取 `Annotation.user_id` 推断编辑者。
-- 累积是 task 行锁下的 read-modify-write；`NULL` 具有粘性：在 legacy 未知题上新增一笔标注不会把未知收窄成“只有新 actor”的已知集合。畸形（非数组）值同样保持未知。
+- 累积是 task 行锁下的 read-modify-write；写入前先 flush 待定变更再锁读，避免同事务内第二次写入丢失第一次的累积。`NULL` 具有粘性：在 legacy 未知题上新增一笔标注不会把未知收窄成“只有新 actor”的已知集合。畸形证据（非数组、空元素，或含非 UUID 元素）同样保持未知，绝不静默丢弃。
+- 记录一律在取 Annotation / SceneTrack 行锁之前发生（或复用调用方已持有的 task 锁），保持全局 `Task -> Annotation` 加锁顺序，避免与既有写入形成死锁环；失败事务会连同证据一起回滚。冻结与进入 review 的状态迁移共用同一把 task 锁。
 - `submit` / `skip` / 批量送审 / 视频分段完成后进入 review 时，将累积集合、存活标注作者、有效 assignee 与提交者一起冻结为 `review_contributor_ids`，并写 `review_submitter_id` 与新的 `review_round_id`。未知累积量不会伪造已知的 review 集合。
 - 离开 review（`withdraw` / `reopen` / `accept-rejection` / `review/reject` / 批次退回或重置 / 视频分段重开）会清空当前轮的 review 证据；标注累积集合按“保守”原则保留（删除、重置、改派、重开都不清除）。
 - 审核阶段的修改属于审核动作，不把审核员加入标注贡献者集合。首次审核统计（`first_review_*`）保持不变。

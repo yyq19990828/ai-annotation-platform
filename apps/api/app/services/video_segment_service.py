@@ -313,6 +313,12 @@ async def submit_segment(
     *,
     privileged: bool,
 ) -> VideoSegmentOut:
+    if ctx.task is not None:
+        from app.services.annotation_evidence import refresh_task_evidence
+
+        # A2 · lock the task (and refresh its evidence) before the segment lock
+        # so the entry into review freezes under the same task lock.
+        await refresh_task_evidence(db, ctx.task)
     row = await _load_segment_for_update(db, ctx, segment_id)
     now = _now()
     _normalize_lock(row, now)
@@ -379,6 +385,10 @@ async def reopen_segment(
     ctx: VideoContext,
     segment_id: uuid.UUID,
 ) -> VideoSegmentOut:
+    if ctx.task is not None:
+        from app.services.annotation_evidence import refresh_task_evidence
+
+        await refresh_task_evidence(db, ctx.task)
     row = await _load_segment_for_update(db, ctx, segment_id)
     row.status = "assigned" if row.assignee_id else "open"
     row.locked_by = None

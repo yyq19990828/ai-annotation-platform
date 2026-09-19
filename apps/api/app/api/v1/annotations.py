@@ -485,6 +485,10 @@ async def bulk_update_annotations(
     await _assert_task_visible(db, task, user)
     _assert_task_editable(task, user)
 
+    from app.services.annotation_evidence import record_annotation_actor
+
+    # A2 · take the task row lock before the bulk annotation UPDATEs.
+    await record_annotation_actor(db, task, user.id)
     service = AnnotationService(db)
     updated = await service.bulk_update(
         payload.ids,
@@ -494,9 +498,6 @@ async def bulk_update_annotations(
         is_locked=payload.patch.is_locked,
         is_hidden=payload.patch.is_hidden,
     )
-    from app.services.annotation_evidence import record_annotation_actor
-
-    await record_annotation_actor(db, task, user.id)
     await AuditService.log(
         db,
         actor=user,

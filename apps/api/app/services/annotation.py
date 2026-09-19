@@ -257,6 +257,11 @@ class AnnotationService:
         video_segment_id: uuid.UUID | None = None,
     ) -> Annotation:
         task = await self.db.get(Task, task_id)
+        # A2 · record before any Annotation/SceneTrack lock: this takes the task
+        # row lock first, keeps the global Task -> Annotation order, and rolls
+        # back with the mutation if the mutation fails.
+        if task is not None:
+            await record_annotation_actor(self.db, task, user_id)
         source = "prediction_based" if parent_prediction_id else "manual"
 
         if task and task.project_id:
@@ -305,8 +310,6 @@ class AnnotationService:
                 _raise_scene_track_conflict(exc)
         await self.db.flush()
 
-        if task is not None:
-            await record_annotation_actor(self.db, task, user_id)
         await self._update_task_stats(task_id)
         return annotation
 
@@ -359,6 +362,9 @@ class AnnotationService:
                 for index, raw_shape in enumerate(raw_shapes)
             ]
         task = await self.db.get(Task, prediction.task_id)
+        if task is not None:
+            # A2 · task row lock before the accepted annotations are written.
+            await record_annotation_actor(self.db, task, user_id)
         await prepare_mask_payload_for_write(
             self.db,
             task,
@@ -542,8 +548,6 @@ class AnnotationService:
             anns.append(annotation)
 
         await self.db.flush()
-        if task is not None:
-            await record_annotation_actor(self.db, task, user_id)
         await self._update_task_stats(prediction.task_id)
         return anns
 
@@ -918,6 +922,8 @@ class AnnotationService:
         if src_task is None:
             raise HTTPException(status_code=404, detail="source task not found")
 
+        # A2 · lock the target task before the propagated annotations are written.
+        await record_annotation_actor(self.db, target_task, user_id)
         ctx = await self._resolve_propagate_context(
             src_task=src_task, target_task=target_task
         )
@@ -925,7 +931,6 @@ class AnnotationService:
             src=src, ctx=ctx, user_id=user_id, override_psr=override_psr
         )
         await self.db.flush()
-        await record_annotation_actor(self.db, target_task, user_id)
         await self._update_task_stats(target_task_id)
         return new_annotation, motion_compensated
 
@@ -1174,6 +1179,8 @@ class AnnotationService:
         target_task = await self.db.get(Task, target_task_id)
         if target_task is None:
             raise HTTPException(status_code=404, detail="target task not found")
+        # A2 · lock the target task before the batch of propagated annotations.
+        await record_annotation_actor(self.db, target_task, user_id)
         ctx = await self._resolve_propagate_context(
             src_task=source_task, target_task=target_task
         )
@@ -1189,7 +1196,6 @@ class AnnotationService:
         # 一次 flush + 一次 task stats 更新(原逐框 _update_task_stats 是 N+1 的另一
         # 来源: 每框都做 count 查询 + Task.get)。最终计数/状态与逐框累加等价。
         await self.db.flush()
-        await record_annotation_actor(self.db, target_task, user_id)
         await self._update_task_stats(target_task_id)
         return results, motion_compensated
 
@@ -1241,6 +1247,11 @@ class AnnotationService:
             raise HTTPException(status_code=404, detail="task not found")
         if from_task.project_id != to_task.project_id:
             raise HTTPException(status_code=422, detail="跨 project 插值不被允许")
+
+        # A2 · lock both endpoint tasks before any endpoint/mid annotation write.
+        await record_annotation_actors_for_tasks(
+            self.db, [from_task.id, to_task.id], user_id
+        )
 
         async def _scene_frame(task: Task) -> tuple[uuid.UUID | None, int | None]:
             item_id = await resolve_primary_item_id(self.db, task)
@@ -1349,6 +1360,8 @@ class AnnotationService:
                 skipped_frames.append(f)
                 continue
 
+            # A2 · lock this mid task before writing its interpolated annotation.
+            await record_annotation_actor(self.db, mid_task, user_id)
             t = (f - from_frame) / (to_frame - from_frame)
             psr, compensated = interpolate_psr(
                 psr_a,
@@ -1405,11 +1418,6 @@ class AnnotationService:
             ann.scene_track_id = track.id
 
         await self.db.flush()
-        await record_annotation_actors_for_tasks(
-            self.db,
-            {from_task.id, to_task.id, *(ann.task_id for ann in created)},
-            user_id,
-        )
         for ann in created:
             await self._update_task_stats(ann.task_id)
         return created, motion_compensated and bool(created), skipped_frames
@@ -1538,6 +1546,8 @@ class AnnotationService:
         frame_count: int | None = None,
         max_created: int = VIDEO_BBOX_CONVERSION_LIMIT,
     ) -> tuple[Annotation | None, list[Annotation], bool, list[int]]:
+        # A2 · lock the task before any annotation row is created/updated.
+        await record_annotation_actor(self.db, task, user_id)
         geometry = annotation.geometry or {}
         if geometry.get("type") != "video_track_bbox":
             raise ValueError("annotation must be a video_track_bbox")
@@ -1637,7 +1647,6 @@ class AnnotationService:
                 deleted_source = True
 
         await self.db.flush()
-        await record_annotation_actor(self.db, task, user_id)
         await self._update_task_stats(task.id)
         source = None if deleted_source else annotation
         return source, created, deleted_source, removed_frame_indexes
@@ -1653,6 +1662,8 @@ class AnnotationService:
         delete_sources: bool = True,
         gap_mode: str = "interpolate",
     ) -> tuple[list[Annotation], list[Annotation], list[uuid.UUID]]:
+        # A2 · lock the task before any annotation row is created/updated.
+        await record_annotation_actor(self.db, task, user_id)
         if operation == "aggregate_bboxes":
             updated, created, deleted = await self._aggregate_video_bboxes(
                 task=task,
@@ -1682,7 +1693,6 @@ class AnnotationService:
             raise ValueError("unsupported composition operation")
 
         await self.db.flush()
-        await record_annotation_actor(self.db, task, user_id)
         await self._update_task_stats(task.id)
         return updated, created, deleted
 

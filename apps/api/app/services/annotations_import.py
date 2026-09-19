@@ -311,6 +311,13 @@ async def import_aap_json_annotations(
                 result.skipped += 1
             continue
 
+        if not dry_run:
+            # A2 · take the task row lock before the overwrite purge / inserts so
+            # import keeps the global Task -> Annotation lock order.
+            from app.services.annotation_evidence import lock_tasks_for_evidence
+
+            await lock_tasks_for_evidence(db, [task.id])
+
         # 先建主标注/SceneTrack，再挂同轨迹的相机成员；交换格式不要求调用方排序。
         for entry in sorted(
             block.annotations, key=lambda item: item.sensor_role is not None

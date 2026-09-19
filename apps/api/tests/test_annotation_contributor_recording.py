@@ -11,12 +11,22 @@ These tests require the isolated PostgreSQL test database described in
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 
 import pytest
+from sqlalchemy import delete
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.db.models.prediction import Prediction
+from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
+from app.db.models.task import Task
+from app.db.models.user import User
+from app.services.annotation_evidence import (
+    freeze_review_contributor_evidence,
+    record_annotation_actor,
+)
 from app.services.annotation_slice import AnnotationSliceService
 from tests.factory import create_project, create_task, create_user
 
@@ -379,3 +389,113 @@ async def test_slice_commit_and_restore_record_the_actor(db_session, super_admin
 
     await db_session.refresh(task)
     assert task.annotation_contributor_ids == sorted([str(owner.id), str(editor.id)])
+
+
+# ── helper semantics with a real row lock ────────────────────────────
+
+
+async def test_new_orm_task_defaults_to_known_empty(db_session, super_admin):
+    owner, _ = super_admin
+    project = await create_project(db_session, owner_id=owner.id)
+    task = await create_task(db_session, project_id=project.id)
+    await db_session.refresh(task)
+
+    assert task.annotation_contributor_ids == []
+
+
+async def test_same_transaction_two_actors_union(db_session, super_admin):
+    owner, _ = super_admin
+    first = await create_user(
+        db_session, "super_admin", "union-a@test.local", "Union A"
+    )
+    second = await create_user(
+        db_session, "super_admin", "union-b@test.local", "Union B"
+    )
+    _project, task = await _seed_task(db_session, owner)
+
+    assert await record_annotation_actor(db_session, task, first.id) is True
+    # A second record in the same transaction must not discard the first: the
+    # helper flushes pending accumulator changes before the locking refresh.
+    assert await record_annotation_actor(db_session, task, second.id) is True
+    await db_session.flush()
+    await db_session.refresh(task)
+
+    assert task.annotation_contributor_ids == sorted([str(first.id), str(second.id)])
+
+
+async def test_freeze_is_immutable_for_the_round(db_session, super_admin):
+    owner, _ = super_admin
+    writer = await create_user(
+        db_session, "super_admin", "freeze-writer@test.local", "Writer"
+    )
+    late = await create_user(
+        db_session, "super_admin", "freeze-late@test.local", "Late"
+    )
+    _project, task = await _seed_task(db_session, owner)
+    await record_annotation_actor(db_session, task, writer.id)
+
+    frozen = freeze_review_contributor_evidence(
+        task, submitter_id=owner.id, contributor_ids=[]
+    )
+    assert frozen == sorted([str(owner.id), str(writer.id)])
+
+    # A later write in the same round accumulates but must not mutate the frozen
+    # round evidence.
+    await record_annotation_actor(db_session, task, late.id)
+    assert task.review_contributor_ids == frozen
+    assert str(late.id) in task.annotation_contributor_ids
+
+
+async def test_concurrent_recorders_serialize_without_lost_update(test_engine):
+    """Two connections recording the same task must both survive the row lock."""
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    async with maker() as seed:
+        suffix = uuid.uuid4().hex[:8]
+        user_a = await create_user(
+            seed, "super_admin", f"conc-a-{suffix}@test.local", "Conc A"
+        )
+        user_b = await create_user(
+            seed, "super_admin", f"conc-b-{suffix}@test.local", "Conc B"
+        )
+        project = await create_project(seed, owner_id=user_a.id)
+        task = await create_task(seed, project_id=project.id, status="in_progress")
+        task.annotation_contributor_ids = []
+        await seed.commit()
+        task_id, project_id = task.id, project.id
+        user_a_id, user_b_id = user_a.id, user_b.id
+
+    session_a = maker()
+    session_b = maker()
+    try:
+        task_a = await session_a.get(Task, task_id)
+        assert await record_annotation_actor(session_a, task_a, user_a_id) is True
+
+        async def _record_b() -> bool:
+            task_b = await session_b.get(Task, task_id)
+            return await record_annotation_actor(session_b, task_b, user_b_id)
+
+        pending = asyncio.create_task(_record_b())
+        # The second connection must block on the first connection's task row lock.
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(asyncio.shield(pending), timeout=0.5)
+        assert not pending.done()
+
+        await session_a.commit()
+        assert await asyncio.wait_for(pending, timeout=10) is True
+        await session_b.commit()
+
+        async with maker() as check:
+            fresh = await check.get(Task, task_id)
+            assert fresh.annotation_contributor_ids == sorted(
+                [str(user_a_id), str(user_b_id)]
+            )
+    finally:
+        await session_a.close()
+        await session_b.close()
+        async with maker() as cleanup:
+            await cleanup.execute(delete(Task).where(Task.id == task_id))
+            await cleanup.execute(delete(Project).where(Project.id == project_id))
+            await cleanup.execute(
+                delete(User).where(User.id.in_([user_a_id, user_b_id]))
+            )
+            await cleanup.commit()

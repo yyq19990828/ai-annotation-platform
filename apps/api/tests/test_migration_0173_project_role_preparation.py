@@ -112,9 +112,22 @@ def test_0173_is_additive_default_safe_and_round_trips(test_db_url, apply_migrat
                     task = await db.scalar(select(Task).where(Task.id == saved["task"]))
                     assert task is not None
                     assert task.review_round_id is not None
-                    assert task.annotation_contributor_ids is None
+                    # A2 recording binary: a task created through the ORM starts
+                    # with a known-empty accumulator (Python-only default=list).
+                    # The legacy/old-binary path is a raw INSERT that omits the
+                    # column, which still yields NULL because there is no server
+                    # default.
+                    assert task.annotation_contributor_ids == []
                     assert task.review_contributor_ids is None
                     assert task.review_submitter_id is None
+                    task_column_default = await db.scalar(
+                        text(
+                            "SELECT column_default FROM information_schema.columns "
+                            "WHERE table_name = 'tasks' "
+                            "AND column_name = 'annotation_contributor_ids'"
+                        )
+                    )
+                    assert task_column_default is None
 
                     invitation = await db.scalar(
                         select(UserInvitation).where(

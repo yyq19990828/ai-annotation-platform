@@ -18,7 +18,6 @@ from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.services import async_job as async_job_svc
-from app.services.annotation_evidence import new_task_annotation_contributors
 from app.services.display_id import next_display_id
 from app.services.project_kind import (
     dataset_has_scenes,
@@ -162,7 +161,7 @@ async def build_tasks_for_link(
                 "status": "pending",
                 # A2 · known-empty annotation-phase accumulator for a task created
                 # after every producer records.
-                "annotation_contributor_ids": new_task_annotation_contributors(),
+                "annotation_contributor_ids": [],
             }
             for i, item in enumerate(chunk)
         ]
@@ -953,7 +952,7 @@ class DatasetService:
                     "file_path": item.file_path,
                     "file_type": item.file_type,
                     "status": "pending",
-                    "annotation_contributor_ids": new_task_annotation_contributors(),
+                    "annotation_contributor_ids": [],
                 }
                 for i, (project_id, item) in enumerate(chunk)
             ]

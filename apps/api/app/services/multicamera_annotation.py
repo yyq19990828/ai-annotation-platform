@@ -240,6 +240,8 @@ async def create_camera_member(
     expected_calibration_revision: int,
     expected_calibration_digest: str,
 ) -> Annotation:
+    # A2 · lock the task before the source/SceneTrack rows are locked.
+    await record_annotation_actor(db, task, actor_id)
     source = await _load_source_box(
         db,
         task=task,
@@ -290,7 +292,6 @@ async def create_camera_member(
     db.add(annotation)
     track.revision += 1
     await db.flush()
-    await record_annotation_actor(db, task, actor_id)
     await db.refresh(annotation)
     return annotation
 
@@ -308,6 +309,8 @@ async def update_camera_member(
     expected_calibration_revision: int,
     expected_calibration_digest: str,
 ) -> Annotation:
+    # A2 · lock the task before the member/SceneTrack rows are locked.
+    await record_annotation_actor(db, task, actor_id)
     member = (
         await db.execute(
             select(Annotation)
@@ -347,7 +350,6 @@ async def update_camera_member(
     member.version += 1
     track.revision += 1
     await db.flush()
-    await record_annotation_actor(db, task, actor_id)
     await db.refresh(member)
     return member
 
@@ -361,6 +363,8 @@ async def delete_camera_member(
     expected_version: int,
     expected_track_revision: int,
 ) -> Annotation:
+    # A2 · lock the task before the member/SceneTrack rows are locked.
+    await record_annotation_actor(db, task, actor_id)
     member = (
         await db.execute(
             select(Annotation)
@@ -388,7 +392,6 @@ async def delete_camera_member(
     member.version += 1
     track.revision += 1
     await db.flush()
-    await record_annotation_actor(db, task, actor_id)
     await db.refresh(member)
     return member
 
@@ -404,6 +407,8 @@ async def restore_camera_member(
     expected_calibration_revision: int,
     expected_calibration_digest: str,
 ) -> Annotation:
+    # A2 · lock the task before the member/SceneTrack rows are locked.
+    await record_annotation_actor(db, task, actor_id)
     member = (
         await db.execute(
             select(Annotation)
@@ -453,7 +458,6 @@ async def restore_camera_member(
     member.version += 1
     track.revision += 1
     await db.flush()
-    await record_annotation_actor(db, task, actor_id)
     await db.refresh(member)
     return member
 

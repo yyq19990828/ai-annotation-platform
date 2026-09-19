@@ -637,8 +637,10 @@ async def accept_ai_mask_candidate(
         source.version = int(source.version or 1) + 1
         annotation = source
         await db.flush()
+        # The create branch records through AnnotationService.create; the refine
+        # branch mutates the source directly and must record here.
+        await record_annotation_actor(db, task, current_user.id)
 
-    await record_annotation_actor(db, task, current_user.id)
     await TaskLockService(db).heartbeat(task.id, current_user.id)
     await AuditService.log(
         db,
