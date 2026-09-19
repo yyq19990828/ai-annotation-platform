@@ -150,23 +150,21 @@ _EFFECTIVE_ASSIGNMENT_SELECT = (
 
 
 def active_manager_predicate(user_alias: str) -> str:
-    """SQL form of the live active-manager rule for one joined user alias.
+    """SQL mirror of :func:`app.services.scheduler.is_privileged_for_project`.
 
-    Mirrors :func:`app.services.scheduler.is_privileged_for_project`: only an
-    active account may be a manager, a super administrator manages every
-    project, and an administrative (``project_admin``) platform role manages the
-    project it owns.  Managers derive authority from the account/ownership, not
-    from ``project_members``, so they are valid effective assignees/reviewers
-    without a membership row.
+    Only an active account is a manager: a super administrator manages every
+    project, and an administrative (``project_admin``) role manages the project
+    it owns.  Managers are valid effective assignees/reviewers without a
+    membership row.
 
-    Every branch is forced to a non-NULL boolean (``COALESCE`` /
-    ``IS NOT DISTINCT FROM``) so a missing user, a NULL role or a missing
-    project stays fail-closed instead of letting SQL three-valued logic
-    silently drop the gap.  The ``projects p`` alias comes from
-    ``_EFFECTIVE_ASSIGNMENT_JOINS``.
+    The predicate is kept strictly non-NULL (``p.id IS NOT NULL``, ``COALESCE``,
+    ``IS NOT DISTINCT FROM``) so a missing project, missing user or NULL role
+    fails closed instead of bypassing the gap through SQL three-valued logic.
+    ``p`` is the ``projects`` alias from ``_EFFECTIVE_ASSIGNMENT_JOINS``.
     """
 
     return (
+        "p.id IS NOT NULL AND "
         f"{user_alias}.is_active IS TRUE AND ("
         f"COALESCE({user_alias}.role = 'super_admin', false) "
         f"OR (COALESCE({user_alias}.role IN {_ADMIN_PLATFORM_ROLES_SQL}, false) "
