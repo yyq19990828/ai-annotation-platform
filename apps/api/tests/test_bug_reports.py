@@ -52,7 +52,7 @@ async def test_reporter_comment_on_fixed_triggers_reopen(db_session, annotator):
     comment, was_reopened, name, role = result
 
     assert was_reopened is True
-    assert role == "annotator"
+    assert role == "employee"
     assert name == "Annotator"
 
     refreshed = await db_session.get(BugReport, report.id)
@@ -172,7 +172,7 @@ async def test_reporter_can_comment_via_http(httpx_client_bound, db_session, ann
     assert resp.status_code == 201
     data = resp.json()
     assert data["body"] == "依然不行"
-    assert data["author_role"] == "annotator"
+    assert data["author_role"] == "employee"
     assert data["author_name"] == "Annotator"
 
     # 再 GET 详情，确认 reopen_count + status

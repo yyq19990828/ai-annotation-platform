@@ -214,9 +214,9 @@ async def test_review_adjustment_does_not_add_reviewer_as_contributor(
 ):
     owner, owner_token = super_admin
     reviewer = await create_user(
-        db_session, "reviewer", "review-edit@test.local", "Reviewer"
+        db_session, "employee", "review-edit@test.local", "Reviewer"
     )
-    reviewer_token = _token_for(reviewer, role="reviewer")
+    reviewer_token = _token_for(reviewer, role="employee")
     project, task = await _seed_task(db_session, owner)
     task.assignee_id = owner.id
     db_session.add(
@@ -252,10 +252,16 @@ async def test_review_adjustment_does_not_add_reviewer_as_contributor(
 
 
 async def test_withdraw_invalidates_round_but_retains_accumulator(
-    httpx_client, db_session, super_admin
+    httpx_client, db_session, super_admin, annotator
 ):
-    user, token = super_admin
-    _, task = await _seed_task(db_session, user)
+    owner, _ = super_admin
+    user, token = annotator
+    project, task = await _seed_task(db_session, owner)
+    # The submitter/withdrawer is the literal project annotator, not a manager,
+    # so withdrawing their own submission is not a self-review decision.
+    db_session.add(
+        ProjectMember(project_id=project.id, user_id=user.id, role="annotator")
+    )
     task.assignee_id = user.id
     await db_session.flush()
     await httpx_client.post(

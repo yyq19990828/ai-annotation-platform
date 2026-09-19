@@ -32,14 +32,14 @@ async def test_invitation_rate_limit_exceeded(
         for i in range(2):
             r = await httpx_client.post(
                 "/api/v1/users/invite",
-                json={"email": f"invite{i}@limit.test", "role": "annotator"},
+                json={"email": f"invite{i}@limit.test", "role": "employee"},
                 headers=headers,
             )
             assert r.status_code == 201, f"Invite {i} failed: {r.text}"
 
         r = await httpx_client.post(
             "/api/v1/users/invite",
-            json={"email": "over_limit@limit.test", "role": "annotator"},
+            json={"email": "over_limit@limit.test", "role": "employee"},
             headers=headers,
         )
         assert r.status_code == 429

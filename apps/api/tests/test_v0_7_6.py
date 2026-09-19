@@ -321,6 +321,12 @@ async def test_reset_to_draft_owner_only(
         n_tasks=1,
         task_status="pending",
     )
+    # Both accounts are visible project members with non-management work roles.
+    db_session.add(
+        ProjectMember(
+            project_id=p.id, user_id=rev.id, role="reviewer", assigned_by=owner.id
+        )
+    )
     await db_session.commit()
 
     for token in (anno_token, rev_token):

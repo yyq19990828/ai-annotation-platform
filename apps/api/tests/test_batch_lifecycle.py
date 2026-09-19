@@ -34,6 +34,7 @@ async def _seed(
     owner_id: uuid.UUID,
     annotator_id: uuid.UUID,
     *,
+    member_role: str = "annotator",
     batch_status: str = "active",
     n_tasks: int = 2,
     task_status: str = "pending",
@@ -56,7 +57,7 @@ async def _seed(
         ProjectMember(
             project_id=pid,
             user_id=annotator_id,
-            role="annotator",
+            role=member_role,
             assigned_by=owner_id,
         )
     )
@@ -76,6 +77,16 @@ async def _seed(
 
     tasks: list[Task] = []
     for i in range(n_tasks):
+        # A task that already sits in review carries valid per-round frozen
+        # evidence from its actual distinct contributor/submitter.
+        evidence: dict = {}
+        if task_status in ("review", "completed"):
+            evidence = {
+                "annotation_contributor_ids": [str(annotator_id)],
+                "review_contributor_ids": [str(annotator_id)],
+                "review_submitter_id": annotator_id,
+                "review_round_id": uuid.uuid4(),
+            }
         t = Task(
             id=uuid.uuid4(),
             project_id=pid,
@@ -86,6 +97,7 @@ async def _seed(
             file_type="image",
             status=task_status,
             is_labeled=is_labeled,
+            **evidence,
         )
         db.add(t)
         tasks.append(t)
@@ -121,7 +133,7 @@ class TestTransitionAuth:
             headers=_bearer(token),
         )
         assert resp.status_code == 403
-        assert "annotator" in resp.text.lower()
+        assert "employee" in resp.text.lower()
 
     @pytest.mark.asyncio
     async def test_annotator_can_submit_for_review(
@@ -190,12 +202,13 @@ class TestTransitionAuth:
     ):
         owner, _ = super_admin
         rev, rev_token = reviewer
-        # _seed 会把 rev 作为 "annotator" 成员加进去；批次的 assigned_user_ids 包含 rev。
-        # transition reviewing→approved 走 _is_reviewer 分支，靠 role==REVIEWER（与成员角色无关）。
+        # rev holds an explicit reviewer membership; reviewing→approved is
+        # authorized by the resolved project role, not the account role.
         p, batch, _ = await _seed(
             db_session,
             owner.id,
             rev.id,
+            member_role="reviewer",
             batch_status="reviewing",
         )
         await db_session.commit()
@@ -558,6 +571,7 @@ class TestReviewerVisibility:
             db_session,
             owner.id,
             rev.id,
+            member_role="reviewer",
             batch_status="reviewing",
             task_status="review",
             is_labeled=True,
@@ -863,6 +877,12 @@ async def _seed_multi(
                     file_path="/tmp/f.jpg",
                     file_type="image",
                     status="pending",
+                    # Frozen round evidence for tests that later move the task
+                    # into review before a batch decision.
+                    annotation_contributor_ids=[str(annotator_id)],
+                    review_contributor_ids=[str(annotator_id)],
+                    review_submitter_id=annotator_id,
+                    review_round_id=uuid.uuid4(),
                 )
             )
         await db.flush()
@@ -1802,6 +1822,12 @@ class TestRejectPartialBatch:
         )
         tasks[0].status = "review"
         tasks[1].status = "completed"
+        for t in tasks[:2]:
+            # Frozen contributor evidence from the actual distinct annotator.
+            t.annotation_contributor_ids = [str(user.id)]
+            t.review_contributor_ids = [str(user.id)]
+            t.review_submitter_id = user.id
+            t.review_round_id = uuid.uuid4()
         batch.review_tasks = 1
         batch.completed_tasks = 1
         await db_session.commit()
@@ -1825,16 +1851,28 @@ class TestRejectPartialBatch:
         db_session,
         super_admin,
         reviewer,
+        annotator,
     ):
         owner, _ = super_admin
         rev, rev_token = reviewer
+        worker, _ = annotator
+        # The batch work belongs to a distinct literal annotator; rev is the
+        # project reviewer, so the frozen evidence never names the actor.
         p, batch, _ = await _seed(
             db_session,
             owner.id,
-            rev.id,
+            worker.id,
             batch_status="annotating",
             n_tasks=2,
             task_status="review",
+        )
+        db_session.add(
+            ProjectMember(
+                project_id=p.id,
+                user_id=rev.id,
+                role="reviewer",
+                assigned_by=owner.id,
+            )
         )
         await db_session.commit()
 

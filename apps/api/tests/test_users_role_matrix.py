@@ -152,9 +152,11 @@ class TestRoleMatrix:
         """角色变更产生审计日志。"""
         _, token = super_admin
         user, _ = annotator
+        # The fixture account is already ``employee``; use a different platform
+        # role so this exercises a real change rather than a no-op.
         r = await httpx_client.patch(
             f"/api/v1/users/{user.id}/role",
-            json={"role": "employee"},
+            json={"role": "project_admin"},
             headers={"Authorization": f"Bearer {token}"},
         )
         assert r.status_code == 200

@@ -131,8 +131,15 @@ async def test_create_backend_denied_for_non_owner_project_admin(
 ):
     """非 owner 的 project_admin 给他人项目加 backend → 403。"""
     owner, _ = super_admin
-    _, pm_token = project_admin
+    pm, pm_token = project_admin
     proj = await _seed_project(db_session, owner.id)
+    # Visible member with a work role: a non-owner project administrator receives
+    # that membership's capabilities, never management, so the denial is 403.
+    db_session.add(
+        ProjectMember(
+            project_id=proj.id, user_id=pm.id, role="annotator", assigned_by=owner.id
+        )
+    )
     await db_session.commit()
 
     resp = await httpx_client_bound.post(
@@ -301,8 +308,13 @@ async def test_warmup_denied_for_non_owner_project_admin(
 ):
     """非 owner 的 project_admin 预热他人项目 backend → 403 (owner 闸仍生效)。"""
     owner, _ = super_admin
-    _, pm_token = project_admin
+    pm, pm_token = project_admin
     proj = await _seed_project(db_session, owner.id)
+    db_session.add(
+        ProjectMember(
+            project_id=proj.id, user_id=pm.id, role="annotator", assigned_by=owner.id
+        )
+    )
     backend = await _seed_backend(db_session, proj.id)
     await db_session.commit()
 
