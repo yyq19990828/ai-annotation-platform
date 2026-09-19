@@ -324,4 +324,34 @@ describe("AssignMemberModal", () => {
     expect(userButton("Bob")).toHaveAttribute("aria-pressed", "true");
     expect(summary()).toHaveTextContent("共 1 人");
   });
+
+  it("resets state when the project changes while a request is pending", async () => {
+    const pending = deferred<unknown>();
+    mockMutateAsync.mockImplementationOnce(() => pending.promise);
+    const { onClose, rerenderModal } = renderModal();
+
+    expect(await screen.findByText("Alice")).toBeInTheDocument();
+    fireEvent.click(userButton("Alice"));
+    fireEvent.click(screen.getByRole("button", { name: /确认指派 1 人/ }));
+    await waitFor(() => expect(mockMutateAsync).toHaveBeenCalledTimes(1));
+
+    // Switch project while the previous project's request is still in flight.
+    rerenderModal(true, "p2");
+
+    expect(await screen.findByText("Alice")).toBeInTheDocument();
+    await waitFor(() => expect(summary()).toHaveTextContent("共 0 人"));
+    fireEvent.click(userButton("Bob"));
+    expect(summary()).toHaveTextContent("共 1 人");
+
+    await act(async () => {
+      pending.resolve({});
+      await pending.promise;
+    });
+
+    // The stale success must not close the modal, toast, or clear p2's selection.
+    expect(onClose).not.toHaveBeenCalled();
+    expect(mockPushToast).not.toHaveBeenCalled();
+    expect(userButton("Bob")).toHaveAttribute("aria-pressed", "true");
+    expect(summary()).toHaveTextContent("共 1 人");
+  });
 });
