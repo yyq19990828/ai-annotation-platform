@@ -828,6 +828,7 @@ def _member() -> Member:
         user_name="张三",
         user_email="zhang@x.io",
         role="annotator",
+        platform_role="employee",
         assigned_at=datetime(2026, 6, 10, tzinfo=timezone.utc),
     )
 

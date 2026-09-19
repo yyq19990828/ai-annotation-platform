@@ -21,6 +21,25 @@ from pydantic import (
 
 T = TypeVar("T")
 
+#: 账号级平台角色 (GET /auth/me 等账户 DTO 的 ``role`` 字段)。
+PlatformRole = Literal["super_admin", "project_admin", "employee", "viewer"]
+#: 项目级角色 (project_members.role; 一个员工可在不同项目拥有不同角色)。
+ProjectRole = Literal["annotator", "reviewer", "viewer"]
+#: 固定项目能力集 (GET /projects/{id}/access)。
+ProjectCapability = Literal[
+    "project.read",
+    "project.manage",
+    "member.read",
+    "member.manage",
+    "task.read",
+    "annotation.write",
+    "review.write",
+    "export.annotations",
+    "performance.read",
+]
+#: 项目访问来源: 超管 / 项目负责人 / 普通成员。
+ProjectAccessKind = Literal["super_admin", "owner", "member"]
+
 
 class _AAPModel(BaseModel):
     model_config = ConfigDict(extra="allow")
@@ -42,7 +61,27 @@ class Project(_AAPModel):
     type_key: str
     data_type: str = "image"
     status: str
+    #: 当前账号在该项目中的项目角色; 负责人 / 超管或无成员身份时为 None。
+    my_project_role: ProjectRole | None = None
     created_at: datetime | None = None
+
+
+class ProjectAccess(_AAPModel):
+    """当前账号在某个项目上的解析后权限 (``GET /projects/{id}/access``)。
+
+    管理者 (超管 / 负责人) 的 membership 字段可能为 None; 普通成员给出
+    membership id/version, ``access_kind`` 与固定 ``capabilities``。
+    """
+
+    project_id: UUID
+    user_id: UUID
+    platform_role: PlatformRole
+    access_kind: ProjectAccessKind
+    project_role: ProjectRole | None = None
+    membership_id: UUID | None = None
+    membership_version: int | None = None
+    is_manager: bool = False
+    capabilities: list[ProjectCapability] = Field(default_factory=list)
 
 
 class Dataset(_AAPModel):
@@ -594,18 +633,50 @@ class BulkBatchActionResult(_AAPModel):
 
 
 class Member(_AAPModel):
-    """项目成员。"""
+    """项目成员。
+
+    ``role`` 是项目角色 (annotator / reviewer / viewer), ``platform_role`` 是
+    账号的平台角色; 二者不再混用。``version`` 是成员 CAS 版本, 角色变更后自增。
+    """
 
     id: UUID
     user_id: UUID
     user_name: str
     user_email: str
-    role: str
+    role: ProjectRole
+    platform_role: PlatformRole
+    version: int = 1
     assigned_at: datetime | None = None
+    updated_at: datetime | None = None
+    avatar_ref: str | None = None
+
+
+class ProjectMemberRolePreview(_AAPModel):
+    """成员角色变更预检 (``POST .../role/preview``); 只读, 不写库。
+
+    ``preview_token`` 必须原样回传到 ``PATCH .../role``; ``requires_handoff``
+    为真时需在写入时给出显式接替人。变更在锁内按 ``current_version`` 做 CAS 校验。
+    """
+
+    member_id: UUID
+    user_id: UUID
+    current_role: ProjectRole
+    current_version: int
+    target_role: ProjectRole
+    preview_token: str
+    requires_handoff: bool = False
+    blockers: list[str] = Field(default_factory=list)
+    blocker_details: list[dict[str, Any]] = Field(default_factory=list)
+    resource_snapshot: dict[str, Any] = Field(default_factory=dict)
 
 
 class Me(_AAPModel):
-    """当前认证主体 (GET /auth/me)。role 用于 TUI/CLI 角色感知; 其余字段经 extra 透传。"""
+    """当前认证主体 (GET /auth/me)。
+
+    ``role`` 是账号的平台角色 (super_admin / project_admin / employee / viewer),
+    不再表示项目职责; 项目职责见 :meth:`Client.projects.access` 或成员 ``role``。
+    其余字段经 extra 透传。
+    """
 
     id: UUID
     email: str

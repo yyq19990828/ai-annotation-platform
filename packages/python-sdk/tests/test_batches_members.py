@@ -12,6 +12,7 @@ from ai_annotation.models import (
     BulkBatchActionResult,
     Me,
     Member,
+    ProjectMemberRolePreview,
 )
 
 from .conftest import API
@@ -283,6 +284,8 @@ def test_list_members(client, respx_mock):
                     "user_name": "张三",
                     "user_email": "zhang@x.io",
                     "role": "annotator",
+                    "platform_role": "employee",
+                    "version": 1,
                     "assigned_at": "2026-06-10T00:00:00Z",
                 }
             ],
@@ -294,6 +297,7 @@ def test_list_members(client, respx_mock):
     assert isinstance(members[0], Member)
     assert members[0].user_name == "张三"
     assert members[0].role == "annotator"
+    assert members[0].platform_role == "employee"
 
 
 def test_add_and_remove_member(client, respx_mock):
@@ -305,6 +309,8 @@ def test_add_and_remove_member(client, respx_mock):
         "user_name": "李四",
         "user_email": "li@example.com",
         "role": "reviewer",
+        "platform_role": "employee",
+        "version": 1,
         "assigned_at": "2026-06-10T00:00:00Z",
     }
     add_route = respx_mock.post(f"{API}/projects/{PID}/members").mock(
@@ -365,3 +371,122 @@ def test_members_permission_denied(client, respx_mock):
     )
     with pytest.raises(PermissionDeniedError):
         client.members.list(PID)
+
+
+def _member(**extra) -> dict:
+    return {
+        "id": str(uuid4()),
+        "user_id": str(uuid4()),
+        "user_name": "王五",
+        "user_email": "wang@x.io",
+        "role": "reviewer",
+        "platform_role": "employee",
+        "version": 3,
+        "assigned_at": "2026-06-10T00:00:00Z",
+        "updated_at": "2026-06-20T00:00:00Z",
+        **extra,
+    }
+
+
+def test_preview_member_role_change(client, respx_mock):
+    member_id = str(uuid4())
+    user_id = str(uuid4())
+    replacement = str(uuid4())
+    route = respx_mock.post(
+        f"{API}/projects/{PID}/members/{member_id}/role/preview"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "member_id": member_id,
+                "user_id": user_id,
+                "current_role": "reviewer",
+                "current_version": 3,
+                "target_role": "annotator",
+                "requires_handoff": True,
+                "blockers": ["active_review_claims"],
+                "blocker_details": [{"kind": "active_review_claims", "count": 2}],
+                "resource_snapshot": {"active_task_ids": [str(uuid4())]},
+                "preview_token": "tok-1",
+            },
+        )
+    )
+    preview = client.members.preview_role_change(
+        PID, member_id, "annotator", replacement_annotator_id=replacement
+    )
+    assert route.called
+    assert json.loads(route.calls.last.request.content) == {
+        "project_role": "annotator",
+        "replacement_annotator_id": replacement,
+    }
+    assert isinstance(preview, ProjectMemberRolePreview)
+    assert preview.requires_handoff is True
+    assert preview.preview_token == "tok-1"
+    assert preview.blocker_details[0]["kind"] == "active_review_claims"
+
+
+def test_change_member_role(client, respx_mock):
+    member_id = str(uuid4())
+    replacement_reviewer = str(uuid4())
+    route = respx_mock.patch(f"{API}/projects/{PID}/members/{member_id}/role").mock(
+        return_value=httpx.Response(200, json=_member(role="annotator", version=4))
+    )
+    member = client.members.change_role(
+        PID,
+        member_id,
+        "annotator",
+        expected_version=3,
+        preview_token="tok-1",
+        reason="rebalance workload",
+        replacement_reviewer_id=replacement_reviewer,
+    )
+    assert isinstance(member, Member)
+    assert member.role == "annotator"
+    assert member.version == 4
+    body = json.loads(route.calls.last.request.content)
+    assert body == {
+        "project_role": "annotator",
+        "expected_version": 3,
+        "preview_token": "tok-1",
+        "reason": "rebalance workload",
+        "replacement_reviewer_id": replacement_reviewer,
+    }
+
+
+def test_change_member_role_maps_conflict(client, respx_mock):
+    member_id = str(uuid4())
+    respx_mock.patch(f"{API}/projects/{PID}/members/{member_id}/role").mock(
+        return_value=httpx.Response(409, json={"detail": "stale_membership_version"})
+    )
+    with pytest.raises(ConflictError):
+        client.members.change_role(
+            PID,
+            member_id,
+            "viewer",
+            expected_version=1,
+            preview_token="tok-1",
+            reason="demote",
+        )
+
+
+@pytest.mark.parametrize("operation", ["preview", "change"])
+def test_member_role_maps_permission_error(client, respx_mock, operation):
+    member_id = str(uuid4())
+    path = f"{API}/projects/{PID}/members/{member_id}/role"
+    if operation == "preview":
+        route = respx_mock.post(f"{path}/preview")
+    else:
+        route = respx_mock.patch(path)
+    route.mock(return_value=httpx.Response(403, json={"detail": "forbidden"}))
+    with pytest.raises(PermissionDeniedError):
+        if operation == "preview":
+            client.members.preview_role_change(PID, member_id, "viewer")
+        else:
+            client.members.change_role(
+                PID,
+                member_id,
+                "viewer",
+                expected_version=1,
+                preview_token="tok-1",
+                reason="demote",
+            )

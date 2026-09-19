@@ -1267,7 +1267,7 @@ class ProjectDetailScreen(Screen[None]):
         bat.fixed_columns = 1
         bat.border_title = "本项目批次"
         mt = self.query_one("#pd-members-table", DataTable)
-        mt.add_columns("用户", "邮箱", "角色", "加入时间")
+        mt.add_columns("用户", "邮箱", "项目角色", "平台角色", "加入时间")
         mt.fixed_columns = 1
         mt.border_title = "本项目成员"
         jt = self.query_one("#pd-jobs-table", DataTable)
@@ -1467,6 +1467,7 @@ class ProjectDetailScreen(Screen[None]):
                 m.user_name,
                 m.user_email,
                 m.role,
+                m.platform_role,
                 _fmt_dt(m.assigned_at),
                 key=str(m.id),
             )
