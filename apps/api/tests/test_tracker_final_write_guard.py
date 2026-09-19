@@ -10,13 +10,14 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from sqlalchemy import delete
+from sqlalchemy import delete, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.project_member import ProjectMember
 from app.services.video_tracking.runner import (
     TrackerJobStateConflict,
     _assert_tracker_actor_authority,
+    _lock_task_bounded,
     accept_tracker_job,
     decide_tracker_job,
 )
@@ -157,6 +158,28 @@ async def test_decide_runner_authorizes_before_selector_checks(
             actor_id=employee.id,
         )
     assert exc.value.detail["reason"] == "permission_changed"
+
+
+async def test_tracker_task_lock_is_bounded_nowait(
+    db_session: AsyncSession, test_engine, super_admin
+):
+    """An independently held Task lock yields a retryable conflict, not a wait."""
+
+    owner, _ = super_admin
+    project = await create_project(db_session, owner_id=owner.id, name="Guard Busy")
+    task = await create_task(db_session, project_id=project.id, status="pending")
+    await db_session.commit()
+
+    async with test_engine.connect() as conn:
+        trans = await conn.begin()
+        await conn.execute(
+            text("SELECT id FROM tasks WHERE id = :id FOR UPDATE"),
+            {"id": str(task.id)},
+        )
+        with pytest.raises(TrackerJobStateConflict) as exc:
+            await _lock_task_bounded(db_session, task.id)
+        assert exc.value.detail["reason"] == "task_locked"
+        await trans.rollback()
 
 
 async def test_runner_guard_denies_self_review_evidence(

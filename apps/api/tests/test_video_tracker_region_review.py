@@ -532,7 +532,7 @@ async def test_claimed_reviewer_can_decide_job_created_by_annotator(
         json=payload,
         headers=_bearer(reviewer_token),
     )
-    assert response.status_code == 409
+    assert response.status_code == 409, response.text
     assert response.json()["detail"]["reason"] == "task_review_not_claimed_by_user"
 
     task.status = "completed"
@@ -543,8 +543,8 @@ async def test_claimed_reviewer_can_decide_job_created_by_annotator(
         json=payload,
         headers=_bearer(reviewer_token),
     )
-    assert response.status_code == 409
-    assert response.json()["detail"]["reason"] == "task_locked"
+    assert response.status_code == 409, response.text
+    assert response.json()["detail"]["reason"] == "task_locked", response.text
 
 
 async def test_migration_0145_has_review_scope_guards(db_session):

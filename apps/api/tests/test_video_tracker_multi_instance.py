@@ -260,7 +260,7 @@ async def test_runner_lands_extra_instances_as_new_tracks(
     assert pre_extra == []  # 接受前无新轨迹
 
     # 接受 → 落库。
-    await accept_tracker_job(db_session, job.id, publisher=collect)
+    await accept_tracker_job(db_session, job.id, actor_id=user.id, publisher=collect)
     await db_session.refresh(job)
     await db_session.refresh(source)
     assert job.status == "accepted"
@@ -342,7 +342,7 @@ async def test_runner_sourceless_detection_lands_all_as_new_tracks(
     await db_session.refresh(job)
     assert job.status == "pending_review"
 
-    await accept_tracker_job(db_session, job.id, publisher=collect)
+    await accept_tracker_job(db_session, job.id, actor_id=user.id, publisher=collect)
     await db_session.refresh(job)
     assert job.status == "accepted"
     assert job.staged_result is None
@@ -430,7 +430,7 @@ async def test_full_accept_skips_sourceless_instance_with_only_outside_results(
     async def collect(_channel: str, _payload: dict) -> None:
         return None
 
-    await accept_tracker_job(db_session, job.id, publisher=collect)
+    await accept_tracker_job(db_session, job.id, actor_id=user.id, publisher=collect)
     rows = (
         (
             await db_session.execute(
@@ -675,7 +675,7 @@ async def test_runner_single_instance_no_extra_tracks(
     await run_tracker_job(db_session, job.id, publisher=collect)
     await db_session.refresh(job)
     assert job.status == "pending_review"
-    await accept_tracker_job(db_session, job.id, publisher=collect)
+    await accept_tracker_job(db_session, job.id, actor_id=user.id, publisher=collect)
     await db_session.refresh(job)
     assert job.status == "accepted"
 
@@ -934,7 +934,7 @@ async def test_runner_associates_window_local_ids_across_windows(
         return None
 
     await run_tracker_job(db_session, job.id, publisher=collect)
-    await accept_tracker_job(db_session, job.id, publisher=collect)
+    await accept_tracker_job(db_session, job.id, actor_id=user.id, publisher=collect)
     await db_session.refresh(source)
 
     # 源轨迹 (primary=left): 4 帧全为 left 几何 (x≈0.1), 不混入 right (x≈0.5)。
@@ -1077,7 +1077,7 @@ async def test_runner_multi_source_backfills_each_own_track(
     await db_session.refresh(job)
     assert job.status == "pending_review"
 
-    await accept_tracker_job(db_session, job.id, publisher=collect)
+    await accept_tracker_job(db_session, job.id, actor_id=user.id, publisher=collect)
     await db_session.refresh(job)
     await db_session.refresh(src_a)
     await db_session.refresh(src_b)
@@ -1136,7 +1136,9 @@ async def test_accept_multi_source_soft_deleted_source_fails_closed(
     await db_session.flush()
 
     with pytest.raises(TrackerJobStateConflict, match="inactive"):
-        await accept_tracker_job(db_session, job.id, publisher=collect)
+        await accept_tracker_job(
+            db_session, job.id, actor_id=user.id, publisher=collect
+        )
     await db_session.refresh(job)
     await db_session.refresh(src_a)
     assert job.status == "pending_review"
@@ -1345,7 +1347,7 @@ async def test_accept_multi_source_touched_covers_sources_and_created(
         is None
     )
 
-    await accept_tracker_job(db_session, job.id, publisher=collect)
+    await accept_tracker_job(db_session, job.id, actor_id=user.id, publisher=collect)
     await db_session.refresh(job)
     assert job.status == "accepted"
 
@@ -1461,7 +1463,9 @@ async def test_accept_tracker_job_conflict_on_source_version_mismatch(
     await db_session.refresh(source)
 
     with pytest.raises(TrackerJobStateConflict) as exc:
-        await accept_tracker_job(db_session, job.id, publisher=collect)
+        await accept_tracker_job(
+            db_session, job.id, actor_id=user.id, publisher=collect
+        )
     assert (
         "version changed" in str(exc.value).lower()
         or "conflict" in str(exc.value).lower()
@@ -1508,7 +1512,9 @@ async def test_accept_tracker_job_legacy_without_expected_versions_fails_closed(
     await db_session.refresh(source)
 
     with pytest.raises(TrackerJobStateConflict, match="snapshot is missing"):
-        await accept_tracker_job(db_session, job.id, publisher=collect)
+        await accept_tracker_job(
+            db_session, job.id, actor_id=user.id, publisher=collect
+        )
     await db_session.refresh(job)
     assert job.status == "pending_review"
     assert job.staged_result is not None
@@ -1543,7 +1549,9 @@ async def test_accept_tracker_job_rejects_locked_or_soft_deleted_source(
     source.is_locked = True
     await db_session.commit()
     with pytest.raises(TrackerJobStateConflict, match="locked"):
-        await accept_tracker_job(db_session, job.id, publisher=collect)
+        await accept_tracker_job(
+            db_session, job.id, actor_id=user.id, publisher=collect
+        )
 
 
 async def test_accept_tracker_job_rechecks_task_status(
@@ -1571,7 +1579,9 @@ async def test_accept_tracker_job_rechecks_task_status(
     task.status = "review"
     await db_session.commit()
     with pytest.raises(TrackerJobStateConflict, match="task is locked"):
-        await accept_tracker_job(db_session, job.id, publisher=collect)
+        await accept_tracker_job(
+            db_session, job.id, actor_id=user.id, publisher=collect
+        )
 
 
 async def test_accept_tracker_job_rechecks_segment_lease(
@@ -1610,4 +1620,6 @@ async def test_accept_tracker_job_rechecks_segment_lease(
 
     await run_tracker_job(db_session, job.id, publisher=collect)
     with pytest.raises(TrackerJobStateConflict, match="segment lease"):
-        await accept_tracker_job(db_session, job.id, publisher=collect)
+        await accept_tracker_job(
+            db_session, job.id, actor_id=user.id, publisher=collect
+        )
