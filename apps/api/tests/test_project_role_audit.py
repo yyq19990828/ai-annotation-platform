@@ -443,6 +443,8 @@ async def _seed_manager_cases(engine) -> dict:
         foreign_admin = await make_user("project_admin", "mgr-foreign-admin")
         inactive_admin = await make_user("project_admin", "mgr-inactive-admin")
         inactive_admin.is_active = False
+        inactive_super = await make_user("super_admin", "mgr-inactive-super")
+        inactive_super.is_active = False
         employee = await make_user("employee", "mgr-employee")
         employee_owner = await make_user("employee", "mgr-employee-owner")
         wrong_employee = await make_user("employee", "mgr-wrong-employee")
@@ -530,8 +532,11 @@ async def _seed_manager_cases(engine) -> dict:
         task_override_manager.assignee_id = super_admin.id
 
         # Adversarial non-managers: a foreign-project admin, an ordinary
-        # employee (explicit and inherited), a non-administrative owner and an
-        # inactive admin all keep their findings.
+        # employee (explicit and inherited) and a non-administrative owner all
+        # keep their findings.  The inactive administrator owns the project it
+        # is assigned in and the inactive super administrator would manage any
+        # project, so those two only stay findings when the active-account
+        # check is present.
         task_foreign_admin = await create_task(db, project_id=work_project.id)
         task_foreign_admin.assignee_id = foreign_admin.id
 
@@ -544,8 +549,13 @@ async def _seed_manager_cases(engine) -> dict:
         task_employee_owner = await create_task(db, project_id=employee_project.id)
         task_employee_owner.assignee_id = employee_owner.id
 
-        task_inactive_admin = await create_task(db, project_id=work_project.id)
+        task_inactive_admin = await create_task(
+            db, project_id=inactive_admin_project.id
+        )
         task_inactive_admin.assignee_id = inactive_admin.id
+
+        task_inactive_super = await create_task(db, project_id=work_project.id)
+        task_inactive_super.reviewer_id = inactive_super.id
 
         task_wrong_employee = await create_task(db, project_id=work_project.id)
         task_wrong_employee.assignee_id = wrong_employee.id
@@ -563,6 +573,7 @@ async def _seed_manager_cases(engine) -> dict:
                 task_inherited_employee,
                 task_employee_owner,
                 task_inactive_admin,
+                task_inactive_super,
                 task_wrong_employee,
             ]
         )
@@ -574,6 +585,7 @@ async def _seed_manager_cases(engine) -> dict:
             "admin_owner": admin_owner.id,
             "foreign_admin": foreign_admin.id,
             "inactive_admin": inactive_admin.id,
+            "inactive_super": inactive_super.id,
             "employee": employee.id,
             "employee_owner": employee_owner.id,
             "wrong_employee": wrong_employee.id,
@@ -590,6 +602,7 @@ async def _seed_manager_cases(engine) -> dict:
             "task_inherited_employee": task_inherited_employee.id,
             "task_employee_owner": task_employee_owner.id,
             "task_inactive_admin": task_inactive_admin.id,
+            "task_inactive_super": task_inactive_super.id,
             "task_wrong_employee": task_wrong_employee.id,
         }
         await db.commit()
@@ -788,8 +801,11 @@ async def test_audit_recognizes_active_managers_without_membership(
         gaps["annotator_wrong_membership_role"]
     )
 
-    # An inactive administrator is never privileged: the missing-membership
-    # finding and the inactive-account check both stay.
+    # Inactive managers are never privileged: the missing-membership finding
+    # and the inactive-account check both stay.  The inactive administrator owns
+    # the project it is assigned in and the inactive super administrator would
+    # manage any project, so these rows only survive when the active-account
+    # check is present.
     assert str(ids["task_inactive_admin"]) in _item_ids(
         gaps["annotator_missing_membership"]
     )
@@ -797,6 +813,15 @@ async def test_audit_recognizes_active_managers_without_membership(
         gaps["assignment_to_inactive_account"]
     )
     assert str(ids["inactive_admin"]) in _item_ids(
+        gaps["inactive_accounts_with_unfinished_work"]
+    )
+    assert str(ids["task_inactive_super"]) in _item_ids(
+        gaps["reviewer_missing_membership"]
+    )
+    assert str(ids["task_inactive_super"]) in _item_ids(
+        gaps["assignment_to_inactive_account"]
+    )
+    assert str(ids["inactive_super"]) in _item_ids(
         gaps["inactive_accounts_with_unfinished_work"]
     )
 
