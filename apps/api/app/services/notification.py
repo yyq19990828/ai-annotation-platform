@@ -14,7 +14,17 @@ from collections.abc import Iterable
 from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
-from sqlalchemy import String, delete, func, or_, select, tuple_, update
+from sqlalchemy import (
+    String,
+    and_,
+    case,
+    delete,
+    func,
+    or_,
+    select,
+    tuple_,
+    update,
+)
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -57,29 +67,86 @@ def _notification_project_id(row: Notification) -> uuid.UUID | None:
         return None
 
 
-def _effective_project_text_expr():
-    """SQL text expression for a notification's actual project scope.
+_ACTUAL_TARGET_TYPES = ("export", "async_job")
 
-    Prefers an explicit ``payload.project_id`` and falls back to the owning
-    project of an export/async job target.  A malformed or absent value yields
-    NULL, which fails closed because it matches no accessible project.
-    """
 
-    export_project = (
+def _job_project_text_expr():
+    return (
         select(func.cast(AsyncJob.project_id, String))
         .where(AsyncJob.id == Notification.target_id)
         .correlate(Notification)
         .scalar_subquery()
     )
-    return func.coalesce(Notification.payload["project_id"].astext, export_project)
+
+
+def _job_kind_expr():
+    return (
+        select(AsyncJob.kind)
+        .where(AsyncJob.id == Notification.target_id)
+        .correlate(Notification)
+        .scalar_subquery()
+    )
+
+
+def _job_exists_expr():
+    return (
+        select(AsyncJob.id)
+        .where(AsyncJob.id == Notification.target_id)
+        .correlate(Notification)
+        .exists()
+    )
+
+
+def _effective_project_text_expr():
+    """SQL text expression for a notification's actual project scope.
+
+    For an export/async-job target the owning ``AsyncJob`` row is the actual
+    resource and wins over a stale or forged ``payload.project_id``.  Other
+    notifications use the payload project.  A missing/malformed value yields
+    NULL, which matches no accessible project and therefore fails closed.
+    """
+
+    return case(
+        (
+            Notification.target_type.in_(_ACTUAL_TARGET_TYPES),
+            _job_project_text_expr(),
+        ),
+        else_=Notification.payload["project_id"].astext,
+    )
 
 
 def _is_restricted_expr():
-    """A notification is project-restricted when it names or targets a project."""
+    """A notification is project-restricted when it names or targets a project.
+
+    Export targets are always restricted.  An async-job target is restricted
+    when its real job is project-scoped, and fails closed (restricted with a
+    NULL project) when that job row is missing.  An existing system job with
+    ``project_id IS NULL`` stays global.
+    """
+
+    payload_project = Notification.payload["project_id"].astext
+    return or_(
+        Notification.target_type == "export",
+        and_(
+            Notification.target_type == "async_job",
+            or_(_job_project_text_expr().is_not(None), ~_job_exists_expr()),
+        ),
+        and_(
+            Notification.target_type.not_in(_ACTUAL_TARGET_TYPES),
+            payload_project.is_not(None),
+        ),
+    )
+
+
+def _requires_export_capability_expr():
+    """True for full-export notifications, including export-kind async jobs."""
 
     return or_(
         Notification.target_type == "export",
-        Notification.payload["project_id"].astext.is_not(None),
+        and_(
+            Notification.target_type == "async_job",
+            _job_kind_expr() == "export",
+        ),
     )
 
 
@@ -236,25 +303,26 @@ class NotificationService:
         scopes: list[tuple[bool, uuid.UUID | None, bool]] = []
         for row in rows:
             payload = row.payload if isinstance(row.payload, dict) else {}
-            restricted = row.target_type == "export"
-            export_required = row.target_type == "export"
-            project_id = _notification_project_id(row)
-            if "project_id" in payload:
-                restricted = True
-            if row.target_type in {"export", "async_job"}:
+            target_type = row.target_type
+            # The actual resource wins for export/async-job targets; a stale or
+            # forged payload project must not widen access.
+            if target_type in _ACTUAL_TARGET_TYPES:
                 job = jobs.get(row.target_id)
                 if job is None:
-                    restricted = True
-                    project_id = None
+                    job_project, job_kind = None, None
                 else:
-                    job_project, _job_kind = job
-                    if row.target_type == "export":
-                        restricted = True
-                        export_required = True
-                        project_id = job_project
-                    elif job_project is not None:
-                        restricted = True
-                        project_id = job_project
+                    job_project, job_kind = job
+                if target_type == "export":
+                    restricted = True
+                    export_required = True
+                else:  # async_job
+                    restricted = job is None or job_project is not None
+                    export_required = job is not None and job_kind == "export"
+                project_id = job_project
+            else:
+                restricted = "project_id" in payload
+                export_required = False
+                project_id = _notification_project_id(row)
             scopes.append((restricted, project_id, export_required))
         return scopes
 
@@ -334,6 +402,29 @@ class NotificationService:
                 allowed.add(index)
         return allowed
 
+    async def notification_deliverable(
+        self, notification_id: uuid.UUID, user_id: uuid.UUID
+    ) -> bool:
+        """Whether an already-stored row may still be pushed to ``user_id``.
+
+        Used by the notification socket to drop a restricted message whose
+        project access was revoked after the row was published to Redis, without
+        disconnecting unrelated deliveries.
+        """
+
+        row = await self.db.get(Notification, notification_id)
+        if row is None or row.user_id != user_id:
+            return False
+        try:
+            scopes = await self._resolve_delivery_scopes([row])
+            allowed = await self._allowed_delivery_indices([row], scopes)
+        except Exception:
+            log.exception(
+                "notification delivery recheck failed notification=%s", notification_id
+            )
+            return False
+        return 0 in allowed
+
     async def publish_committed(self, notifications: Iterable[Notification]) -> None:
         """Best-effort publish for rows whose enclosing transaction committed.
 
@@ -358,7 +449,11 @@ class NotificationService:
             allowed = set()
             for index, row in enumerate(rows):
                 payload = row.payload if isinstance(row.payload, dict) else {}
-                restricted = row.target_type == "export" or "project_id" in payload
+                # Without the DB we cannot resolve an async-job/export target;
+                # fail closed there and for explicit payload projects.
+                restricted = (
+                    row.target_type in _ACTUAL_TARGET_TYPES or "project_id" in payload
+                )
                 if not restricted:
                     allowed.add(index)
 
@@ -429,7 +524,7 @@ class NotificationService:
         return [
             or_(~restricted, _accessible_project_clause(user, project_text)),
             or_(
-                Notification.target_type != "export",
+                ~_requires_export_capability_expr(),
                 _export_capable_project_clause(user, project_text),
             ),
         ]

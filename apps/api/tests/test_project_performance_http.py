@@ -148,7 +148,7 @@ async def test_members_http_roster_metrics_empty_search_and_safe_csv(
     reviewer_user.is_active = False
     removed_user, _ = await _create_user(
         db_session,
-        "annotator",
+        "employee",
         f"removed-{uuid.uuid4().hex[:8]}@test.local",
         "=Removed",
     )
@@ -461,7 +461,7 @@ async def test_members_http_qualified_time_clips_and_unions_sessions(
     worker, _ = annotator
     foreign_actor, _ = await _create_user(
         db_session,
-        "annotator",
+        "employee",
         f"foreign-{uuid.uuid4().hex[:8]}@test.local",
         "Foreign legacy actor",
     )
@@ -1570,7 +1570,7 @@ async def test_members_http_saved_content_counts_distinct_image_tasks(
     worker_a, _ = annotator
     worker_b, _ = await _create_user(
         db_session,
-        "annotator",
+        "employee",
         f"worker-b-{uuid.uuid4().hex[:8]}@test.local",
         "Worker B",
     )

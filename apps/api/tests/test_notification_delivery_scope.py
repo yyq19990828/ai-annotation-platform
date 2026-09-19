@@ -101,3 +101,31 @@ async def test_global_job_target_is_preserved_as_global():
     rows = [_job_row({"kind": "audit_archive"}, "async_job", target_id)]
     scopes = await svc._resolve_delivery_scopes(rows)
     assert scopes == [(False, None, False)]
+
+
+async def test_project_async_job_without_payload_scope_is_restricted():
+    """A project async job is restricted even when payload omits project_id."""
+
+    target_id = uuid.uuid4()
+    project_id = uuid.uuid4()
+    svc = NotificationService(_FakeDb([(target_id, project_id, "batch_predict")]))
+    rows = [_job_row({"batch_display_id": "B-1"}, "async_job", target_id)]
+    scopes = await svc._resolve_delivery_scopes(rows)
+    assert scopes == [(True, project_id, False)]
+
+
+async def test_missing_async_job_target_fails_closed():
+    svc = NotificationService(_FakeDb([]))
+    target_id = uuid.uuid4()
+    rows = [_job_row({}, "async_job", target_id)]
+    scopes = await svc._resolve_delivery_scopes(rows)
+    assert scopes == [(True, None, False)]
+
+
+async def test_export_kind_async_job_requires_export_capability():
+    target_id = uuid.uuid4()
+    project_id = uuid.uuid4()
+    svc = NotificationService(_FakeDb([(target_id, project_id, "export")]))
+    rows = [_job_row({}, "async_job", target_id)]
+    scopes = await svc._resolve_delivery_scopes(rows)
+    assert scopes == [(True, project_id, True)]

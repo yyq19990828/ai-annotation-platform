@@ -94,6 +94,43 @@ async def _revalidate_project_stream(token: str, project_id: uuid.UUID) -> bool:
     return await _revalidate_project_access(project_id, str(user.id))
 
 
+async def _notification_message_allowed(token: str, data) -> bool:
+    """Per-message gate for the per-user notification socket.
+
+    A row already published to Redis is re-resolved against the recipient's
+    current project access before it is forwarded; restricted rows whose access
+    was revoked are dropped.  ``notifications.sync`` control frames and
+    unidentifiable frames pass through.
+    """
+
+    user = await _authenticate_socket_token(token)
+    if user is None:
+        return False
+    try:
+        raw = data.decode() if isinstance(data, bytes) else data
+        message = json.loads(raw)
+    except Exception:
+        return True
+    if not isinstance(message, dict):
+        return True
+    if message.get("type") == "notifications.sync":
+        return True
+    raw_id = message.get("id")
+    if not raw_id:
+        return True
+    try:
+        notification_id = uuid.UUID(str(raw_id))
+    except (TypeError, ValueError):
+        return False
+    from app.db.base import async_session
+    from app.services.notification import NotificationService
+
+    async with async_session() as db:
+        return await NotificationService(db).notification_deliverable(
+            notification_id, user.id
+        )
+
+
 async def _revalidate_task_stream(token: str, task_id: uuid.UUID) -> bool:
     user = await _authenticate_socket_token(token)
     if user is None:
@@ -104,10 +141,6 @@ async def _revalidate_task_stream(token: str, task_id: uuid.UUID) -> bool:
 async def _revalidate_admin_stream(token: str) -> bool:
     user = await _authenticate_socket_token(token)
     return user is not None and user.role in _ADMIN_SOCKET_ROLES
-
-
-async def _revalidate_active_stream(token: str) -> bool:
-    return await _authenticate_socket_token(token) is not None
 
 
 async def _revalidate_project_access(project_id: uuid.UUID, user_id: str) -> bool:
@@ -217,6 +250,7 @@ async def _run_pubsub_ws(
     *,
     heartbeat: bool = True,
     revalidate=None,
+    allow_message=None,
 ) -> None:
     """把 Redis pub/sub 消息转发给 WebSocket, 直到任意一方关闭。caller 负责 subscribe/cleanup。
 
@@ -238,6 +272,11 @@ async def _run_pubsub_ws(
                 # finally block unsubscribes; unrelated sockets are untouched.
                 return
             data = message["data"]
+            if allow_message is not None and not await allow_message(data):
+                # Drop this one restricted payload (for example a notification
+                # whose project access was revoked after publication) while
+                # keeping unrelated deliveries flowing.
+                continue
             await websocket.send_text(
                 data.decode() if isinstance(data, bytes) else data
             )
@@ -577,7 +616,7 @@ async def notifications_socket(
         await _run_pubsub_ws(
             websocket,
             pubsub,
-            revalidate=lambda: _revalidate_active_stream(token),
+            allow_message=lambda data: _notification_message_allowed(token, data),
         )
     except WebSocketDisconnect:
         pass

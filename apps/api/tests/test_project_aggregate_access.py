@@ -229,6 +229,9 @@ async def test_export_job_result_denied_to_annotator_membership(
 
     job.user_id = reviewer.id
     await db_session.commit()
+    # The server handler shares this session; refresh the server-updated
+    # columns so serialization does not trigger an async lazy load.
+    await db_session.refresh(job)
     allowed = await httpx_client.get(
         f"/api/v1/async-jobs/{job.id}", headers=_headers(reviewer)
     )

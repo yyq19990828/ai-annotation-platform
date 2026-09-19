@@ -28,12 +28,10 @@ from app.workers.celery_app import celery_app
 log = logging.getLogger(__name__)
 
 
-async def _review_task_authority(db: AsyncSession, task: Task, actor: User) -> None:
-    """Assert current project manager/reviewer authority for review-state work.
-
-    Only the *current* project manager or reviewer may touch review-state work;
-    a legacy global account role is never a fallback.
-    """
+async def _resolve_task_access(
+    db: AsyncSession, task: Task, actor: User, *, lock: bool = False
+):
+    """Resolve current project access for a task's actual project, fail closed."""
 
     from app.db.models.project import Project
     from app.services.project_access import resolve_project_access
@@ -42,31 +40,55 @@ async def _review_task_authority(db: AsyncSession, task: Task, actor: User) -> N
     if project is None:
         raise HTTPException(status_code=404, detail="task_missing")
     try:
-        access = await resolve_project_access(db, user=actor, project=project)
+        return await resolve_project_access(
+            db, user=actor, project=project, lock_membership=lock
+        )
     except HTTPException as exc:
         raise HTTPException(status_code=403, detail="permission_changed") from exc
+
+
+async def _review_task_authority(db: AsyncSession, task: Task, actor: User) -> None:
+    """Assert current project manager/reviewer authority for review-state work."""
+
+    access = await _resolve_task_access(db, task, actor)
     if access.is_manager or access.project_role == ProjectRole.REVIEWER.value:
         return
     raise HTTPException(status_code=403, detail="permission_changed")
 
 
-async def _assert_review_write_allowed(
+async def _assert_target_write_allowed(
     db: AsyncSession, task: Task, actor: User
 ) -> None:
-    """Authorize a review-phase write to one target task.
+    """Canonical phase + evidence authorization for one cross-frame target.
 
-    Enforces both current project authority and the task's frozen review
-    contributor evidence, including the effective annotator, so an author or
-    manager cannot self-review through the cross-frame phase.
+    Reuses the shared task-editability and effective-assignee helpers so an
+    annotator only writes their own pending/in-progress task, a reviewer/viewer
+    cannot write annotation-phase work, and a review-phase write additionally
+    validates the frozen contributor evidence (including the effective
+    annotator) against the *current* locked membership.
     """
 
-    from app.api.v1.tasks._shared import _effective_task_assignee_id
+    from app.api.v1.tasks._shared import (
+        _assert_effective_task_assignee,
+        _assert_task_editable,
+        _effective_task_assignee_id,
+    )
     from app.services.annotation_evidence import assert_review_evidence_current
 
-    await _review_task_authority(db, task, actor)
+    access = await _resolve_task_access(db, task, actor, lock=True)
+    _assert_task_editable(task, actor, access=access)
     effective_annotator_id = await _effective_task_assignee_id(db, task)
-    assert_review_evidence_current(
-        task, actor.id, effective_annotator_id=effective_annotator_id
+    if task.status == "review":
+        assert_review_evidence_current(
+            task, actor.id, effective_annotator_id=effective_annotator_id
+        )
+        return
+    _assert_effective_task_assignee(
+        actor,
+        effective_annotator_id,
+        action="propagate",
+        project_id=task.project_id,
+        access=access,
     )
 
 
@@ -293,13 +315,14 @@ async def execute_cross_frame_job(
                     raise RuntimeError("source_task_locked") from exc
             if target_task.status == "completed":
                 raise RuntimeError("target_task_locked")
-            if target_task.status == "review":
-                # Writing into a review-state target also validates the frozen
-                # review contributor evidence for this target task.
-                try:
-                    await _assert_review_write_allowed(db, target_task, actor)
-                except HTTPException as exc:
-                    raise RuntimeError("target_task_locked") from exc
+            # Phase-aware write: pending/in-progress requires the effective
+            # annotator (or manager); review additionally validates the frozen
+            # contributor evidence.  Reviewer/viewer cannot write annotation
+            # work.
+            try:
+                await _assert_target_write_allowed(db, target_task, actor)
+            except HTTPException as exc:
+                raise RuntimeError("target_task_locked") from exc
 
             source_rows = list(
                 (
