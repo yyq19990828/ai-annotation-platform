@@ -348,7 +348,8 @@ async def test_persist_audit_entry_task_writes_row(test_engine):
 
     from app.workers.audit import _async_persist
 
-    request_id = f"test-rid-{uuid.uuid4().hex}"
+    # audit_logs.request_id is varchar(36); a bare 32-char uuid hex fits and is unique.
+    request_id = uuid.uuid4().hex
     payload = {
         # 用 None actor_id 避免 FK 约束触发（audit_logs.actor_id → users.id）
         "actor_id": None,
