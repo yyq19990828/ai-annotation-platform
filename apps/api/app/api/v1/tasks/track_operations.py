@@ -420,6 +420,7 @@ async def preview_scene_track_command(
         anchor_task=anchor_task,
         current_user=current_user,
         prepared=prepared,
+        access=access,
     )
     return SceneTrackCommandPreviewOut(**preview_payload(prepared))
 
@@ -479,6 +480,7 @@ async def execute_scene_track_command(
         anchor_task=anchor_task,
         current_user=current_user,
         prepared=prepared,
+        access=access,
     )
     operation, response = await apply_scene_track_command(
         db,
@@ -600,8 +602,11 @@ async def revert_scene_track_command(
         project=project,
         current_user=current_user,
         task_ids=task_ids,
+        access=access,
     )
-    if not _tasks_are_editable(tasks, task_ids=task_ids, current_user=current_user):
+    if not _tasks_are_editable(
+        tasks, task_ids=task_ids, current_user=current_user, access=access
+    ):
         raise _track_error(
             409,
             "track_member_unavailable",
@@ -665,11 +670,13 @@ async def list_track_operation_candidates(
         project=project,
         current_user=current_user,
         task_ids=all_task_ids,
+        access=access,
     )
     if not _tasks_are_editable(
         tasks,
         task_ids=structural.primary.task_ids,
         current_user=current_user,
+        access=access,
     ):
         raise _track_error(
             409,
@@ -684,6 +691,7 @@ async def list_track_operation_candidates(
             tasks,
             task_ids=candidate.task_ids,
             current_user=current_user,
+            access=access,
         )
     ]
     return TrackOperationCandidatesResponse(
@@ -721,6 +729,7 @@ async def preview_track_operation(
         anchor_task=anchor_task,
         current_user=current_user,
         prepared=prepared,
+        access=access,
     )
     command = await prepare_scene_track_command(
         db,
@@ -737,6 +746,7 @@ async def preview_track_operation(
         anchor_task=anchor_task,
         current_user=current_user,
         prepared=command,
+        access=access,
     )
     return TrackOperationPreviewResponse(**_compat_preview_response(prepared, command))
 
@@ -769,6 +779,7 @@ async def execute_track_operation(
         anchor_task=anchor_task,
         current_user=current_user,
         prepared=prepared,
+        access=access,
     )
     command = await prepare_scene_track_command(
         db,
@@ -786,6 +797,7 @@ async def execute_track_operation(
         anchor_task=anchor_task,
         current_user=current_user,
         prepared=command,
+        access=access,
     )
     command_operation, command_response = await apply_scene_track_command(
         db,

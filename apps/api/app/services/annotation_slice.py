@@ -77,7 +77,7 @@ class AnnotationSliceService:
 
     async def _lock_task(
         self, task_id: uuid.UUID, actor: User, *, access: Any = None
-    ) -> Task:
+    ) -> tuple[Task, Any]:
         from app.api.v1.tasks._shared import (
             _assert_review_adjustment_evidence,
             _assert_task_visible,
@@ -100,7 +100,7 @@ class AnnotationSliceService:
         await _assert_task_visible(self.db, task, actor, access=access)
         assert_annotation_write_allowed(task, access)
         await _assert_review_adjustment_evidence(self.db, task, actor, access)
-        return task
+        return task, access
 
     async def _replay(
         self, task_id: uuid.UUID, actor: User, key: str, digest: str
@@ -202,7 +202,7 @@ class AnnotationSliceService:
         request: Any = None,
         access: Any = None,
     ) -> AnnotationSliceResponse:
-        task = await self._lock_task(task_id, actor, access=access)
+        task, access = await self._lock_task(task_id, actor, access=access)
         digest = _digest({"kind": "slice_polygon", **payload.model_dump(mode="json")})
         replay = await self._replay(task_id, actor, payload.idempotency_key, digest)
         if replay:
@@ -323,7 +323,7 @@ class AnnotationSliceService:
         request: Any = None,
         access: Any = None,
     ) -> AnnotationSliceResponse:
-        task = await self._lock_task(task_id, actor, access=access)
+        task, access = await self._lock_task(task_id, actor, access=access)
         digest = _digest(
             {
                 "kind": "restore_slice",

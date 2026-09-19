@@ -31,7 +31,7 @@ from app.api.v1.tasks._shared import (
     _task_contributor_snapshot,
     _submission_assignment_start,
     perform_task_submit,
-    require_task_annotation_write,
+    require_task_annotation_write_lifecycle,
 )
 
 router = APIRouter()
@@ -43,7 +43,7 @@ async def submit_task(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    access: ProjectAccess = Depends(require_task_annotation_write),
+    access: ProjectAccess = Depends(require_task_annotation_write_lifecycle),
 ):
     from app.db.models.task import Task
 
@@ -151,7 +151,7 @@ async def skip_task(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    access: ProjectAccess = Depends(require_task_annotation_write),
+    access: ProjectAccess = Depends(require_task_annotation_write_lifecycle),
 ):
     """v0.8.7 F7 · 标注员跳过任务并附原因，自动转 reviewer 复核。
 
@@ -280,7 +280,7 @@ async def withdraw_task(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    access: ProjectAccess = Depends(require_task_annotation_write),
+    access: ProjectAccess = Depends(require_task_annotation_write_lifecycle),
 ):
     """v0.6.5: 标注员撤回质检提交。
     前提：status=review、assignee == 当前用户、reviewer_claimed_at IS NULL。
@@ -352,7 +352,7 @@ async def reopen_task(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    access: ProjectAccess = Depends(require_task_annotation_write),
+    access: ProjectAccess = Depends(require_task_annotation_write_lifecycle),
 ):
     """v0.6.5: 标注员对已通过任务单方面重开编辑。
     前提：status=completed 且 assignee == 当前用户（admin 兜底）。
@@ -451,7 +451,7 @@ async def accept_rejection(
     request: Request,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    access: ProjectAccess = Depends(require_task_annotation_write),
+    access: ProjectAccess = Depends(require_task_annotation_write_lifecycle),
 ):
     """M1 · 标注员接受退回，将 task 从 rejected 转回 in_progress 开始重做。
     不清空 reject_reason（保留审核员退回原因，前端可降级为"重做中"提示）。"""

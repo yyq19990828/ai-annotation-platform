@@ -14,11 +14,13 @@ import uuid
 
 import httpx
 import pytest
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.core.security import create_access_token
+from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
+from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.user import User
 from tests.factory import create_batch, create_project, create_task, create_user
@@ -28,6 +30,11 @@ pytestmark = pytest.mark.asyncio
 
 def _headers(user: User) -> dict[str, str]:
     token = create_access_token(subject=str(user.id), role=user.role)
+    return {"Authorization": f"Bearer {token}"}
+
+
+def _headers_for(user_id, role: str) -> dict[str, str]:
+    token = create_access_token(subject=str(user_id), role=role)
     return {"Authorization": f"Bearer {token}"}
 
 
@@ -141,26 +148,75 @@ async def test_bulk_approve_preserves_per_batch_summary(
     assert bad_batch.status == "reviewing"
 
 
-async def test_batch_decision_busy_returns_conflict(
-    test_engine, app_module, super_admin, db_session
-):
-    owner, _ = super_admin
-    reviewer, project, batch, _task = await _seed(db_session, owner, evidence="frozen")
-    await db_session.commit()
+async def test_batch_decision_busy_returns_conflict(test_engine, app_module):
+    """An independently committed row lock makes the decision return 409.
 
+    The dataset is created and truly committed in its own session so two
+    independent connections (the writer and the HTTP request) observe it.
+    """
     maker = async_sessionmaker(test_engine, expire_on_commit=False)
-    async with maker() as writer:
-        await writer.execute(
-            select(TaskBatch).where(TaskBatch.id == batch.id).with_for_update()
+    async with maker() as setup:
+        owner = await create_user(
+            setup, "super_admin", f"busy-owner-{uuid.uuid4()}@test.local", "Owner"
         )
-        async with httpx.AsyncClient(
-            transport=httpx.ASGITransport(app=app_module), base_url="http://test"
-        ) as client:
-            response = await client.post(
-                f"/api/v1/projects/{project.id}/batches/{batch.id}/transition",
-                headers=_headers(reviewer),
-                json={"target_status": "approved"},
+        reviewer = await create_user(
+            setup, "employee", f"busy-rev-{uuid.uuid4()}@test.local", "Reviewer"
+        )
+        project = await create_project(setup, owner_id=owner.id, name="Busy decision")
+        setup.add(
+            ProjectMember(
+                project_id=project.id,
+                user_id=reviewer.id,
+                role="reviewer",
+                assigned_by=owner.id,
             )
-        assert response.status_code == 409, response.text
-        assert response.json()["detail"]["reason"] == "batch_decision_busy"
-        await writer.rollback()
+        )
+        batch = await create_batch(setup, project_id=project.id, status="reviewing")
+        task = await create_task(setup, project_id=project.id, status="review")
+        task.batch_id = batch.id
+        task.reviewer_id = reviewer.id
+        task.review_round_id = uuid.uuid4()
+        task.annotation_contributor_ids = []
+        task.review_contributor_ids = [str(owner.id)]
+        task.review_submitter_id = owner.id
+        await setup.commit()
+        ids = {
+            "project": project.id,
+            "batch": batch.id,
+            "task": task.id,
+            "owner": owner.id,
+            "reviewer": reviewer.id,
+        }
+
+    try:
+        async with maker() as writer:
+            # Lock a real, committed, visible row on a separate connection.
+            locked = await writer.scalar(
+                select(TaskBatch.id)
+                .where(TaskBatch.id == ids["batch"])
+                .with_for_update()
+            )
+            assert locked == ids["batch"]
+            async with httpx.AsyncClient(
+                transport=httpx.ASGITransport(app=app_module), base_url="http://test"
+            ) as client:
+                response = await client.post(
+                    f"/api/v1/projects/{ids['project']}/batches/{ids['batch']}/transition",
+                    headers=_headers_for(ids["reviewer"], "employee"),
+                    json={"target_status": "approved"},
+                )
+            assert response.status_code == 409, response.text
+            assert response.json()["detail"]["reason"] == "batch_decision_busy"
+            await writer.rollback()
+    finally:
+        async with maker() as cleanup:
+            await cleanup.execute(delete(Task).where(Task.id == ids["task"]))
+            await cleanup.execute(delete(TaskBatch).where(TaskBatch.id == ids["batch"]))
+            await cleanup.execute(
+                delete(ProjectMember).where(ProjectMember.project_id == ids["project"])
+            )
+            await cleanup.execute(delete(Project).where(Project.id == ids["project"]))
+            await cleanup.execute(
+                delete(User).where(User.id.in_([ids["owner"], ids["reviewer"]]))
+            )
+            await cleanup.commit()

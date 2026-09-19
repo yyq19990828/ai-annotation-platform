@@ -460,6 +460,26 @@ async def require_task_annotation_write_strict(
     return access
 
 
+async def require_task_annotation_write_lifecycle(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ProjectAccess:
+    """Annotation-phase capability for a task *lifecycle* transition.
+
+    ``submit``/``skip``/``withdraw``/``reopen``/``accept-rejection`` move a task
+    between phases; they are not annotation-content edits, so the frozen
+    non-self review-evidence guard does not apply.  The capability and the
+    ``FOR SHARE`` membership are still required.
+    """
+
+    task = await _load_task_or_404(db, task_id)
+    access = await _resolve_task_access(db, task, user, lock_membership=True)
+    if not _task_write_allowed(task, access, allow_review_adjustment=True):
+        raise HTTPException(status_code=403, detail="缺少项目权限: annotation.write")
+    return access
+
+
 async def require_task_review_write(
     task_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),

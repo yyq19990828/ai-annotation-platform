@@ -19,7 +19,7 @@ from app.api.v1.tasks._shared import (
     _load_task_or_404,
     _assert_task_visible,
     _effective_task_assignee_id,
-    require_task_annotation_write,
+    require_task_annotation_write_lifecycle,
 )
 
 router = APIRouter()
@@ -30,7 +30,7 @@ async def acquire_lock(
     task_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    access: ProjectAccess = Depends(require_task_annotation_write),
+    access: ProjectAccess = Depends(require_task_annotation_write_lifecycle),
 ):
     # B-21：任务的当前 assignee 重进时强制接管残留锁，
     # 否则上一个会话残留的他人 lock 会让本人误判"他人正在编辑"。
@@ -65,7 +65,7 @@ async def heartbeat_lock(
     task_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    access: ProjectAccess = Depends(require_task_annotation_write),
+    access: ProjectAccess = Depends(require_task_annotation_write_lifecycle),
 ):
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user, access=access)
@@ -82,7 +82,7 @@ async def release_lock(
     task_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
-    access: ProjectAccess = Depends(require_task_annotation_write),
+    access: ProjectAccess = Depends(require_task_annotation_write_lifecycle),
 ):
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user, access=access)

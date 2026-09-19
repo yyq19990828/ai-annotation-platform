@@ -1091,8 +1091,10 @@ class BatchService:
                 TaskBatch.project_id == project_id
             )
         project_ids = (await self.db.execute(project_ids_stmt)).scalars()
-        for project_id in project_ids:
-            project = await self.db.get(Project, project_id, populate_existing=True)
+        for scope_project_id in project_ids:
+            project = await self.db.get(
+                Project, scope_project_id, populate_existing=True
+            )
             if project is None:
                 raise HTTPException(status_code=404, detail="Batch not found")
             access = await resolve_project_access(
