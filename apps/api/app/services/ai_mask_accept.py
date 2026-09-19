@@ -26,6 +26,7 @@ from app.schemas.annotation import AnnotationOut
 from app.schemas.prediction import PredictionOut
 from app.services.ai_mask_receipt import AiMaskReceiptError, verify_ai_mask_receipt
 from app.services.annotation import AnnotationService
+from app.services.annotation_evidence import record_annotation_actor
 from app.services.annotation_propagation import _new_track_id
 from app.services.annotation_track_identity import prepare_compact_track_identity
 from app.services.audit import AuditAction, AuditService
@@ -637,6 +638,7 @@ async def accept_ai_mask_candidate(
         annotation = source
         await db.flush()
 
+    await record_annotation_actor(db, task, current_user.id)
     await TaskLockService(db).heartbeat(task.id, current_user.id)
     await AuditService.log(
         db,

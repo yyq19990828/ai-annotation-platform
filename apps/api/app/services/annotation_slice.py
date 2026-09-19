@@ -25,6 +25,7 @@ from app.schemas.annotation_slice import (
     PolygonSliceCommitRequest,
 )
 from app.services.annotation import AnnotationService
+from app.services.annotation_evidence import record_annotation_actor
 from app.services.audit import AuditAction, AuditService
 from app.services.polygon_slice import PolygonSliceGeometryError, slice_polygon
 from app.services.task_lock import TaskLockConflictError
@@ -162,6 +163,8 @@ class AnnotationSliceService:
     ) -> None:
         self.db.add(operation)
         await self.db.flush([operation])
+        # Both slice commit and ledger restore funnel through here.
+        await record_annotation_actor(self.db, task, actor.id)
         await AuditService.log(
             self.db,
             actor=actor,

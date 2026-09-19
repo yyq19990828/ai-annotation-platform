@@ -86,6 +86,7 @@ from app.api.v1.tasks._shared import (
     _ANNOTATORS,
     _REVIEWERS,
 )
+from app.services.annotation_evidence import record_annotation_actor
 
 router = APIRouter()
 
@@ -552,6 +553,7 @@ async def secondary_inference(
         dispatch_context_factory=dispatch_context_factory,
     )
     await heartbeat_task_lock_for_legacy_video(db, task, current_user.id)
+    await record_annotation_actor(db, task, current_user.id)
     await AuditService.log(
         db,
         actor=current_user,
@@ -925,6 +927,7 @@ async def update_annotation(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
     if not annotation:
         raise HTTPException(status_code=404, detail="Annotation not found")
+    await record_annotation_actor(db, _task, current_user.id)
     await heartbeat_task_lock_for_legacy_video(db, _task, current_user.id)
     _audit_action = (
         AuditAction.TASK_REVIEWER_EDIT
@@ -1206,6 +1209,7 @@ async def delete_annotation(
     ok = await svc.delete(annotation_id)
     if not ok:
         raise HTTPException(status_code=404, detail="Annotation not found")
+    await record_annotation_actor(db, task, current_user.id)
     await heartbeat_task_lock_for_legacy_video(db, task, current_user.id)
     # v0.7.2 · annotation 编辑历史可追溯
     await AuditService.log(

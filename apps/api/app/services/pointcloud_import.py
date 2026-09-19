@@ -27,6 +27,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models import DatasetItem, Project, Task
 from app.schemas._jsonb_types import SensorCalibration
 from app.services import async_job as async_job_svc
+from app.services.annotation_evidence import new_task_annotation_contributors
 from app.services.role_patterns import (
     DEFAULT_ROLE_PATTERNS,
     RolePatterns,
@@ -242,6 +243,7 @@ async def build_pointcloud_tasks_for_link(
                 file_path=lidar.file_path,
                 file_type="point_cloud",
                 status="pending",
+                annotation_contributor_ids=new_task_annotation_contributors(),
             )
             db.add(task)
             await db.flush()

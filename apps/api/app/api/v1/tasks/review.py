@@ -16,6 +16,7 @@ from app.db.models.task_batch import TaskBatch
 from app.schemas.task import (
     ReviewClaimResponse,
 )
+from app.services.annotation_evidence import clear_review_contributor_evidence
 from app.services.audit import AuditAction, AuditService
 
 
@@ -342,6 +343,12 @@ async def reject_task(
         result="rejected",
         contributor_ids=contributor_ids,
     )
+    # A2 · the completed round's frozen evidence is preserved in the reject audit
+    # before the current authority is invalidated. The annotation contributor
+    # accumulator is retained.
+    rejected_review_contributor_ids = task.review_contributor_ids
+    rejected_review_submitter_id = task.review_submitter_id
+    clear_review_contributor_evidence(task)
     await db.flush()
 
     # ADR-0027 第二段 · 双写到 annotation_feedbacks (kind=reject, anchor=task)
@@ -376,6 +383,12 @@ async def reject_task(
             "reason_type": task.reject_reason_type,
             "reason": task.reject_reason,
             "contributor_ids": contributor_ids,
+            "review_contributor_ids": rejected_review_contributor_ids,
+            "review_submitter_id": (
+                str(rejected_review_submitter_id)
+                if rejected_review_submitter_id
+                else None
+            ),
             "review_round_id": str(review_round_id),
             "result": "rejected",
         },

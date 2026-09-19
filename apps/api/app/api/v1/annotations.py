@@ -494,6 +494,9 @@ async def bulk_update_annotations(
         is_locked=payload.patch.is_locked,
         is_hidden=payload.patch.is_hidden,
     )
+    from app.services.annotation_evidence import record_annotation_actor
+
+    await record_annotation_actor(db, task, user.id)
     await AuditService.log(
         db,
         actor=user,

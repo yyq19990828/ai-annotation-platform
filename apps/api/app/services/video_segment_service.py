@@ -360,6 +360,16 @@ async def submit_segment(
             ctx.task.reviewer_is_override = False
             ctx.task.reviewer_claimed_at = None
             ctx.task.reviewed_at = None
+            # A2 · freeze the round evidence when the video task enters review.
+            from app.api.v1.tasks._shared import _task_contributor_snapshot
+            from app.services.annotation_evidence import (
+                freeze_review_contributor_evidence,
+            )
+
+            contributor_ids = await _task_contributor_snapshot(db, ctx.task)
+            freeze_review_contributor_evidence(
+                ctx.task, submitter_id=user.id, contributor_ids=contributor_ids
+            )
     await db.flush()
     return await _segment_out_for_context(db, ctx, row)
 
@@ -378,6 +388,11 @@ async def reopen_segment(
         ctx.task.status = "in_progress"
         ctx.task.submitted_at = None
         ctx.task.reviewed_at = None
+        from app.services.annotation_evidence import (
+            clear_review_contributor_evidence,
+        )
+
+        clear_review_contributor_evidence(ctx.task)
     await db.flush()
     return await _segment_out_for_context(db, ctx, row)
 

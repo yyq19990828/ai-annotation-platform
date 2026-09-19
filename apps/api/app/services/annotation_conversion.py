@@ -33,6 +33,7 @@ from app.schemas.annotation_conversion import (
     AnnotationConversionSummary,
 )
 from app.services.annotation import AnnotationService
+from app.services.annotation_evidence import record_annotation_actor
 from app.services.annotation_propagation import _new_track_id
 from app.services.annotation_track_identity import prepare_compact_track_identity
 from app.services.audit import AuditAction, AuditService
@@ -1291,6 +1292,7 @@ class AnnotationConversionService:
                 action_results.append((action, None))
 
         await self.db.flush()
+        await record_annotation_actor(self.db, task, actor.id)
         await AnnotationService(self.db)._update_task_stats(task_id)
         await heartbeat_task_lock_for_legacy_video(self.db, task, actor.id)
 

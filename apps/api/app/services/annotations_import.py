@@ -612,6 +612,12 @@ async def import_aap_json_annotations(
             result=result,
         )
         from app.services.annotation import AnnotationService
+        from app.services.annotation_evidence import record_annotation_actors_for_tasks
+
+        # D1 · every imported annotation is attributed to the operator, including
+        # camera members and scene-track members. Recording is conservative:
+        # a legacy task with an unknown accumulator stays unknown.
+        await record_annotation_actors_for_tasks(db, affected_tasks, operator_user_id)
 
         svc = AnnotationService(db)
         for task_id in affected_tasks:

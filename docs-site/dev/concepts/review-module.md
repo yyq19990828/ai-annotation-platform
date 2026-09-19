@@ -259,6 +259,26 @@ approve 还受 Mask QC 摘要新鲜度、阻断项与 warning 确认门禁约束
 - `reopen` 发生在任务已通过后
 - `accept-rejection` 发生在 reviewer 已明确退回后
 
+## 审核贡献者证据（增量 A2）
+
+`tasks` 上有三个可空字段，用于在项目级角色模型启用前先可靠记录“谁在标注阶段动过这题”：
+
+| 字段                         | 含义                                                                                                                                |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `annotation_contributor_ids` | 标注阶段 actor 的累积集合。`NULL` = 完整性未知（legacy 行 / 回滚区间）；`[]` = 已知为空（本记录二进制创建的新题）；其余为累积集合。 |
+| `review_contributor_ids`     | 当前 `review_round_id` 冻结的贡献者集合。                                                                                           |
+| `review_submitter_id`        | 实际提交该轮的 actor。                                                                                                              |
+
+写入规则（`app/services/annotation_evidence.py`）：
+
+- 每一次标注阶段写动作（create / update / delete、批量写、撤销/恢复、转换、导入、AI 采纳、视频/场景命令、多相机、tracker 接收）都在同一事务里把实际 actor 累积到 `annotation_contributor_ids`，不读取 `Annotation.user_id` 推断编辑者。
+- 累积是 task 行锁下的 read-modify-write；`NULL` 具有粘性：在 legacy 未知题上新增一笔标注不会把未知收窄成“只有新 actor”的已知集合。畸形（非数组）值同样保持未知。
+- `submit` / `skip` / 批量送审 / 视频分段完成后进入 review 时，将累积集合、存活标注作者、有效 assignee 与提交者一起冻结为 `review_contributor_ids`，并写 `review_submitter_id` 与新的 `review_round_id`。未知累积量不会伪造已知的 review 集合。
+- 离开 review（`withdraw` / `reopen` / `accept-rejection` / `review/reject` / 批次退回或重置 / 视频分段重开）会清空当前轮的 review 证据；标注累积集合按“保守”原则保留（删除、重置、改派、重开都不清除）。
+- 审核阶段的修改属于审核动作，不把审核员加入标注贡献者集合。首次审核统计（`first_review_*`）保持不变。
+
+本增量只记录证据，不据此放行/拒绝；基于该证据的自审拦截属于后续项目级角色增量。
+
 ## Batch 级审核细节
 
 ### annotating → reviewing

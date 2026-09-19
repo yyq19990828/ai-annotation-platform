@@ -471,6 +471,12 @@ async def submit_batch_review(
                     "batch_id": str(batch_id),
                     "assignee_id": str(task.assignee_id) if task.assignee_id else None,
                     "contributor_ids": result["contributor_ids"],
+                    "review_contributor_ids": result["review_contributor_ids"],
+                    "review_submitter_id": (
+                        str(result["review_submitter_id"])
+                        if result["review_submitter_id"]
+                        else None
+                    ),
                     "review_round_id": str(result["review_round_id"]),
                     "result": "submitted",
                     "trigger": "batch_submit_review",

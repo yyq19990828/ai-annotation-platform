@@ -1064,7 +1064,11 @@ class BatchService:
                 Task.batch_id == batch_id,
                 Task.status.in_(["review", "completed"]),
             )
-            .values(status="pending")
+            .values(
+                status="pending",
+                review_contributor_ids=None,
+                review_submitter_id=None,
+            )
         )
         affected = result.rowcount
 
@@ -1137,7 +1141,11 @@ class BatchService:
                 Task.batch_id == batch_id,
                 Task.status != "pending",
             )
-            .values(status="pending")
+            .values(
+                status="pending",
+                review_contributor_ids=None,
+                review_submitter_id=None,
+            )
         )
         tasks_reset = result.rowcount
 

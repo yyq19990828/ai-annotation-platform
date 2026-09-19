@@ -28,6 +28,7 @@ from app.db.models.video_tracker_job import (
     VideoTrackerJobKind,
     VideoTrackerJobStatus,
 )
+from app.services.annotation_evidence import record_annotation_actors_for_tasks
 from app.services.annotation_propagation import _new_track_id
 from app.services.gpu_arbitration.contracts import (
     GPUDispatchContextFactory,
@@ -2201,6 +2202,12 @@ async def accept_tracker_job(
     except ValueError:
         await db.rollback()
         raise
+    # A2 · the accepting actor authored the tracker writes on every touched task.
+    await record_annotation_actors_for_tasks(
+        db,
+        {task.id, *(source.task_id for source in source_map.values())},
+        effective_actor,
+    )
     # v0.22.2 · M · 记录本 job 触及的轨迹 id (回填源 + 新建) 供前端刷新/审计。落 job.prompt JSONB
     # (免 DB 迁移); accept 后 job 终态, prompt 不再被 runner 读, 写此键安全。JSONB 须重赋新 dict
     # 才能让 SQLAlchemy 检测到脏 (同一 dict 引用 in-place 改不触发 UPDATE)。

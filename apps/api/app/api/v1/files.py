@@ -6,6 +6,7 @@ from app.deps import get_db, get_current_user
 from app.db.models.user import User
 from app.db.models.task import Task
 from app.schemas.task import UploadInitRequest, UploadInitResponse, TaskFileUrlResponse
+from app.services.annotation_evidence import new_task_annotation_contributors
 from app.services.display_id import next_display_id
 from app.services.storage import storage_service
 
@@ -29,6 +30,7 @@ async def upload_init(
         file_path=storage_key,
         file_type=_infer_file_type(data.content_type),
         status="uploading",
+        annotation_contributor_ids=new_task_annotation_contributors(),
     )
     db.add(task)
     await db.commit()

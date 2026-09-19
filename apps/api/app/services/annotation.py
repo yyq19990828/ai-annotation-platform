@@ -37,6 +37,10 @@ from app.services.annotation_propagation import (
     _new_track_id as _new_track_id,
     _track_visible_keyframes as _track_visible_keyframes,
 )
+from app.services.annotation_evidence import (
+    record_annotation_actor,
+    record_annotation_actors_for_tasks,
+)
 from app.services.annotation_track_identity import prepare_compact_track_identity
 from app.services.raster_mask_storage import (
     prepare_mask_geometry_for_annotation_write,
@@ -301,6 +305,8 @@ class AnnotationService:
                 _raise_scene_track_conflict(exc)
         await self.db.flush()
 
+        if task is not None:
+            await record_annotation_actor(self.db, task, user_id)
         await self._update_task_stats(task_id)
         return annotation
 
@@ -536,6 +542,8 @@ class AnnotationService:
             anns.append(annotation)
 
         await self.db.flush()
+        if task is not None:
+            await record_annotation_actor(self.db, task, user_id)
         await self._update_task_stats(prediction.task_id)
         return anns
 
@@ -917,6 +925,7 @@ class AnnotationService:
             src=src, ctx=ctx, user_id=user_id, override_psr=override_psr
         )
         await self.db.flush()
+        await record_annotation_actor(self.db, target_task, user_id)
         await self._update_task_stats(target_task_id)
         return new_annotation, motion_compensated
 
@@ -1180,6 +1189,7 @@ class AnnotationService:
         # 一次 flush + 一次 task stats 更新(原逐框 _update_task_stats 是 N+1 的另一
         # 来源: 每框都做 count 查询 + Task.get)。最终计数/状态与逐框累加等价。
         await self.db.flush()
+        await record_annotation_actor(self.db, target_task, user_id)
         await self._update_task_stats(target_task_id)
         return results, motion_compensated
 
@@ -1395,6 +1405,11 @@ class AnnotationService:
             ann.scene_track_id = track.id
 
         await self.db.flush()
+        await record_annotation_actors_for_tasks(
+            self.db,
+            {from_task.id, to_task.id, *(ann.task_id for ann in created)},
+            user_id,
+        )
         for ann in created:
             await self._update_task_stats(ann.task_id)
         return created, motion_compensated and bool(created), skipped_frames
@@ -1622,6 +1637,7 @@ class AnnotationService:
                 deleted_source = True
 
         await self.db.flush()
+        await record_annotation_actor(self.db, task, user_id)
         await self._update_task_stats(task.id)
         source = None if deleted_source else annotation
         return source, created, deleted_source, removed_frame_indexes
@@ -1666,6 +1682,7 @@ class AnnotationService:
             raise ValueError("unsupported composition operation")
 
         await self.db.flush()
+        await record_annotation_actor(self.db, task, user_id)
         await self._update_task_stats(task.id)
         return updated, created, deleted
 

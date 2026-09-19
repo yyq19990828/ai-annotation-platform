@@ -32,6 +32,7 @@ from app.schemas.mask_mutation import (
     MaskUpdateMutation,
 )
 from app.services.annotation import AnnotationService
+from app.services.annotation_evidence import record_annotation_actor
 from app.services.annotation_slice import SLICE_RESTORE_TTL
 from app.schemas.annotation_slice import AnnotationSliceResponse
 from app.services.mask_slice import slice_mask_rle
@@ -1647,6 +1648,7 @@ class MaskMutationService:
             rle_cache,
             algebra_budget,
         )
+        await record_annotation_actor(self.db, task, actor.id)
         await AnnotationService(self.db)._update_task_stats(task_id)
         await heartbeat_task_lock_for_legacy_video(self.db, task, actor.id)
 

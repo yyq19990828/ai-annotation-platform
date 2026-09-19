@@ -1389,6 +1389,16 @@ async def cleanup_annotation_orphans(
                 attribute_keys,
             )
         await db.flush()
+        if mutation_task_ids:
+            from app.services.annotation_evidence import (
+                record_annotation_actors_for_tasks,
+            )
+
+            # A2 · this cleanup writes annotation attributes / deactivations under
+            # task locks already held above, so accumulate the actor here too.
+            await record_annotation_actors_for_tasks(
+                db, mutation_task_ids, current_user.id
+            )
         if deactivated_task_ids:
             from app.services.annotation import AnnotationService
 

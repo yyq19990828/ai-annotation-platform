@@ -27,6 +27,7 @@ from app.services.scheduler import (
 from app.services.storage import storage_service
 from app.db.models.task_batch import TaskBatch
 from app.db.models.project_member import ProjectMember
+from app.services.annotation_evidence import freeze_review_contributor_evidence
 
 logger = logging.getLogger(__name__)
 VIDEO_MANIFEST_URL_EXPIRES_IN = 3600
@@ -645,10 +646,17 @@ async def perform_task_submit(
 
     contributor_ids = await _task_contributor_snapshot(db, task)
     _capture_first_review_contributor_snapshot(task, contributor_ids)
+    # A2 · freeze the round's authorization evidence atomically with the new
+    # review round. Unknown accumulator stays unknown.
+    freeze_review_contributor_evidence(
+        task, submitter_id=actor.id, contributor_ids=contributor_ids
+    )
 
     return {
         "review_round_id": review_round_id,
         "contributor_ids": contributor_ids,
+        "review_contributor_ids": task.review_contributor_ids,
+        "review_submitter_id": task.review_submitter_id,
         "mask_qc_run": mask_qc_run,
         "mask_qc_job": mask_qc_job,
         "mask_qc_created": mask_qc_created,

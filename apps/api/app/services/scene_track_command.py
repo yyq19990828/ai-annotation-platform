@@ -22,6 +22,7 @@ from app.db.models.scene_track import (
 )
 from app.db.models.task import Task
 from app.schemas.scene_track import SceneTrackCommandRequest
+from app.services.annotation_evidence import record_annotation_actors_for_tasks
 from app.services.track_operation import SceneTrackContext, resolve_scene_track_context
 
 
@@ -803,6 +804,7 @@ async def apply_scene_track_command(
     primary_track = prepared.primary.track
     affected_track_ids = set(prepared.after_intervals)
     created_track: SceneTrack | None = None
+    resume_task_id: uuid.UUID | None = None
     if prepared.request.kind == "split":
         assert prepared.created_track_id is not None
         created_track = SceneTrack(
@@ -895,6 +897,7 @@ async def apply_scene_track_command(
             if frame == prepared.request.resume_frame
         )
         source = prepared.affected_members[0]
+        resume_task_id = target_task_id
         db.add(
             _copy_resume_member(
                 source=source, target_task_id=target_task_id, actor_id=actor_id
@@ -911,6 +914,16 @@ async def apply_scene_track_command(
         )
 
     await db.flush()
+    # A2 · every scene-track member write is annotation-phase work by the actor.
+    scene_affected_tasks = {member.task_id for member in prepared.affected_members}
+    scene_affected_tasks |= {member.task_id for member in prepared.primary.members}
+    if prepared.secondary is not None:
+        scene_affected_tasks |= {
+            member.task_id for member in prepared.secondary.members
+        }
+    if resume_task_id is not None:
+        scene_affected_tasks.add(resume_task_id)
+    await record_annotation_actors_for_tasks(db, scene_affected_tasks, actor_id)
     result_revisions: dict[str, int] = {}
     tracks_for_result = [primary_track]
     if prepared.secondary is not None:
@@ -1233,5 +1246,8 @@ async def revert_scene_track_operation(
     revert.result_revisions = result_revisions
     revert.after_state = after_state
     revert.response_json = response
+    await record_annotation_actors_for_tasks(
+        db, {row.task_id for row in all_rows}, actor_id
+    )
     await db.flush()
     return revert, response

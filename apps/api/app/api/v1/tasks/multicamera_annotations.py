@@ -167,6 +167,7 @@ async def patch_camera_member(
         member = await update_camera_member(
             db,
             task=task,
+            actor_id=current_user.id,
             member_id=member_id,
             bbox=payload.bbox,
             visibility=payload.visibility,
@@ -212,6 +213,7 @@ async def remove_camera_member(
         member = await delete_camera_member(
             db,
             task=task,
+            actor_id=current_user.id,
             member_id=member_id,
             expected_version=payload.expected_version,
             expected_track_revision=payload.expected_track_revision,
@@ -253,6 +255,7 @@ async def restore_deleted_camera_member(
         member = await restore_camera_member(
             db,
             task=task,
+            actor_id=current_user.id,
             member_id=member_id,
             expected_version=payload.expected_version,
             expected_track_revision=payload.expected_track_revision,

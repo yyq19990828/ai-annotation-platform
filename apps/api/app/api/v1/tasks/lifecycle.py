@@ -10,6 +10,10 @@ from app.deps import (
     require_roles,
 )
 from app.db.models.user import User
+from app.services.annotation_evidence import (
+    clear_review_contributor_evidence,
+    freeze_review_contributor_evidence,
+)
 from app.services.audit import AuditAction, AuditService
 from app.services.task_lock import TaskLockService
 
@@ -91,6 +95,12 @@ async def submit_task(
             "project_id": str(task.project_id),
             "assignee_id": str(task.assignee_id) if task.assignee_id else None,
             "contributor_ids": result["contributor_ids"],
+            "review_contributor_ids": result["review_contributor_ids"],
+            "review_submitter_id": (
+                str(result["review_submitter_id"])
+                if result["review_submitter_id"]
+                else None
+            ),
             "review_round_id": str(result["review_round_id"]),
             "result": "submitted",
             "mask_qc_run_id": str(mask_qc_run.id) if mask_qc_run else None,
@@ -215,6 +225,9 @@ async def skip_task(
 
     contributor_ids = await _task_contributor_snapshot(db, task)
     _capture_first_review_contributor_snapshot(task, contributor_ids)
+    freeze_review_contributor_evidence(
+        task, submitter_id=current_user.id, contributor_ids=contributor_ids
+    )
     await AuditService.log(
         db,
         actor=current_user,
@@ -229,6 +242,10 @@ async def skip_task(
             "note": body.note,
             "assignee_id": str(task.assignee_id) if task.assignee_id else None,
             "contributor_ids": contributor_ids,
+            "review_contributor_ids": task.review_contributor_ids,
+            "review_submitter_id": (
+                str(task.review_submitter_id) if task.review_submitter_id else None
+            ),
             "review_round_id": str(review_round_id),
             "result": "skipped",
         },
@@ -279,6 +296,9 @@ async def withdraw_task(
 
     task.status = "in_progress"
     task.submitted_at = None
+    # A2 · leaving review invalidates the round's frozen evidence; the
+    # annotation contributor accumulator is retained conservatively.
+    clear_review_contributor_evidence(task)
 
     if project:
         project.review_tasks = max((project.review_tasks or 0) - 1, 0)
@@ -347,6 +367,7 @@ async def reopen_task(
     task.reject_reason = None
     task.reject_reason_type = None
     task.submitted_at = None
+    clear_review_contributor_evidence(task)
 
     if project:
         project.completed_tasks = max((project.completed_tasks or 0) - 1, 0)
@@ -431,6 +452,7 @@ async def accept_rejection(
             detail={"reason": "task_not_rejected", "status": task.status},
         )
     task.status = "in_progress"
+    clear_review_contributor_evidence(task)
 
     from app.services.batch import BatchService
 
