@@ -8,6 +8,7 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 
 from app.config import settings
 from app.core.security import decode_access_token
+from app.core.token_blacklist import get_user_generation, is_blacklisted
 from app.db.enums import PlatformRole
 from app.services.notification import channel_for
 
@@ -65,16 +66,48 @@ async def _authenticate_socket_token(token: str):
         payload = decode_access_token(token)
     except Exception:
         return None
-    return await _load_active_user(payload.get("sub"))
+    user_id = payload.get("sub")
+    if not user_id:
+        return None
+    # Mirror get_current_user: a blacklisted jti or a bumped account generation
+    # invalidates the credential even though the user row is still active.
+    jti: str | None = payload.get("jti")
+    token_gen: int = payload.get("gen", 0)
+    if jti:
+        try:
+            if await is_blacklisted(jti):
+                return None
+        except Exception:
+            pass
+        try:
+            if await get_user_generation(user_id) > token_gen:
+                return None
+        except Exception:
+            pass
+    return await _load_active_user(user_id)
 
 
-async def _revalidate_active_account(user_id: str) -> bool:
-    return await _load_active_user(user_id) is not None
+async def _revalidate_project_stream(token: str, project_id: uuid.UUID) -> bool:
+    user = await _authenticate_socket_token(token)
+    if user is None:
+        return False
+    return await _revalidate_project_access(project_id, str(user.id))
 
 
-async def _revalidate_admin_account(user_id: str) -> bool:
-    user = await _load_active_user(user_id)
+async def _revalidate_task_stream(token: str, task_id: uuid.UUID) -> bool:
+    user = await _authenticate_socket_token(token)
+    if user is None:
+        return False
+    return await _revalidate_task_visible(task_id, str(user.id))
+
+
+async def _revalidate_admin_stream(token: str) -> bool:
+    user = await _authenticate_socket_token(token)
     return user is not None and user.role in _ADMIN_SOCKET_ROLES
+
+
+async def _revalidate_active_stream(token: str) -> bool:
+    return await _authenticate_socket_token(token) is not None
 
 
 async def _revalidate_project_access(project_id: uuid.UUID, user_id: str) -> bool:
@@ -178,12 +211,6 @@ async def _heartbeat_loop(websocket: WebSocket) -> None:
         log.debug("heartbeat loop ended: %s", e)
 
 
-#: Restricted streams re-check current authority at least this often while
-#: delivering, so a project/role revocation stops future messages without
-#: disconnecting unrelated authorized streams (plan section 7).
-REVALIDATE_INTERVAL = 5.0
-
-
 async def _run_pubsub_ws(
     websocket: WebSocket,
     pubsub: aioredis.client.PubSub,
@@ -201,22 +228,15 @@ async def _run_pubsub_ws(
     listen() 时漏判客户端断开的问题。
     """
 
-    last_revalidated = 0.0
-
     async def _relay() -> None:
-        nonlocal last_revalidated
         async for message in pubsub.listen():
             if message["type"] != "message":
                 continue
-            if revalidate is not None:
-                loop_time = asyncio.get_running_loop().time()
-                if loop_time - last_revalidated >= REVALIDATE_INTERVAL:
-                    last_revalidated = loop_time
-                    if not await revalidate():
-                        # Authority changed after the handshake: stop delivering
-                        # restricted messages.  The endpoint's finally block
-                        # unsubscribes; unrelated sockets are untouched.
-                        return
+            if revalidate is not None and not await revalidate():
+                # Authority or credential changed after the handshake: stop
+                # before forwarding this protected payload.  The endpoint's
+                # finally block unsubscribes; unrelated sockets are untouched.
+                return
             data = message["data"]
             await websocket.send_text(
                 data.decode() if isinstance(data, bytes) else data
@@ -270,7 +290,6 @@ async def preannotate_progress(
     if user is None or not await _revalidate_project_access(project_id, str(user.id)):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
-    user_id = str(user.id)
 
     await websocket.accept()
     r = aioredis.Redis(connection_pool=_get_redis_pool())
@@ -282,7 +301,7 @@ async def preannotate_progress(
             websocket,
             pubsub,
             heartbeat=False,
-            revalidate=lambda: _revalidate_project_access(project_id, user_id),
+            revalidate=lambda: _revalidate_project_stream(token, project_id),
         )
     except WebSocketDisconnect:
         pass
@@ -316,7 +335,6 @@ async def batch_events_socket(
     if user is None or not await _revalidate_project_access(project_id, str(user.id)):
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
-    user_id = str(user.id)
 
     await websocket.accept()
     r = aioredis.Redis(connection_pool=_get_redis_pool())
@@ -327,7 +345,7 @@ async def batch_events_socket(
         await _run_pubsub_ws(
             websocket,
             pubsub,
-            revalidate=lambda: _revalidate_project_access(project_id, user_id),
+            revalidate=lambda: _revalidate_project_stream(token, project_id),
         )
     except WebSocketDisconnect:
         pass
@@ -378,7 +396,7 @@ async def prediction_jobs_socket(
         await _run_pubsub_ws(
             websocket,
             pubsub,
-            revalidate=lambda: _revalidate_admin_account(str(user.id)),
+            revalidate=lambda: _revalidate_admin_stream(token),
         )
     except WebSocketDisconnect:
         pass
@@ -432,9 +450,7 @@ async def video_tracker_job_socket(
         await _run_pubsub_ws(
             websocket,
             pubsub,
-            revalidate=lambda: _revalidate_task_visible(
-                task_id_for_revalidate, str(user_id)
-            ),
+            revalidate=lambda: _revalidate_task_stream(token, task_id_for_revalidate),
         )
     except WebSocketDisconnect:
         pass
@@ -508,7 +524,7 @@ async def ml_backend_stats_socket(
         await _run_pubsub_ws(
             websocket,
             pubsub,
-            revalidate=lambda: _revalidate_admin_account(str(user_id)),
+            revalidate=lambda: _revalidate_admin_stream(token),
         )
     except WebSocketDisconnect:
         pass
@@ -561,7 +577,7 @@ async def notifications_socket(
         await _run_pubsub_ws(
             websocket,
             pubsub,
-            revalidate=lambda: _revalidate_active_account(str(user_id)),
+            revalidate=lambda: _revalidate_active_stream(token),
         )
     except WebSocketDisconnect:
         pass

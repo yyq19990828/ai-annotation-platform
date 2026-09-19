@@ -190,21 +190,21 @@ async def test_feedback_status_event_reaches_all_active_descendant_authors(
     qa, _ = reviewer
     old_only = await create_user(
         db_session,
-        "reviewer",
+        "employee",
         f"old-only-{uuid4().hex}@test.local",
         "Old-only",
     )
     grandchild_only = await create_user(
         db_session,
-        "reviewer",
+        "employee",
         f"grandchild-only-{uuid4().hex}@test.local",
         "Grandchild-only",
     )
     inactive = await create_user(
-        db_session, "annotator", f"inactive-{uuid4().hex}@test.local", "Inactive"
+        db_session, "employee", f"inactive-{uuid4().hex}@test.local", "Inactive"
     )
     away = await create_user(
-        db_session, "annotator", f"away-{uuid4().hex}@test.local", "Away"
+        db_session, "employee", f"away-{uuid4().hex}@test.local", "Away"
     )
     inactive.is_active = False
     project, batch, task = await _seed_task_scope(db_session, owner, author)
@@ -361,12 +361,12 @@ async def test_annotation_mentions_notify_original_comment_only_and_filter_acces
     qa, _ = reviewer
     inactive = await create_user(
         db_session,
-        "annotator",
+        "employee",
         f"inactive-mention-{uuid4().hex}@test.local",
         "Inactive",
     )
     away = await create_user(
-        db_session, "annotator", f"away-mention-{uuid4().hex}@test.local", "Away"
+        db_session, "employee", f"away-mention-{uuid4().hex}@test.local", "Away"
     )
     project, batch, task = await _seed_task_scope(db_session, owner, qa)
     for user, role in (

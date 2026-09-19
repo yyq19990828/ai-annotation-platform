@@ -21,6 +21,7 @@ from sqlalchemy import Select, false, or_, select
 from app.db.enums import (
     MANAGER_PLATFORM_ROLES,
     PLATFORM_ROLES,
+    PROJECT_ROLES,
     PlatformRole,
     ProjectRole,
 )
@@ -53,19 +54,32 @@ def _valid_membership_conditions():
     """SQL conditions mirroring the shared resolver's membership contract.
 
     A membership only authorizes when the account is active, its platform role
-    is a current known value (never legacy ``annotator``/``reviewer``) and the
-    platform/project-role pairing is valid (a platform viewer may only hold a
-    viewer membership).  Callers must join :class:`User` on the membership.
+    is a current known value (never legacy ``annotator``/``reviewer``), the
+    project role is a known current value, and the platform/project-role pairing
+    is valid (a platform viewer may only hold a viewer membership).  Callers
+    must join :class:`User` on the membership.
     """
 
     return (
         User.is_active.is_(True),
         User.role.in_(list(PLATFORM_ROLES)),
+        ProjectMember.role.in_(list(PROJECT_ROLES)),
         or_(
             User.role != PlatformRole.VIEWER.value,
             ProjectMember.role == ProjectRole.VIEWER.value,
         ),
     )
+
+
+def valid_membership_conditions():
+    """Public alias for the shared valid-membership SQL contract.
+
+    Other aggregate/delivery owners (for example notification delivery) reuse
+    this so the active / known-platform-role / known-project-role / viewer
+    pairing contract is defined once.
+    """
+
+    return _valid_membership_conditions()
 
 
 def membership_project_ids(user: User, *project_roles: str) -> Select[tuple[object]]:

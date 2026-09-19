@@ -14,21 +14,25 @@ from collections.abc import Iterable
 from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
-from sqlalchemy import select, update, func, and_, delete, or_, tuple_
+from sqlalchemy import String, delete, func, or_, select, tuple_, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.db.enums import (
     MANAGER_PLATFORM_ROLES,
-    PLATFORM_ROLES,
     PlatformRole,
     ProjectRole,
 )
+from app.db.models.async_job import AsyncJob
 from app.db.models.notification import Notification
 from app.db.models.notification_preference import NotificationPreference
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.user import User
+from app.services.project_aggregates import (
+    platform_role_is_manager,
+    valid_membership_conditions,
+)
 
 
 log = logging.getLogger(__name__)
@@ -51,6 +55,67 @@ def _notification_project_id(row: Notification) -> uuid.UUID | None:
         return uuid.UUID(str(raw))
     except (TypeError, ValueError):
         return None
+
+
+def _effective_project_text_expr():
+    """SQL text expression for a notification's actual project scope.
+
+    Prefers an explicit ``payload.project_id`` and falls back to the owning
+    project of an export/async job target.  A malformed or absent value yields
+    NULL, which fails closed because it matches no accessible project.
+    """
+
+    export_project = (
+        select(func.cast(AsyncJob.project_id, String))
+        .where(AsyncJob.id == Notification.target_id)
+        .correlate(Notification)
+        .scalar_subquery()
+    )
+    return func.coalesce(Notification.payload["project_id"].astext, export_project)
+
+
+def _is_restricted_expr():
+    """A notification is project-restricted when it names or targets a project."""
+
+    return or_(
+        Notification.target_type == "export",
+        Notification.payload["project_id"].astext.is_not(None),
+    )
+
+
+def _member_project_text_select(user: User, *project_roles: str):
+    stmt = (
+        select(func.cast(ProjectMember.project_id, String))
+        .join(User, User.id == ProjectMember.user_id)
+        .where(ProjectMember.user_id == user.id, *valid_membership_conditions())
+    )
+    if project_roles:
+        stmt = stmt.where(ProjectMember.role.in_(list(project_roles)))
+    return stmt
+
+
+def _owned_project_text_select(user: User):
+    return select(func.cast(Project.id, String)).where(Project.owner_id == user.id)
+
+
+def _accessible_project_clause(user: User, project_text):
+    if user.role == PlatformRole.SUPER_ADMIN.value:
+        return None
+    arms = [project_text.in_(_member_project_text_select(user))]
+    if platform_role_is_manager(user.role):
+        arms.append(project_text.in_(_owned_project_text_select(user)))
+    return or_(*arms)
+
+
+def _export_capable_project_clause(user: User, project_text):
+    if user.role == PlatformRole.SUPER_ADMIN.value:
+        return None
+    arms = [
+        project_text.in_(_member_project_text_select(user, ProjectRole.REVIEWER.value))
+    ]
+    if platform_role_is_manager(user.role):
+        arms.append(project_text.in_(_owned_project_text_select(user)))
+    return or_(*arms)
 
 
 class NotificationService:
@@ -119,7 +184,12 @@ class NotificationService:
         payload: dict | None = None,
         defer_publish: bool = False,
     ) -> list[Notification]:
-        """Write a de-duplicated fan-out, optionally deferring all publishes."""
+        """Write a de-duplicated fan-out, publishing once for the whole batch.
+
+        Rows are always written with ``defer_publish=True`` internally so the
+        delivery re-authorization runs once per fan-out instead of once per row.
+        """
+
         out: list[Notification] = []
         seen: set[uuid.UUID] = set()
         for uid in user_ids:
@@ -132,40 +202,100 @@ class NotificationService:
                 target_type=target_type,
                 target_id=target_id,
                 payload=payload,
-                defer_publish=defer_publish,
+                defer_publish=True,
             )
             if row is not None:
                 out.append(row)
+        if not defer_publish and out:
+            await self.publish_committed(out)
         return out
 
-    async def delivery_allowed_pairs(
-        self, pairs: set[tuple[uuid.UUID, uuid.UUID]]
-    ) -> set[tuple[uuid.UUID, uuid.UUID]]:
-        """Pairs of ``(project_id, user_id)`` that may still receive deliveries.
+    async def _resolve_delivery_scopes(
+        self, rows: list[Notification]
+    ) -> list[tuple[bool, uuid.UUID | None, bool]]:
+        """Resolve ``(restricted, project_id, export_required)`` per notification.
 
-        A project-scoped notification is only delivered while the recipient has
-        a current valid membership or legitimate ownership.  One batched query
-        per party keeps fan-out delivery from an N+1 lookup.
+        ``payload.project_id`` is preferred; export/async-job targets resolve the
+        owning ``AsyncJob`` in one batched query.  A missing/malformed restricted
+        target resolves to ``None`` and therefore fails closed, while a job with
+        no project (explicit system/global work) is preserved as global.
         """
 
+        job_ids = {
+            row.target_id for row in rows if row.target_type in {"export", "async_job"}
+        }
+        jobs: dict[uuid.UUID, tuple[uuid.UUID | None, str | None]] = {}
+        if job_ids:
+            job_rows = await self.db.execute(
+                select(AsyncJob.id, AsyncJob.project_id, AsyncJob.kind).where(
+                    AsyncJob.id.in_(job_ids)
+                )
+            )
+            jobs = {jid: (pid, kind) for jid, pid, kind in job_rows.all()}
+
+        scopes: list[tuple[bool, uuid.UUID | None, bool]] = []
+        for row in rows:
+            payload = row.payload if isinstance(row.payload, dict) else {}
+            restricted = row.target_type == "export"
+            export_required = row.target_type == "export"
+            project_id = _notification_project_id(row)
+            if "project_id" in payload:
+                restricted = True
+            if row.target_type in {"export", "async_job"}:
+                job = jobs.get(row.target_id)
+                if job is None:
+                    restricted = True
+                    project_id = None
+                else:
+                    job_project, _job_kind = job
+                    if row.target_type == "export":
+                        restricted = True
+                        export_required = True
+                        project_id = job_project
+                    elif job_project is not None:
+                        restricted = True
+                        project_id = job_project
+            scopes.append((restricted, project_id, export_required))
+        return scopes
+
+    async def _allowed_delivery_indices(
+        self,
+        rows: list[Notification],
+        scopes: list[tuple[bool, uuid.UUID | None, bool]],
+    ) -> set[int]:
+        pairs = {
+            (pid, row.user_id)
+            for row, (restricted, pid, _export) in zip(rows, scopes)
+            if restricted and pid is not None
+        }
+        allowed: set[int] = set()
         if not pairs:
-            return set()
-        allowed: set[tuple[uuid.UUID, uuid.UUID]] = set()
+            return {
+                index
+                for index, (restricted, _pid, _export) in enumerate(scopes)
+                if not restricted
+            }
 
         member_rows = await self.db.execute(
             select(ProjectMember.project_id, ProjectMember.user_id)
             .join(User, User.id == ProjectMember.user_id)
             .where(
                 tuple_(ProjectMember.project_id, ProjectMember.user_id).in_(pairs),
-                User.is_active.is_(True),
-                User.role.in_(list(PLATFORM_ROLES)),
-                or_(
-                    User.role != PlatformRole.VIEWER.value,
-                    ProjectMember.role == ProjectRole.VIEWER.value,
-                ),
+                *valid_membership_conditions(),
             )
         )
-        allowed.update((pid, uid) for pid, uid in member_rows.all())
+        member_pairs = {(pid, uid) for pid, uid in member_rows.all()}
+
+        reviewer_rows = await self.db.execute(
+            select(ProjectMember.project_id, ProjectMember.user_id)
+            .join(User, User.id == ProjectMember.user_id)
+            .where(
+                tuple_(ProjectMember.project_id, ProjectMember.user_id).in_(pairs),
+                *valid_membership_conditions(),
+                ProjectMember.role == ProjectRole.REVIEWER.value,
+            )
+        )
+        reviewer_pairs = {(pid, uid) for pid, uid in reviewer_rows.all()}
 
         owner_rows = await self.db.execute(
             select(Project.id, Project.owner_id)
@@ -176,7 +306,32 @@ class NotificationService:
                 User.role.in_(list(MANAGER_PLATFORM_ROLES)),
             )
         )
-        allowed.update((pid, uid) for pid, uid in owner_rows.all())
+        owner_pairs = {(pid, uid) for pid, uid in owner_rows.all()}
+
+        super_rows = await self.db.execute(
+            select(User.id).where(
+                User.id.in_({uid for _pid, uid in pairs}),
+                User.is_active.is_(True),
+                User.role == PlatformRole.SUPER_ADMIN.value,
+            )
+        )
+        super_ids = set(super_rows.scalars().all())
+        super_pairs = {(pid, uid) for pid, uid in pairs if uid in super_ids}
+
+        base_pairs = member_pairs | owner_pairs | super_pairs
+        export_pairs = reviewer_pairs | owner_pairs | super_pairs
+        for index, (restricted, pid, export_required) in enumerate(scopes):
+            if not restricted:
+                allowed.add(index)
+                continue
+            if pid is None:
+                continue
+            pair = (pid, rows[index].user_id)
+            if export_required:
+                if pair in export_pairs:
+                    allowed.add(index)
+            elif pair in base_pairs:
+                allowed.add(index)
         return allowed
 
     async def publish_committed(self, notifications: Iterable[Notification]) -> None:
@@ -189,25 +344,26 @@ class NotificationService:
 
         Project-scoped rows are re-authorized against current project access, so
         losing a membership stops future restricted deliveries for that project
-        while unrelated notifications still publish.
+        while unrelated notifications still publish.  Export deliveries require
+        the export capability, not mere membership.
         """
         rows = list(notifications)
-        pairs: set[tuple[uuid.UUID, uuid.UUID]] = set()
-        for row in rows:
-            project_id = _notification_project_id(row)
-            if project_id is not None:
-                pairs.add((project_id, row.user_id))
         try:
-            allowed = await self.delivery_allowed_pairs(pairs)
+            scopes = await self._resolve_delivery_scopes(rows)
+            allowed = await self._allowed_delivery_indices(rows, scopes)
         except Exception:
             # Fail closed for project-scoped rows; never turn an already
             # committed business write into a failed request.
             log.exception("notification delivery authorization failed")
             allowed = set()
+            for index, row in enumerate(rows):
+                payload = row.payload if isinstance(row.payload, dict) else {}
+                restricted = row.target_type == "export" or "project_id" in payload
+                if not restricted:
+                    allowed.add(index)
 
-        for row in rows:
-            project_id = _notification_project_id(row)
-            if project_id is not None and (project_id, row.user_id) not in allowed:
+        for index, row in enumerate(rows):
+            if index not in allowed:
                 log.info(
                     "notification suppressed for revoked project access user=%s type=%s",
                     row.user_id,
@@ -257,6 +413,27 @@ class NotificationService:
                 e,
             )
 
+    def _scope_conditions(self, user: User) -> list:
+        """SQL conditions hiding project-restricted rows the account cannot read.
+
+        Mirrors the shared resolver: super administrators see everything; every
+        other account sees explicit global rows plus rows whose actual project is
+        one they manage or hold a valid membership in.  Export rows additionally
+        require the reviewer/manager export capability.
+        """
+
+        if user.role == PlatformRole.SUPER_ADMIN.value:
+            return []
+        project_text = _effective_project_text_expr()
+        restricted = _is_restricted_expr()
+        return [
+            or_(~restricted, _accessible_project_clause(user, project_text)),
+            or_(
+                Notification.target_type != "export",
+                _export_capable_project_clause(user, project_text),
+            ),
+        ]
+
     async def list_for_user(
         self,
         user_id: uuid.UUID,
@@ -265,12 +442,18 @@ class NotificationService:
         limit: int = 30,
         offset: int = 0,
     ) -> tuple[list[Notification], int, int]:
-        base = select(Notification).where(Notification.user_id == user_id)
+        user = await self.db.get(User, user_id)
+        if user is None:
+            return [], 0, 0
+        scope = self._scope_conditions(user)
+        base = select(Notification).where(Notification.user_id == user_id, *scope)
         count_q = select(func.count(Notification.id)).where(
-            Notification.user_id == user_id
+            Notification.user_id == user_id, *scope
         )
         unread_q = select(func.count(Notification.id)).where(
-            and_(Notification.user_id == user_id, Notification.read_at.is_(None))
+            Notification.user_id == user_id,
+            Notification.read_at.is_(None),
+            *scope,
         )
 
         q = base
@@ -284,8 +467,14 @@ class NotificationService:
         return items, int(total), int(unread)
 
     async def unread_count(self, user_id: uuid.UUID) -> int:
+        user = await self.db.get(User, user_id)
+        if user is None:
+            return 0
+        scope = self._scope_conditions(user)
         q = select(func.count(Notification.id)).where(
-            and_(Notification.user_id == user_id, Notification.read_at.is_(None))
+            Notification.user_id == user_id,
+            Notification.read_at.is_(None),
+            *scope,
         )
         return int((await self.db.execute(q)).scalar() or 0)
 

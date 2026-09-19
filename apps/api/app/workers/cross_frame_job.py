@@ -28,10 +28,10 @@ from app.workers.celery_app import celery_app
 log = logging.getLogger(__name__)
 
 
-async def _can_edit_review_task(db: AsyncSession, task: Task, actor: User) -> bool:
-    """Project-scoped review edit authority for a task in ``review`` status.
+async def _review_task_authority(db: AsyncSession, task: Task, actor: User) -> None:
+    """Assert current project manager/reviewer authority for review-state work.
 
-    Only the *current* project manager or reviewer may write review-state work;
+    Only the *current* project manager or reviewer may touch review-state work;
     a legacy global account role is never a fallback.
     """
 
@@ -40,12 +40,34 @@ async def _can_edit_review_task(db: AsyncSession, task: Task, actor: User) -> bo
 
     project = await db.get(Project, task.project_id)
     if project is None:
-        return False
+        raise HTTPException(status_code=404, detail="task_missing")
     try:
         access = await resolve_project_access(db, user=actor, project=project)
-    except HTTPException:
-        return False
-    return bool(access.is_manager or access.project_role == ProjectRole.REVIEWER.value)
+    except HTTPException as exc:
+        raise HTTPException(status_code=403, detail="permission_changed") from exc
+    if access.is_manager or access.project_role == ProjectRole.REVIEWER.value:
+        return
+    raise HTTPException(status_code=403, detail="permission_changed")
+
+
+async def _assert_review_write_allowed(
+    db: AsyncSession, task: Task, actor: User
+) -> None:
+    """Authorize a review-phase write to one target task.
+
+    Enforces both current project authority and the task's frozen review
+    contributor evidence, including the effective annotator, so an author or
+    manager cannot self-review through the cross-frame phase.
+    """
+
+    from app.api.v1.tasks._shared import _effective_task_assignee_id
+    from app.services.annotation_evidence import assert_review_evidence_current
+
+    await _review_task_authority(db, task, actor)
+    effective_annotator_id = await _effective_task_assignee_id(db, task)
+    assert_review_evidence_current(
+        task, actor.id, effective_annotator_id=effective_annotator_id
+    )
 
 
 @celery_app.task(bind=True, name="app.workers.cross_frame_job.run_cross_frame_job")
@@ -261,15 +283,23 @@ async def execute_cross_frame_job(
                 await _assert_task_visible(db, target_task, actor)
             except HTTPException as exc:
                 raise RuntimeError("permission_changed") from exc
-            can_edit_review = await _can_edit_review_task(db, source_task, actor)
-            if source_task.status == "completed" or (
-                source_task.status == "review" and not can_edit_review
-            ):
+            if source_task.status == "completed":
                 raise RuntimeError("source_task_locked")
-            if target_task.status == "completed" or (
-                target_task.status == "review" and not can_edit_review
-            ):
+            if source_task.status == "review":
+                # Reading a review-state source still needs review authority.
+                try:
+                    await _review_task_authority(db, source_task, actor)
+                except HTTPException as exc:
+                    raise RuntimeError("source_task_locked") from exc
+            if target_task.status == "completed":
                 raise RuntimeError("target_task_locked")
+            if target_task.status == "review":
+                # Writing into a review-state target also validates the frozen
+                # review contributor evidence for this target task.
+                try:
+                    await _assert_review_write_allowed(db, target_task, actor)
+                except HTTPException as exc:
+                    raise RuntimeError("target_task_locked") from exc
 
             source_rows = list(
                 (
