@@ -91,7 +91,7 @@ async def test_project_admin_cannot_invite_privileged_roles(
     assert count == 0
 
 
-@pytest.mark.parametrize("role", ["reviewer", "annotator", "viewer"])
+@pytest.mark.parametrize("role", ["employee", "viewer"])
 async def test_project_admin_can_invite_supported_roles(
     httpx_client: httpx.AsyncClient,
     project_admin,
@@ -137,7 +137,7 @@ async def test_project_admin_does_not_expire_another_inviter_record(
 
     response = await httpx_client.post(
         "/api/v1/users/invite",
-        json={"email": invitation.email, "role": "annotator"},
+        json={"email": invitation.email, "role": "employee"},
         headers=_headers(project_admin),
     )
 
@@ -284,7 +284,7 @@ async def test_project_admin_can_manage_own_supported_invitation(
         db_session,
         invited_by=project_admin[0],
         email=f"own-{operation}@invite.test",
-        role="reviewer",
+        role="employee",
     )
     original_token = invitation.token
     path = f"/api/v1/invitations/{invitation.id}"
@@ -378,7 +378,7 @@ async def test_accept_invitation_creates_and_assigns_group(
         "/api/v1/users/invite",
         json={
             "email": "new-group@invite.test",
-            "role": "annotator",
+            "role": "employee",
             "group_name": "  New Group  ",
         },
         headers=_headers(super_admin),
@@ -448,7 +448,7 @@ async def test_invitation_normalizes_blank_group_to_none(
         "/api/v1/users/invite",
         json={
             "email": "blank-group@invite.test",
-            "role": "annotator",
+            "role": "employee",
             "group_name": "   ",
         },
         headers=_headers(super_admin),

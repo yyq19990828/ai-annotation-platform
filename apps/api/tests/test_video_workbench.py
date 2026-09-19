@@ -1489,7 +1489,8 @@ async def test_video_track_convert_requires_task_visibility(
     )
 
     assert resp.status_code == 404
-    assert resp.json()["detail"] == "Task not found"
+    # No membership hides the project with the canonical project 404.
+    assert resp.json()["detail"] == "项目不存在"
 
 
 async def test_video_track_composition_aggregate_bboxes_deletes_sources(
@@ -2098,7 +2099,8 @@ async def test_video_track_composition_requires_task_visibility(
     )
 
     assert resp.status_code == 404
-    assert resp.json()["detail"] == "Task not found"
+    # No membership hides the project with the canonical project 404.
+    assert resp.json()["detail"] == "项目不存在"
 
 
 async def test_video_export_include_attributes_false_removes_schema_and_attrs(

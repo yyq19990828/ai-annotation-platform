@@ -354,6 +354,12 @@ async def test_removed_member_cannot_reuse_assigned_task_url_or_write(
         await httpx_client_bound.get(f"/api/v1/tasks/{task.id}", headers=member_headers)
     ).status_code == 200
 
+    # Member removal is blocked while unfinished work remains; completing the
+    # task lets the owner remove the membership without an explicit handoff
+    # while the historical assignment link stays on the task.
+    task.status = "completed"
+    task.is_labeled = True
+    await db_session.flush()
     removed = await httpx_client_bound.delete(
         f"/api/v1/projects/{project.id}/members/{membership.id}",
         headers=_bearer(owner_token),
