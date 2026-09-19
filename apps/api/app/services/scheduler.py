@@ -228,12 +228,12 @@ def task_visibility_clause(user: User, *, project_role: str | None = None):
         ProjectRole.VIEWER.value,
     ):
         return false()
+    is_annotator = project_role == ProjectRole.ANNOTATOR.value
     assigned = _task_assigned_to_user(user)
-    return or_(
-        # An explicitly assigned unbatched task has no batch status to gate it.
-        and_(Task.batch_id.is_(None), Task.assignee_id == user.id),
+    arms = [
         # Keep the existing active/annotating open-pool behavior, while an
-        # explicit task assignee narrows a normally batch-scoped task.
+        # explicit task assignee narrows a normally batch-scoped task.  This
+        # task-level override filtering applies to viewer too.
         and_(
             Task.batch_id.is_not(None),
             TaskBatch.status.in_(["active", "annotating"]),
@@ -245,15 +245,24 @@ def task_visibility_clause(user: User, *, project_role: str | None = None):
             TaskBatch.status == "rejected",
             assigned,
         ),
-        # A rejected/in-progress task can be resumed during batch review by
-        # its task assignee (or the legacy batch assignee fallback).
-        and_(
-            Task.batch_id.is_not(None),
-            TaskBatch.status == "reviewing",
-            Task.status.in_(["rejected", "in_progress"]),
-            assigned,
-        ),
-    )
+    ]
+    if is_annotator:
+        arms.append(
+            # An explicitly assigned unbatched task has no batch status to gate
+            # it; only an annotator may see it.
+            and_(Task.batch_id.is_(None), Task.assignee_id == user.id)
+        )
+        arms.append(
+            # A rejected/in-progress task can be resumed during batch review by
+            # its annotator assignee; a viewer must not enter this rework arm.
+            and_(
+                Task.batch_id.is_not(None),
+                TaskBatch.status == "reviewing",
+                Task.status.in_(["rejected", "in_progress"]),
+                assigned,
+            )
+        )
+    return or_(*arms)
 
 
 # 兼容别名
