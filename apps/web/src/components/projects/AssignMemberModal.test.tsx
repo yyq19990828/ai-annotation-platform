@@ -231,7 +231,7 @@ describe("AssignMemberModal", () => {
     // stays on its original role for retry.
     expect(summary()).toHaveTextContent("标注员 0 名");
     expect(summary()).toHaveTextContent("审核员 1 名");
-    expect(screen.getByRole("button", { name: "标注员" })).toHaveAttribute("aria-pressed", "true");
+    expect(screen.getByRole("button", { name: "审核员" })).toHaveAttribute("aria-pressed", "true");
 
     mockMutateAsync.mockResolvedValue({});
     fireEvent.click(screen.getByRole("button", { name: /确认指派 1 人/ }));
