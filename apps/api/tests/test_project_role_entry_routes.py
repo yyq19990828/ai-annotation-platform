@@ -546,7 +546,7 @@ async def test_ml_backend_read_scope(
 # ── final-write freshness: revocation after the preflight is denied ──────────
 
 
-def test_canonical_annotation_write_predicate_denies_reviewer_annotation_phase():
+async def test_canonical_annotation_write_predicate_denies_reviewer_annotation_phase():
     """The canonical predicate denies a reviewer outside a review adjustment."""
 
     task = SimpleNamespace(status="in_progress")

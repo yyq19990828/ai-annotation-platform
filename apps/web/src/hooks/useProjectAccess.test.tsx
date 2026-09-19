@@ -77,8 +77,8 @@ describe("useProjectAccess", () => {
   it("返回数据的账号或项目与请求不一致时不授权", async () => {
     getAccess.mockResolvedValue(ACCESS);
     const { result } = renderHook(() => useProjectAccess("p-other"), { wrapper: makeWrapper() });
-    await waitFor(() => expect(getAccess).toHaveBeenCalled());
-    await new Promise((r) => setTimeout(r, 20));
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(getAccess).toHaveBeenCalled();
     expect(result.current.access).toBeUndefined();
     expect(result.current.hasCapability("annotation.write")).toBe(false);
   });
