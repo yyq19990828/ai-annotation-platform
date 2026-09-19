@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-09-15
+last_reviewed: 2026-09-19
 ---
 
 # 认证
@@ -83,7 +83,7 @@ Content-Type: application/json
 
 ## 项目邀请与注册
 
-管理角色通过 `POST /api/v1/users/invite` 提交 `email`、`role`、可选 `group_name` 和 `project_id`。省略项目时保留原有新账号邀请；指定项目时只允许标注员、审核员或观察者角色，已有账号的全局角色必须一致。响应中的 `invite_url` 可直接复制使用。
+管理角色通过 `POST /api/v1/users/invite` 提交 `email`、平台角色 `role`（项目管理员可邀请 `employee` / `viewer`，超级管理员可选全部平台角色）、可选 `group_name`、可选目标 `project_id` 与项目角色 `project_member_role`（`annotator` / `reviewer` / `viewer`）。平台角色与项目角色分别保存，互不代填；目标项目的角色兼容性（例如平台 `viewer` 只能获得只读项目角色）在接受时校验。响应中的 `invite_url` 可直接复制使用。
 
 公开的 `GET /api/v1/auth/invitations/{token}` 校验邀请并返回目标项目摘要。新账号通过 `POST /api/v1/auth/register` 提交 `token`、`name`、`password`，账号、用户组和项目成员关系在同一事务内建立。已有账号先登录，再调用：
 
@@ -95,7 +95,7 @@ Content-Type: application/json
 { "token": "<invitation-token>" }
 ```
 
-接口核对登录邮箱、账号启用状态、全局角色、邀请人当前管理权限及目标项目；不会静默合并账号或更改角色。项目删除、邀请过期、撤销或重复接受返回可解释的错误，失败不留下半完成的账号和项目关系。
+接口核对登录邮箱、账号启用状态、平台角色、邀请人当前管理权限及目标项目；不会静默合并账号或更改角色。项目删除、邀请过期、撤销或重复接受返回可解释的错误，失败不留下半完成的账号和项目关系。
 
 接受响应的 `acceptance` 包含 `project_id`、`project_name`、`project_member_role`、`next_action`、`next_action_label`、`responsible_person_name` 和 `active_batch_count`。客户端据此显示开始工作或等待分派；加入项目不代表已有激活批次。
 
@@ -180,7 +180,7 @@ Content-Type: application/json
 
 任务负载按条数计算：标注待办包括待开始、进行中和退回，审核待办只包括审核中，已通过任务不计入待办；已有待办汇总该成员在各项目中的分派。任务类型、难度和工时不在这一数字中折算。
 
-用户角色变更前可调用 `GET /api/v1/users/{user_id}/role/preview?role=reviewer` 查看项目、批次和任务影响。平台角色对全部项目生效，已有成员身份和负责人不自动改写；项目管理员仅看到自己负责项目的详情，其他项目只返回数量和提醒。预览不向权限范围外的目标回显用户信息。
+平台角色变更前可调用 `GET /api/v1/users/{user_id}/role/preview?role=<platform-role>` 查看项目、批次和任务影响：`role` 使用平台角色 `super_admin` / `project_admin` / `employee` / `viewer`，历史值 `annotator` / `reviewer` 不再接受；平台角色预览 / 变更仅超级管理员可做。平台角色对全部项目生效，已有成员身份和负责人不自动改写；降级会阻止不兼容的成员关系、项目所有权或未完成工作，且不级联改动其他项目。预览不向权限范围外的目标回显用户信息。项目内的职责变更使用项目成员角色预检 / 变更端点（见[项目 API](./projects#成员管理)）。
 
 ## 刷新
 

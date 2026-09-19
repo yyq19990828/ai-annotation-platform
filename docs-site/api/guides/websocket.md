@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-13
+last_reviewed: 2026-09-19
 ---
 
 # WebSocket
@@ -15,8 +15,8 @@ last_reviewed: 2026-07-13
 | URL                                           | 鉴权                            | 用途                                        |
 | --------------------------------------------- | ------------------------------- | ------------------------------------------- |
 | `/ws/notifications?token=<jwt>`               | JWT                             | 当前用户的通知与异步任务事件。              |
-| `/ws/projects/{project_id}/preannotate`       | 当前实现不校验 JWT              | 单项目批量预标进度。                        |
-| `/ws/batches/project/{project_id}`            | 当前实现不校验 JWT              | 项目 batch 状态变化。                       |
+| `/ws/projects/{project_id}/preannotate`       | 项目访问鉴权                    | 单项目批量预标进度。                        |
+| `/ws/batches/project/{project_id}`            | 项目访问鉴权                    | 项目 batch 状态变化。                       |
 | `/ws/prediction-jobs?token=<jwt>`             | `super_admin` / `project_admin` | 全局预标任务摘要。                          |
 | `/ws/video-tracker-jobs/{job_id}?token=<jwt>` | JWT + job 所属 task 可见性      | 单条视频 tracker job 的运行与候选审阅事件。 |
 | `/ws/ml-backend-stats?token=<jwt-or-api-key>` | `super_admin` / `project_admin` | ML backend 运行时指标。                     |
@@ -37,7 +37,9 @@ socket.onmessage = ({ data }) => {
 };
 ```
 
-有 JWT 的端点在握手时校验 token；失败会在 accept 前以 `1008 Policy Violation` 关闭。浏览器不能为 WebSocket 设置 `Authorization` header，因此 token 使用 query 参数。部署的 access log 必须脱敏 `token` 参数。
+需要鉴权的端点在握手时校验；失败会在 accept 前以 `1008 Policy Violation` 关闭。浏览器不能为 WebSocket 设置 `Authorization` header，因此 token 使用 query 参数。部署的 access log 必须脱敏 `token` 参数。
+
+项目作用域频道（`preannotate` / `batches`）必须按当前账号在对应项目中的有效访问（`super_admin` / 负责人 / 有效成员）鉴权，并在订阅与投递时解析当前权限；撤销后不再投递该项目的受限事件。精确的握手参数由后端 socket 端点合同给出，**不要**按“无需鉴权”实现客户端，也不要把可猜测的 project UUID 当作访问控制。
 
 ## 事件与恢复
 

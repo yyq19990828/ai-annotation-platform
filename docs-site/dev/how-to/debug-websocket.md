@@ -3,7 +3,7 @@ audience: [dev]
 type: how-to
 since: v0.1.0
 status: stable
-last_reviewed: 2026-07-13
+last_reviewed: 2026-09-19
 ---
 
 # How-to：调试 WebSocket
@@ -18,12 +18,14 @@ last_reviewed: 2026-07-13
 | ---------------------------------- | ------------------------------------- | ----------------- | ------------------------------- |
 | `/ws/notifications`                | 单用户通知推送                        | JWT token         | `useNotificationSocket.ts`      |
 | `/ws/prediction-jobs`              | 全局预标 job 进度 (admin only)        | JWT + role        | `useGlobalPreannotationJobs.ts` |
-| `/ws/projects/{id}/preannotate`    | 单项目预标进度条                      | 无（路径绑项目）  | `usePreannotation.ts`           |
-| `/ws/batches/project/{project_id}` | 项目 batch 状态同步                   | 当前实现无 JWT    | `useBatchEventsSocket.ts`       |
+| `/ws/projects/{id}/preannotate`    | 单项目预标进度条                      | 项目访问鉴权      | `usePreannotation.ts`           |
+| `/ws/batches/project/{project_id}` | 项目 batch 状态同步                   | 项目访问鉴权      | `useBatchEventsSocket.ts`       |
 | `/ws/video-tracker-jobs/{job_id}`  | 视频 tracker 运行与候选审阅事件       | JWT + task 可见性 | `useVideoTrackerJobs.ts`        |
 | `/ws/ml-backend-stats`             | PerfHud GPU/容器实时指标 (admin only) | JWT + role        | `useMLBackendStats.ts`          |
 
 production：6 个端点都走 nginx `/ws/` location 反代到 `api:8000`（[infra/docker/nginx.conf](https://github.com/anthropics/ai-annotation-platform/blob/main/infra/docker/nginx.conf)）。
+
+> 项目作用域频道（`preannotate` / `batches`）按当前账号在对应项目中的有效访问鉴权，并在订阅与投递时解析当前权限；撤销后停止该项目的受限投递。精确的握手参数由后端 socket 端点合同给出，排障时不要假设它们“无需鉴权”，也不要把 project UUID 当作访问控制。
 
 ## 常见问题
 
