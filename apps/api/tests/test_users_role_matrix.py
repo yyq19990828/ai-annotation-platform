@@ -4,10 +4,24 @@
 class TestRoleMatrix:
     """12 个角色修改守卫用例。"""
 
-    async def test_sa_upgrade_annotator_to_reviewer(
+    async def test_sa_upgrade_legacy_annotator_to_employee(
         self, httpx_client, super_admin, annotator
     ):
-        """super_admin 可将 annotator 提升为 reviewer。"""
+        """super_admin 可将历史 annotator 平台角色改为 employee。"""
+        _, token = super_admin
+        user, _ = annotator
+        r = await httpx_client.patch(
+            f"/api/v1/users/{user.id}/role",
+            json={"role": "employee"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        assert r.status_code == 200
+        assert r.json()["role"] == "employee"
+
+    async def test_sa_rejects_legacy_global_staff_role_input(
+        self, httpx_client, super_admin, annotator
+    ):
+        """旧的全局 annotator/reviewer 角色输入被拒绝。"""
         _, token = super_admin
         user, _ = annotator
         r = await httpx_client.patch(
@@ -15,8 +29,7 @@ class TestRoleMatrix:
             json={"role": "reviewer"},
             headers={"Authorization": f"Bearer {token}"},
         )
-        assert r.status_code == 200
-        assert r.json()["role"] == "reviewer"
+        assert r.status_code == 400
 
     async def test_sa_upgrade_reviewer_to_pa(self, httpx_client, super_admin, reviewer):
         """super_admin 可将 reviewer 提升为 project_admin。"""
@@ -35,7 +48,7 @@ class TestRoleMatrix:
         user, token = super_admin
         r = await httpx_client.patch(
             f"/api/v1/users/{user.id}/role",
-            json={"role": "annotator"},
+            json={"role": "viewer"},
             headers={"Authorization": f"Bearer {token}"},
         )
         assert r.status_code == 400
@@ -108,7 +121,7 @@ class TestRoleMatrix:
         user, _ = project_admin
         r = await httpx_client.patch(
             f"/api/v1/users/{user.id}/role",
-            json={"role": "reviewer"},
+            json={"role": "employee"},
             headers={"Authorization": f"Bearer {token}"},
         )
         assert r.status_code == 200
@@ -118,7 +131,7 @@ class TestRoleMatrix:
         user, token = super_admin
         r = await httpx_client.patch(
             f"/api/v1/users/{user.id}/role",
-            json={"role": "annotator"},
+            json={"role": "employee"},
             headers={"Authorization": f"Bearer {token}"},
         )
         assert r.status_code == 400  # 不能修改自己
@@ -128,7 +141,7 @@ class TestRoleMatrix:
         _, token = super_admin
         r = await httpx_client.patch(
             "/api/v1/users/00000000-0000-0000-0000-000000000000/role",
-            json={"role": "annotator"},
+            json={"role": "employee"},
             headers={"Authorization": f"Bearer {token}"},
         )
         assert r.status_code == 404
@@ -141,7 +154,7 @@ class TestRoleMatrix:
         user, _ = annotator
         r = await httpx_client.patch(
             f"/api/v1/users/{user.id}/role",
-            json={"role": "reviewer"},
+            json={"role": "employee"},
             headers={"Authorization": f"Bearer {token}"},
         )
         assert r.status_code == 200

@@ -275,13 +275,12 @@ async def test_bulk_group_assignment_scope_and_role_impact_preview(
     await db_session.refresh(managed)
     assert managed.group_id == group.id
 
+    # Platform-role preview is super-admin only (plan AUTH-04).
     impact = await httpx_client.get(
-        f"/api/v1/users/{managed.id}/role/preview?role=reviewer",
+        f"/api/v1/users/{managed.id}/role/preview?role=employee",
         headers=_headers(project_admin),
     )
-    assert impact.status_code == 200, impact.text
-    assert impact.json()["can_change"] is True
-    assert impact.json()["projects"][0]["project_id"] == str(project.id)
+    assert impact.status_code == 403, impact.text
 
     unauthorized = await httpx_client.post(
         "/api/v1/users/groups/bulk/preview",

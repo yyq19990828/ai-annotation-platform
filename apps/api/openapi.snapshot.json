@@ -7352,6 +7352,18 @@
             ],
             "title": "Project Id"
           },
+          "project_member_role": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Member Role"
+          },
           "role": {
             "maxLength": 100,
             "title": "Role",
@@ -15398,6 +15410,17 @@
               }
             ],
             "title": "Project Id"
+          },
+          "project_member_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Member Role"
           },
           "role": {
             "title": "Role",
@@ -25123,6 +25146,83 @@
         "title": "ProfileUpdate",
         "type": "object"
       },
+      "ProjectAccessOut": {
+        "description": "Resolved project access for the current account (``GET .../access``).",
+        "properties": {
+          "access_kind": {
+            "title": "Access Kind",
+            "type": "string"
+          },
+          "capabilities": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "is_manager": {
+            "default": false,
+            "title": "Is Manager",
+            "type": "boolean"
+          },
+          "membership_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Membership Id"
+          },
+          "membership_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Membership Version"
+          },
+          "platform_role": {
+            "title": "Platform Role",
+            "type": "string"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Role"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "user_id",
+          "platform_role",
+          "access_kind"
+        ],
+        "title": "ProjectAccessOut",
+        "type": "object"
+      },
       "ProjectBatchSummary": {
         "properties": {
           "assigned": {
@@ -25674,9 +25774,32 @@
             "title": "Id",
             "type": "string"
           },
+          "platform_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Platform Role"
+          },
           "role": {
             "title": "Role",
             "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
           },
           "user_email": {
             "title": "User Email",
@@ -25690,6 +25813,11 @@
           "user_name": {
             "title": "User Name",
             "type": "string"
+          },
+          "version": {
+            "default": 1,
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -25701,6 +25829,175 @@
           "assigned_at"
         ],
         "title": "ProjectMemberOut",
+        "type": "object"
+      },
+      "ProjectMemberRoleChangeRequest": {
+        "properties": {
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "preview_token": {
+            "minLength": 1,
+            "title": "Preview Token",
+            "type": "string"
+          },
+          "project_role": {
+            "enum": [
+              "annotator",
+              "reviewer",
+              "viewer"
+            ],
+            "title": "Project Role",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "replacement_annotator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement Annotator Id"
+          },
+          "replacement_reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement Reviewer Id"
+          }
+        },
+        "required": [
+          "project_role",
+          "expected_version",
+          "preview_token",
+          "reason"
+        ],
+        "title": "ProjectMemberRoleChangeRequest",
+        "type": "object"
+      },
+      "ProjectMemberRolePreviewOut": {
+        "properties": {
+          "blocker_details": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Blocker Details",
+            "type": "array"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "current_role": {
+            "title": "Current Role",
+            "type": "string"
+          },
+          "current_version": {
+            "title": "Current Version",
+            "type": "integer"
+          },
+          "member_id": {
+            "format": "uuid",
+            "title": "Member Id",
+            "type": "string"
+          },
+          "preview_token": {
+            "title": "Preview Token",
+            "type": "string"
+          },
+          "requires_handoff": {
+            "default": false,
+            "title": "Requires Handoff",
+            "type": "boolean"
+          },
+          "resource_snapshot": {
+            "additionalProperties": true,
+            "title": "Resource Snapshot",
+            "type": "object"
+          },
+          "target_role": {
+            "title": "Target Role",
+            "type": "string"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "member_id",
+          "user_id",
+          "current_role",
+          "current_version",
+          "target_role",
+          "preview_token"
+        ],
+        "title": "ProjectMemberRolePreviewOut",
+        "type": "object"
+      },
+      "ProjectMemberRolePreviewRequest": {
+        "description": "Input for the read-only role-change preview (no writes).",
+        "properties": {
+          "project_role": {
+            "enum": [
+              "annotator",
+              "reviewer",
+              "viewer"
+            ],
+            "title": "Project Role",
+            "type": "string"
+          },
+          "replacement_annotator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement Annotator Id"
+          },
+          "replacement_reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement Reviewer Id"
+          }
+        },
+        "required": [
+          "project_role"
+        ],
+        "title": "ProjectMemberRolePreviewRequest",
         "type": "object"
       },
       "ProjectOut": {
@@ -51090,6 +51387,55 @@
         ]
       }
     },
+    "/api/v1/projects/{project_id}/access": {
+      "get": {
+        "description": "Resolved project access for the current account.\n\nManagers may have null membership fields; ordinary members expose their\nmembership identity/version and fixed capability set.",
+        "operationId": "get_project_access_api_v1_projects__project_id__access_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectAccessOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Project Access",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
     "/api/v1/projects/{project_id}/annotations/import": {
       "post": {
         "description": "导入 AAP JSON envelope 中的 annotations[] 数组 (v0.10.54, ADR-0028).\n\ngeometry 透传内部格式（无需 LS 转换），user_id 归当前操作者，\nsource 保留原值，attributes._imported=true 溯源标记。",
@@ -55090,6 +55436,144 @@
           }
         ],
         "summary": "Remove Member",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/members/{member_id}/role": {
+      "patch": {
+        "description": "Role change with expected version, preview token and explicit handoff.",
+        "operationId": "change_member_role_api_v1_projects__project_id__members__member_id__role_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectMemberRoleChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMemberOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Change Member Role",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/members/{member_id}/role/preview": {
+      "post": {
+        "description": "Read-only role-change preview: blockers, resource snapshot and token.",
+        "operationId": "preview_member_role_change_api_v1_projects__project_id__members__member_id__role_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectMemberRolePreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMemberRolePreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Member Role Change",
         "tags": [
           "projects"
         ]
@@ -66894,6 +67378,7 @@
     },
     "/api/v1/users/{user_id}/role": {
       "patch": {
+        "description": "Platform-role mutation.  Super administrator only (plan AUTH-04).\n\nA platform-role edit never cascades into any project's membership; project\nresponsibility is changed through the project member role endpoints.",
         "operationId": "change_user_role_api_v1_users__user_id__role_patch",
         "parameters": [
           {
@@ -66951,6 +67436,7 @@
     },
     "/api/v1/users/{user_id}/role/preview": {
       "get": {
+        "description": "Platform-role preview.  Super administrator only (plan AUTH-04).",
         "operationId": "preview_user_role_change_api_v1_users__user_id__role_preview_get",
         "parameters": [
           {

@@ -10,7 +10,7 @@ from fastapi import HTTPException
 from sqlalchemy import Integer, case, select, func, update, delete, or_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.enums import BatchStatus, UserRole
+from app.db.enums import BatchStatus
 from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
@@ -23,6 +23,7 @@ from app.services.progress import (
     publish_batch_assignment_change,
     publish_batch_status_change,
 )
+from app.services.project_access import membership_role_compatible
 from app.services.scene import resolve_task_scene_frames
 
 # v0.16.x 拆分：角色权限守卫已抽到 batch_permissions.py，此处冗余别名 re-export，
@@ -125,12 +126,10 @@ class BatchService:
         )
         members_by_user_id = {member.user_id: member for member in members}
 
-        expected_roles = {
-            "annotator": UserRole.ANNOTATOR.value,
-            "reviewer": UserRole.REVIEWER.value,
-        }
+        # Responsibility is project-scoped: the membership role is the
+        # authority and the account only needs a compatible platform role
+        # (employee/legacy staff).  The old global role equality is gone.
         for assignment_role, user_id in targets:
-            expected_role = expected_roles[assignment_role]
             user = users_by_id.get(user_id)
             if user is None or not user.is_active:
                 raise HTTPException(
@@ -142,12 +141,12 @@ class BatchService:
                         "user_id": str(user_id),
                     },
                 )
-            if user.role != expected_role:
+            if not membership_role_compatible(user.role, assignment_role):
                 raise HTTPException(
                     status_code=400,
                     detail={
                         "reason": "assignment_role_mismatch",
-                        "message": "接收账号的角色与分派职责不匹配",
+                        "message": "接收账号的平台角色与分派职责不匹配",
                         "assignment_role": assignment_role,
                         "user_id": str(user_id),
                         "user_role": user.role,

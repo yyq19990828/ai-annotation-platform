@@ -369,8 +369,15 @@ class ProjectMemberOut(BaseModel):
     user_id: UUID
     user_name: str
     user_email: str
+    #: Project responsibility (annotator | reviewer | viewer).  Flat by design;
+    #: invitation DTOs keep the ``project_member_role`` name.
     role: str
+    #: Account/platform role, added so clients no longer conflate the two.
+    platform_role: str | None = None
+    #: Membership CAS version; increments on role change.
+    version: int = 1
     assigned_at: datetime
+    updated_at: datetime | None = None
     # 头像引用（preset:<slug> / upload:<token>）；None = 前端回退姓名首字母。
     avatar_ref: str | None = None
 
@@ -396,6 +403,56 @@ class MentionCandidateOut(BaseModel):
 class ProjectMemberCreate(BaseModel):
     user_id: UUID
     role: Literal["annotator", "reviewer", "viewer"]
+
+
+class ProjectAccessOut(BaseModel):
+    """Resolved project access for the current account (``GET .../access``)."""
+
+    project_id: UUID
+    user_id: UUID
+    platform_role: str
+    project_role: str | None = None
+    membership_id: UUID | None = None
+    membership_version: int | None = None
+    access_kind: str  # super_admin | owner | member
+    is_manager: bool = False
+    capabilities: list[str] = Field(default_factory=list)
+
+
+class ProjectMemberRolePreviewRequest(BaseModel):
+    """Input for the read-only role-change preview (no writes)."""
+
+    project_role: Literal["annotator", "reviewer", "viewer"]
+    #: Explicit replacement responsibilities for outstanding work handoff.
+    replacement_annotator_id: UUID | None = None
+    replacement_reviewer_id: UUID | None = None
+
+
+class ProjectMemberRolePreviewOut(BaseModel):
+    member_id: UUID
+    user_id: UUID
+    current_role: str
+    current_version: int
+    target_role: str
+    #: True when the target role needs an explicit, valid handoff first.
+    requires_handoff: bool = False
+    blockers: list[str] = Field(default_factory=list)
+    blocker_details: list[dict] = Field(default_factory=list)
+    #: Canonical snapshot of affected work/locks/claims at preview time.
+    resource_snapshot: dict = Field(default_factory=dict)
+    #: Opaque token covering the snapshot; must be echoed on the write.
+    preview_token: str
+
+
+class ProjectMemberRoleChangeRequest(BaseModel):
+    project_role: Literal["annotator", "reviewer", "viewer"]
+    #: CAS guard against a stale membership.
+    expected_version: int = Field(ge=1)
+    #: Token returned by the preview; revalidated under locks.
+    preview_token: str = Field(min_length=1)
+    reason: str = Field(min_length=1, max_length=500)
+    replacement_annotator_id: UUID | None = None
+    replacement_reviewer_id: UUID | None = None
 
 
 class ProjectTransferRequest(BaseModel):

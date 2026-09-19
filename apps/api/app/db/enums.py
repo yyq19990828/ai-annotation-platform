@@ -2,11 +2,55 @@ from enum import Enum
 
 
 class UserRole(str, Enum):
+    """Platform account role.
+
+    ``employee`` is the platform identity for staff who annotate and/or review.
+    ``annotator`` / ``reviewer`` are retained as *historical* values: migration
+    converts them to ``employee`` and the new authorization model never grants
+    authority from them.  Keep the enum entries so migration adapters, audit
+    rows and preserved historical data remain readable.
+    """
+
     SUPER_ADMIN = "super_admin"
     PROJECT_ADMIN = "project_admin"
+    EMPLOYEE = "employee"
     REVIEWER = "reviewer"
     ANNOTATOR = "annotator"
     VIEWER = "viewer"
+
+
+class PlatformRole(str, Enum):
+    """Account-level role.  The database/account field stays named ``role``."""
+
+    SUPER_ADMIN = "super_admin"
+    PROJECT_ADMIN = "project_admin"
+    EMPLOYEE = "employee"
+    VIEWER = "viewer"
+
+
+class ProjectRole(str, Enum):
+    """Per-project responsibility stored on ``project_members.role``."""
+
+    ANNOTATOR = "annotator"
+    REVIEWER = "reviewer"
+    VIEWER = "viewer"
+
+
+#: Valid platform (account) roles after the employee cutover.
+PLATFORM_ROLES = frozenset(r.value for r in PlatformRole)
+#: Valid project membership roles.  Membership stays one role per project.
+PROJECT_ROLES = frozenset(r.value for r in ProjectRole)
+#: Platform managers: management authority additionally requires project ownership.
+MANAGER_PLATFORM_ROLES = frozenset(
+    {PlatformRole.SUPER_ADMIN.value, PlatformRole.PROJECT_ADMIN.value}
+)
+#: Pre-cutover staff roles.  Historical/migration readers only; never an
+#: authorization source under the project-scoped model.
+LEGACY_PLATFORM_STAFF_ROLES = frozenset({"annotator", "reviewer"})
+#: Project roles that carry annotation/review work.
+WORK_PROJECT_ROLES = frozenset(
+    {ProjectRole.ANNOTATOR.value, ProjectRole.REVIEWER.value}
+)
 
 
 class ProjectStatus(str, Enum):

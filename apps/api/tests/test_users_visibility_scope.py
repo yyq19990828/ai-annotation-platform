@@ -308,14 +308,14 @@ async def test_pa_query_flags_is_managed(
     assert all(row["is_managed"] for row in sa_response.json()["items"])
 
 
-async def test_pa_writes_allowed_on_unassigned_annotator(
+async def test_pa_account_writes_but_platform_role_change_is_super_admin_only(
     httpx_client: httpx.AsyncClient, project_admin, super_admin, db_session
 ):
-    """Account-level writes now succeed on unassigned enabled workers.
+    """Account-level writes succeed on unassigned enabled workers.
 
-    Order matters: the read-only preview comes first, then role switch /
-    password reset / group preview, then the lifecycle writes (deactivate,
-    delete) that each flip the target inactive.
+    Platform-role preview/change is super-administrator only (plan AUTH-04);
+    the remaining account writes (password reset, group preview, lifecycle
+    deactivate/delete) stay available to the project administrator.
     """
 
     world = await _seed_scope_world(db_session, project_admin, super_admin)
@@ -323,18 +323,16 @@ async def test_pa_writes_allowed_on_unassigned_annotator(
     headers = _headers(project_admin)
 
     preview = await httpx_client.get(
-        f"/api/v1/users/{target.id}/role/preview?role=reviewer", headers=headers
+        f"/api/v1/users/{target.id}/role/preview?role=employee", headers=headers
     )
-    assert preview.status_code == 200, preview.text
-    assert "该用户不在你管理的项目内" not in preview.text
+    assert preview.status_code == 403, preview.text
 
     role = await httpx_client.patch(
         f"/api/v1/users/{target.id}/role",
-        json={"role": "reviewer"},
+        json={"role": "employee"},
         headers=headers,
     )
-    assert role.status_code == 200, role.text
-    assert role.json()["role"] == "reviewer"
+    assert role.status_code == 403, role.text
 
     reset = await httpx_client.post(
         f"/api/v1/users/{target.id}/admin-reset-password", headers=headers
@@ -397,10 +395,10 @@ async def test_pa_account_writes_on_foreign_member_but_lifecycle_gated(
 
     role = await httpx_client.patch(
         f"/api/v1/users/{target.id}/role",
-        json={"role": "reviewer"},
+        json={"role": "employee"},
         headers=headers,
     )
-    assert role.status_code == 200, role.text
+    assert role.status_code == 403, role.text
 
     reset = await httpx_client.post(
         f"/api/v1/users/{target.id}/admin-reset-password", headers=headers
@@ -626,7 +624,7 @@ async def test_pa_writes_blocked_on_super_admin(
 
     role = await httpx_client.patch(
         f"/api/v1/users/{target.id}/role",
-        json={"role": "reviewer"},
+        json={"role": "employee"},
         headers=headers,
     )
     assert role.status_code == 403, role.text
@@ -644,10 +642,12 @@ async def test_pa_writes_blocked_on_super_admin(
     delete = await httpx_client.delete(f"/api/v1/users/{target.id}", headers=headers)
     assert delete.status_code == 403, delete.text
 
+    # Platform-role preview is super-admin only, so an out-of-scope project
+    # administrator is denied before any user detail is disclosed.
     preview = await httpx_client.get(
-        f"/api/v1/users/{target.id}/role/preview?role=reviewer", headers=headers
+        f"/api/v1/users/{target.id}/role/preview?role=employee", headers=headers
     )
-    assert preview.status_code == 404, preview.text
+    assert preview.status_code == 403, preview.text
     assert target.email not in preview.text and target.name not in preview.text
 
 

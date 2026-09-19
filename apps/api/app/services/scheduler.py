@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, func, or_, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.enums import UserRole
+from app.db.enums import ProjectRole, UserRole
 from app.db.models.dataset import DatasetItem
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
@@ -29,6 +29,25 @@ _NEXT_TASK_CANDIDATE_WINDOW = 20
 def is_privileged_for_project(user: User, project: Project) -> bool:
     """super_admin 或项目 owner 可越权看所有 batch；其他角色受 batch 可见性约束。"""
     return user.role == UserRole.SUPER_ADMIN or project.owner_id == user.id
+
+
+def is_privileged_access(access: object) -> bool:
+    """True when a resolved ``ProjectAccess`` carries management authority.
+
+    Avoids importing ``project_access`` here; the access object is duck-typed.
+    """
+    return bool(getattr(access, "is_manager", False))
+
+
+def visible_batch_statuses_for_project_role(project_role: str | None) -> list[str]:
+    """Batch statuses visible to a project role (project-scoped authority).
+
+    Mirrors ``visible_batch_statuses_for(user)`` without reading the account's
+    global role.  Unknown/None roles fail closed to the narrowest set.
+    """
+    if project_role == ProjectRole.REVIEWER.value:
+        return list(REVIEWER_VISIBLE_BATCH_STATUSES)
+    return list(ANNOTATOR_VISIBLE_BATCH_STATUSES)
 
 
 # v0.7.0：按角色分拆可见性集合。

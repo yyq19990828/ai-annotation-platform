@@ -19,7 +19,7 @@ from app.core.security import hash_password
 from app.deps import get_db, require_roles
 from app.db.models.user import User
 from app.db.models.group import Group
-from app.db.enums import UserRole
+from app.db.enums import PLATFORM_ROLES, UserRole
 from app.schemas.user import (
     OffboardingCommitRequest,
     OffboardingPreview,
@@ -41,7 +41,7 @@ from app.schemas.management import (
     UserPage,
     UserPageItem,
 )
-from app.services.invitation import InvitationService
+from app.services.invitation import InvitationService, invitation_project_role
 from app.services.csv_export import csv_literal
 from app.services.management import (
     build_user_query,
@@ -70,8 +70,13 @@ router = APIRouter()
 
 _MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
 
-# project_admin 可在 annotator ↔ reviewer 之间互改；不可造 project_admin / super_admin / viewer
-_PA_ASSIGNABLE_ROLES = {UserRole.REVIEWER.value, UserRole.ANNOTATOR.value}
+# Accounts a project administrator manages.  Post-cutover staff are employees;
+# the legacy staff values stay so unconverted rows remain manageable.
+_PA_ASSIGNABLE_ROLES = {
+    UserRole.EMPLOYEE.value,
+    UserRole.REVIEWER.value,
+    UserRole.ANNOTATOR.value,
+}
 
 
 async def _count_active_super_admins(db: AsyncSession) -> int:
@@ -466,6 +471,7 @@ async def invite_user(
         role=payload.role,
         group_name=payload.group_name,
         project_id=payload.project_id,
+        project_member_role=payload.project_member_role,
         actor=actor,
     )
     await AuditService.log(
@@ -502,7 +508,7 @@ async def invite_user(
         expires_at=inv.expires_at,
         project_id=inv.project_id,
         project_name=project_name,
-        project_member_role=inv.role if inv.project_id else None,
+        project_member_role=invitation_project_role(inv),
     )
 
 
@@ -576,6 +582,7 @@ async def _bulk_invite(
                     role=item.role,
                     group_name=item.group_name,
                     project_id=item.project_id,
+                    project_member_role=item.project_member_role,
                     actor=actor,
                 )
                 await AuditService.log(
@@ -803,25 +810,22 @@ async def preview_user_role_change(
     user_id: UUID,
     role: str = Query(..., min_length=1),
     db: AsyncSession = Depends(get_db),
-    actor: User = Depends(require_roles(*_MANAGERS)),
+    actor: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ):
-    if role not in {item.value for item in UserRole}:
-        raise HTTPException(status_code=400, detail=f"非法角色: {role}")
+    """Platform-role preview.  Super administrator only (plan AUTH-04)."""
+
+    if role not in PLATFORM_ROLES:
+        raise HTTPException(status_code=400, detail=f"非法平台角色: {role}")
     target = await db.get(User, user_id)
     if target is None or not target.is_active:
         raise HTTPException(status_code=404, detail="用户不存在")
-    managed = True
-    if actor.role == UserRole.PROJECT_ADMIN.value:
-        managed = await _project_admin_manages_target(db, actor=actor, target=target)
-        if not managed and target.id != actor.id:
-            raise HTTPException(status_code=404, detail="用户不存在或不在管理范围内")
     return await role_impact_preview(
         db,
         actor=actor,
         target=target,
         requested_role=role,
-        manager_target_check=managed,
-        assignable_roles=_PA_ASSIGNABLE_ROLES,
+        manager_target_check=True,
+        assignable_roles=PLATFORM_ROLES,
     )
 
 
@@ -831,10 +835,16 @@ async def change_user_role(
     payload: RoleChangePayload,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    actor: User = Depends(require_roles(*_MANAGERS)),
+    actor: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ):
-    if payload.role not in {r.value for r in UserRole}:
-        raise HTTPException(status_code=400, detail=f"非法角色: {payload.role}")
+    """Platform-role mutation.  Super administrator only (plan AUTH-04).
+
+    A platform-role edit never cascades into any project's membership; project
+    responsibility is changed through the project member role endpoints.
+    """
+
+    if payload.role not in PLATFORM_ROLES:
+        raise HTTPException(status_code=400, detail=f"非法平台角色: {payload.role}")
 
     user = await db.get(User, user_id)
     if user is None or not user.is_active:
@@ -846,17 +856,6 @@ async def change_user_role(
     new_role = payload.role
     if old_role == new_role:
         return user
-
-    # —— project_admin 子集合：仅可在 reviewer / annotator 间切换；目标须启用
-    #    且为标注员/审核员（未分配亦可，身份项目驱动化前的过渡规则） ——
-    if actor.role == UserRole.PROJECT_ADMIN.value:
-        if old_role not in _PA_ASSIGNABLE_ROLES or new_role not in _PA_ASSIGNABLE_ROLES:
-            raise HTTPException(
-                status_code=403,
-                detail="项目管理员仅能在审核员 / 标注员 之间切换角色",
-            )
-        if not await _project_admin_manages_target(db, actor=actor, target=user):
-            raise HTTPException(status_code=403, detail="该用户不在你管理的项目内")
 
     # —— super_admin 兜底：最后一名 super_admin 不可被降级 ——
     if (
@@ -887,6 +886,7 @@ _ROLE_LEVEL = {
     UserRole.SUPER_ADMIN.value: 0,
     UserRole.PROJECT_ADMIN.value: 1,
     UserRole.REVIEWER.value: 2,
+    UserRole.EMPLOYEE.value: 3,
     UserRole.ANNOTATOR.value: 3,
     UserRole.VIEWER.value: 4,
 }

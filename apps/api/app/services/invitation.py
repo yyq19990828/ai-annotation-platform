@@ -11,42 +11,76 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 from app.core.security import hash_password
-from app.db.enums import UserRole
+from app.db.enums import (
+    LEGACY_PLATFORM_STAFF_ROLES,
+    MANAGER_PLATFORM_ROLES,
+    PLATFORM_ROLES,
+    PROJECT_ROLES,
+    PlatformRole,
+    UserRole,
+)
 from app.db.models.group import Group
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.task_batch import TaskBatch
 from app.db.models.user import User
 from app.db.models.user_invitation import UserInvitation
+from app.services.project_access import (
+    assert_membership_role_compatible,
+    membership_role_compatible,
+)
 from app.services.system_settings_service import SystemSettingsService
 
 
-_ALLOWED_ROLES = {r.value for r in UserRole}
+#: Account platform roles accepted as invitation input.  Legacy staff aliases
+#: remain accepted and are normalized to ``employee`` (they never grant the
+#: old global authority).
+_ALLOWED_ROLES = PLATFORM_ROLES | LEGACY_PLATFORM_STAFF_ROLES
 _PROJECT_ADMIN_INVITABLE_ROLES = {
+    PlatformRole.EMPLOYEE.value,
+    PlatformRole.VIEWER.value,
     UserRole.REVIEWER.value,
     UserRole.ANNOTATOR.value,
-    UserRole.VIEWER.value,
 }
 _PRIVILEGED_ROLES = {
-    UserRole.SUPER_ADMIN.value,
-    UserRole.PROJECT_ADMIN.value,
+    PlatformRole.SUPER_ADMIN.value,
+    PlatformRole.PROJECT_ADMIN.value,
 }
-_PROJECT_MEMBER_ROLES = {
-    UserRole.REVIEWER.value,
-    UserRole.ANNOTATOR.value,
-    UserRole.VIEWER.value,
-}
-_MANAGER_ROLES = {
-    UserRole.SUPER_ADMIN.value,
-    UserRole.PROJECT_ADMIN.value,
-}
+_PROJECT_MEMBER_ROLES = PROJECT_ROLES
+_MANAGER_ROLES = MANAGER_PLATFORM_ROLES
 _ROLE_LABELS = {
-    UserRole.SUPER_ADMIN.value: "超级管理员",
-    UserRole.PROJECT_ADMIN.value: "项目管理员",
+    PlatformRole.SUPER_ADMIN.value: "超级管理员",
+    PlatformRole.PROJECT_ADMIN.value: "项目管理员",
+    PlatformRole.EMPLOYEE.value: "员工",
     UserRole.REVIEWER.value: "审核员",
     UserRole.ANNOTATOR.value: "标注员",
-    UserRole.VIEWER.value: "观察者",
+    PlatformRole.VIEWER.value: "观察者",
 }
+
+
+def _normalize_platform_role(role: str) -> str:
+    """Map a legacy staff platform role to ``employee``; keep real platform roles."""
+
+    if role in LEGACY_PLATFORM_STAFF_ROLES:
+        return PlatformRole.EMPLOYEE.value
+    return role
+
+
+def invitation_project_role(invitation: UserInvitation) -> str | None:
+    """Project role of an invitation, with a legacy read-only fallback.
+
+    New invitations always store ``project_role``.  Unbackfilled historical
+    project invitations stored the project role in ``role``; migration 0174
+    backfills them, but readers stay tolerant until then.
+    """
+
+    if invitation.project_id is None:
+        return None
+    if invitation.project_role is not None:
+        return invitation.project_role
+    if invitation.role in _PROJECT_MEMBER_ROLES:
+        return invitation.role
+    return None
 
 
 async def _lock_invitation_email(db: AsyncSession, email: str) -> None:
@@ -146,25 +180,33 @@ async def _validate_inviter_scope(
     return inviter
 
 
-def _assert_project_role_compatible(role: str) -> None:
-    if role not in _PROJECT_MEMBER_ROLES:
+def _assert_project_role_compatible(project_role: str | None) -> None:
+    if project_role not in _PROJECT_MEMBER_ROLES:
         raise HTTPException(
             status_code=400,
             detail="目标项目只能分配标注员、审核员或观察者角色；超级管理员和项目管理员是全局角色",
         )
 
 
-def _assert_existing_role_compatible(user: User, role: str) -> None:
-    if user.role != role:
-        current = _ROLE_LABELS.get(user.role, user.role)
-        invited = _ROLE_LABELS.get(role, role)
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                f"当前账号是{current}，邀请要求{invited}。为避免静默修改全局角色，"
-                "请联系管理员调整账号角色后再接受邀请"
-            ),
-        )
+def _assert_existing_role_compatible(user: User, project_role: str) -> None:
+    """An existing account may accept a project invitation only when its
+    platform role is compatible with the project responsibility.
+
+    Employee accepts any project role; a platform viewer may only accept a
+    viewer membership.  This never mutates the account's platform role.
+    """
+
+    if membership_role_compatible(user.role, project_role):
+        return
+    current = _ROLE_LABELS.get(user.role, user.role)
+    invited = _ROLE_LABELS.get(project_role, project_role)
+    raise HTTPException(
+        status_code=409,
+        detail=(
+            f"当前账号是{current}，无法持有{invited}项目职责。为避免静默修改平台角色，"
+            "请联系管理员调整账号角色后再接受邀请"
+        ),
+    )
 
 
 async def _add_project_membership(
@@ -284,6 +326,7 @@ class InvitationService:
         role: str,
         group_name: str | None,
         project_id: uuid.UUID | None = None,
+        project_member_role: str | None = None,
         actor: User,
     ) -> UserInvitation:
         locked_actor = await _lock_user(db, actor.id)
@@ -294,19 +337,36 @@ class InvitationService:
         ):
             raise HTTPException(status_code=403, detail="当前账号不再具备邀请权限")
         actor = locked_actor
-        if role not in _ALLOWED_ROLES:
-            raise HTTPException(status_code=400, detail=f"非法角色: {role}")
+        # Split the account role from the project role.  Project invitations may
+        # use the explicit ``project_member_role``; legacy callers that sent the
+        # project role in ``role`` keep working (and imply an employee account).
+        project_role = project_member_role
+        platform_role = role
+        if project_id is not None:
+            if project_role is None and role in _PROJECT_MEMBER_ROLES:
+                project_role = role
+            _assert_project_role_compatible(project_role)
+            platform_role = _normalize_platform_role(role)
+            if platform_role in _PROJECT_MEMBER_ROLES:
+                platform_role = PlatformRole.EMPLOYEE.value
+            assert_membership_role_compatible(platform_role, project_role)
+        else:
+            if project_role is not None:
+                raise HTTPException(
+                    status_code=400, detail="账号级邀请不得包含项目职责"
+                )
+            platform_role = _normalize_platform_role(role)
+            if platform_role not in _ALLOWED_ROLES:
+                raise HTTPException(status_code=400, detail=f"非法角色: {role}")
+
         if (
             actor.role != UserRole.SUPER_ADMIN.value
-            and role not in _PROJECT_ADMIN_INVITABLE_ROLES
+            and platform_role not in _PROJECT_ADMIN_INVITABLE_ROLES
         ):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="项目管理员仅能邀请审核员、标注员或观察者",
+                detail="项目管理员仅能邀请员工或观察者",
             )
-
-        if project_id is not None:
-            _assert_project_role_compatible(role)
 
         # Creation and acceptance both lock issuer -> email -> project ->
         # invitation, so replacement cannot deadlock with target acceptance.
@@ -325,7 +385,7 @@ class InvitationService:
                 raise HTTPException(status_code=404, detail="目标项目不存在")
             await _validate_inviter_scope(
                 db,
-                UserInvitation(invited_by=actor.id, role=role),
+                UserInvitation(invited_by=actor.id, role=platform_role),
                 project,
                 inviter=actor,
             )
@@ -342,7 +402,7 @@ class InvitationService:
                 detail=f"邮箱 {email} 已注册，请选择目标项目后邀请该用户加入",
             )
         if existing is not None:
-            _assert_existing_role_compatible(existing, role)
+            _assert_existing_role_compatible(existing, project_role)
             member = await db.scalar(
                 select(ProjectMember.id).where(
                     ProjectMember.project_id == project_id,
@@ -370,7 +430,8 @@ class InvitationService:
             ttl_days = int(settings.invitation_ttl_days)
         inv = UserInvitation(
             email=email,
-            role=role,
+            role=platform_role,
+            project_role=project_role,
             group_name=group_name,
             project_id=project_id,
             token=token,
@@ -401,7 +462,7 @@ class InvitationService:
         project = await _project_for_invitation(db, inv, for_update=False)
         await _validate_inviter_scope(db, inv, project)
         if project is not None:
-            _assert_project_role_compatible(inv.role)
+            _assert_project_role_compatible(invitation_project_role(inv))
         return inv
 
     @staticmethod
@@ -501,13 +562,14 @@ class InvitationService:
         db.add(user)
         await db.flush()
 
+        member_role = invitation_project_role(inv)
         if project is not None:
-            _assert_project_role_compatible(inv.role)
+            _assert_project_role_compatible(member_role)
             await _add_project_membership(
                 db,
                 project_id=project.id,
                 user_id=user.id,
-                role=inv.role,
+                role=member_role,
                 assigned_by=inviter.id,
             )
 
@@ -518,7 +580,7 @@ class InvitationService:
             db,
             user=user,
             project=project,
-            member_role=inv.role if project is not None else None,
+            member_role=member_role,
         )
         return user, inv, acceptance
 
@@ -548,14 +610,15 @@ class InvitationService:
                 detail="当前登录邮箱与邀请邮箱不一致，请使用被邀请邮箱登录",
             )
 
+        member_role = invitation_project_role(inv)
         if project is not None:
-            _assert_project_role_compatible(inv.role)
-            _assert_existing_role_compatible(locked_user, inv.role)
+            _assert_project_role_compatible(member_role)
+            _assert_existing_role_compatible(locked_user, member_role)
             await _add_project_membership(
                 db,
                 project_id=project.id,
                 user_id=locked_user.id,
-                role=inv.role,
+                role=member_role,
                 assigned_by=inviter.id,
             )
 
@@ -566,6 +629,6 @@ class InvitationService:
             db,
             user=locked_user,
             project=project,
-            member_role=inv.role if project is not None else None,
+            member_role=member_role,
         )
         return locked_user, inv, acceptance

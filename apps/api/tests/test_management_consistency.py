@@ -182,18 +182,20 @@ async def test_management_previews_do_not_reveal_out_of_scope_users(
     item = group.json()["items"][0]
     assert item["ok"] is False
     assert item["email"] is None and item["name"] is None
+    # Platform-role preview is super-admin only; a project administrator is
+    # denied before any out-of-scope detail is disclosed.
     impact = await httpx_client.get(
-        f"/api/v1/users/{outside.id}/role/preview?role=reviewer", headers=headers
+        f"/api/v1/users/{outside.id}/role/preview?role=employee", headers=headers
     )
-    assert impact.status_code == 404, impact.text
+    assert impact.status_code == 403, impact.text
     assert outside.email not in impact.text and outside.name not in impact.text
 
 
-async def test_role_preview_warns_about_other_projects_without_disclosing_names(
+async def test_role_preview_is_super_admin_only_and_hides_project_names(
     httpx_client, project_admin, super_admin, db_session
 ):
     manager, token = project_admin
-    admin, _ = super_admin
+    admin, admin_token = super_admin
     user = await create_user(db_session, "annotator", "shared-role@e.test", "Shared")
     for owner, name in ((manager, "Visible"), (admin, "Private project name")):
         project = await create_project(db_session, owner_id=owner.id, name=name)
@@ -206,14 +208,20 @@ async def test_role_preview_warns_about_other_projects_without_disclosing_names(
             )
         )
     await db_session.flush()
-    result = await httpx_client.get(
-        f"/api/v1/users/{user.id}/role/preview?role=reviewer",
+
+    denied = await httpx_client.get(
+        f"/api/v1/users/{user.id}/role/preview?role=employee",
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert result.status_code == 200, result.text
-    assert result.json()["other_project_count"] == 1
-    assert result.json()["warnings"]
-    assert "Private project name" not in result.text
+    assert denied.status_code == 403, denied.text
+    assert "Private project name" not in denied.text
+
+    allowed = await httpx_client.get(
+        f"/api/v1/users/{user.id}/role/preview?role=employee",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert allowed.status_code == 200, allowed.text
+    assert "Private project name" not in allowed.text
 
 
 async def test_management_csv_treats_user_and_invitation_fields_as_literal_text(

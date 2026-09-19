@@ -202,6 +202,52 @@ async def _has_current_project_membership(
     return (await db.scalar(stmt)) is not None
 
 
+async def _project_role_for_user(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    lock: bool = False,
+) -> str | None:
+    """Resolved project role for one account in one project.
+
+    Project-scoped callers must use this instead of the account's global role.
+    ``lock=True`` acquires the membership with ``FOR SHARE`` (conflicts with the
+    role-changing ``FOR UPDATE``).  Returns ``None`` when there is no
+    membership.
+    """
+
+    stmt = (
+        select(ProjectMember.role)
+        .where(
+            ProjectMember.project_id == project_id,
+            ProjectMember.user_id == user_id,
+        )
+        .limit(1)
+    )
+    if lock:
+        stmt = stmt.with_for_update(read=True)
+    return await db.scalar(stmt)
+
+
+async def _has_current_project_membership_role(
+    db: AsyncSession,
+    project_id: uuid.UUID,
+    user_id: uuid.UUID,
+    *,
+    roles: Iterable[str] | None = None,
+    lock: bool = False,
+) -> bool:
+    """True when the current membership exists and its role is in ``roles``."""
+
+    role = await _project_role_for_user(db, project_id, user_id, lock=lock)
+    if role is None:
+        return False
+    if roles is None:
+        return True
+    return role in set(roles)
+
+
 async def _assert_current_project_member(db: AsyncSession, project, user: User) -> None:
     if is_privileged_for_project(user, project):
         return

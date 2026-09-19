@@ -11,7 +11,7 @@ from __future__ import annotations
 from fastapi import HTTPException
 from sqlalchemy import and_, or_
 
-from app.db.enums import BatchStatus, UserRole
+from app.db.enums import BatchStatus, ProjectRole, UserRole
 from app.db.models.project import Project
 from app.db.models.task_batch import TaskBatch
 from app.db.models.user import User
@@ -65,13 +65,31 @@ def _is_owner(user: User, project: Project) -> bool:
     return user.role == UserRole.SUPER_ADMIN or project.owner_id == user.id
 
 
-def _is_reviewer(user: User, project: Project) -> bool:
-    return _is_owner(user, project) or user.role == UserRole.REVIEWER
+def _is_reviewer(user: User, project: Project, project_role: str | None = None) -> bool:
+    """Reviewer authority from the project membership role.
+
+    ``project_role`` is the resolved membership role.  When it is omitted the
+    legacy global role is only a migration-window adapter: employee accounts no
+    longer carry ``reviewer``/``annotator``, so it cannot grant them authority.
+    Callers under the project-scoped model must pass ``project_role``.
+    """
+
+    if _is_owner(user, project):
+        return True
+    if project_role is not None:
+        return project_role == ProjectRole.REVIEWER.value
+    return user.role == UserRole.REVIEWER
 
 
-def _is_annotator_assigned(user: User, batch: TaskBatch) -> bool:
+def _is_annotator_assigned(
+    user: User, batch: TaskBatch, project_role: str | None = None
+) -> bool:
     """v0.7.2：单值语义 — batch.annotator_id == user.id。"""
-    if user.role != UserRole.ANNOTATOR:
+
+    if project_role is not None:
+        if project_role != ProjectRole.ANNOTATOR.value:
+            return False
+    elif user.role != UserRole.ANNOTATOR:
         return False
     return batch.annotator_id is not None and batch.annotator_id == user.id
 
@@ -81,9 +99,14 @@ def assert_can_transition(
     project: Project,
     batch: TaskBatch,
     target_status: str,
+    *,
+    project_role: str | None = None,
 ) -> None:
     """v0.7.0：按 (from, to) 校验角色权限，403 携带可读 detail。
     语法层（VALID_TRANSITIONS）由 transition() 内部检查；本函数只做角色门禁。
+
+    项目化后由调用方传入已解析的 ``project_role``（``batch.py``/``api/v1/batches.py``
+    由 B2 接线）；``project_role=None`` 仅保留迁移窗口兼容。
     """
     src = batch.status
     dst = target_status
@@ -127,7 +150,7 @@ def assert_can_transition(
 
     # annotating → reviewing：标注员（被分派）可主动整批提交质检
     if (src, dst) == (BatchStatus.ANNOTATING, BatchStatus.REVIEWING):
-        if _is_annotator_assigned(user, batch):
+        if _is_annotator_assigned(user, batch, project_role):
             return
         raise HTTPException(
             status_code=403,
@@ -141,7 +164,7 @@ def assert_can_transition(
         BatchStatus.ACTIVE,
         BatchStatus.ANNOTATING,
     ):
-        if _is_reviewer(user, project):
+        if _is_reviewer(user, project, project_role):
             return
         raise HTTPException(
             status_code=403, detail=f"{user.role} cannot reject batch from {src}"
@@ -152,7 +175,7 @@ def assert_can_transition(
         BatchStatus.APPROVED,
         BatchStatus.REJECTED,
     ):
-        if _is_reviewer(user, project):
+        if _is_reviewer(user, project, project_role):
             return
         raise HTTPException(
             status_code=403, detail=f"{user.role} cannot transition reviewing -> {dst}"

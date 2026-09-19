@@ -14,9 +14,20 @@ from app.deps import (
     require_roles,
     require_project_visible,
     require_project_owner,
+    require_project_capability,
     assert_project_visible,
 )
 from app.db.enums import TaskStatus, UserRole, WORKBENCH_AI_EDITABLE_TASK_STATUSES
+from app.services.project_access import (
+    ProjectCapability,
+    resolve_project_access,
+)
+from app.services.project_membership import (
+    add_member as add_project_member,
+    change_role as change_project_member_role,
+    preview_role_change as preview_project_member_role_change,
+    remove_member as remove_project_member,
+)
 from app.db.models.user import User
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
@@ -36,6 +47,10 @@ from app.schemas.project import (
     ProjectCleanupOrphansOut,
     ProjectMemberOut,
     ProjectMemberCreate,
+    ProjectMemberRolePreviewRequest,
+    ProjectMemberRolePreviewOut,
+    ProjectMemberRoleChangeRequest,
+    ProjectAccessOut,
     ProjectTransferRequest,
     ProjectReadinessSummary,
     MentionCandidateOut,
@@ -86,14 +101,18 @@ _STATS_SERIES_STEP = timedelta(days=7)
 
 
 def _visible_project_filter(user: User):
-    """构造按当前用户可见性过滤项目的子查询条件 (Project 主查询)。"""
+    """构造按当前用户可见性过滤项目的子查询条件 (Project 主查询)。
+
+    统一口径：super_admin 全见；项目负责人见自有项目；其余账号见其成员项目。
+    平台 project_admin 若只是他人项目成员，按成员可见性处理（不获得管理权）。
+    """
     if user.role == UserRole.SUPER_ADMIN:
         return None  # 不过滤
-    if user.role == UserRole.PROJECT_ADMIN:
-        return Project.owner_id == user.id
-    # annotator / reviewer / viewer：通过 ProjectMember 关联
-    return Project.id.in_(
-        select(ProjectMember.project_id).where(ProjectMember.user_id == user.id)
+    return or_(
+        Project.owner_id == user.id,
+        Project.id.in_(
+            select(ProjectMember.project_id).where(ProjectMember.user_id == user.id)
+        ),
     )
 
 
@@ -918,6 +937,8 @@ async def get_project_readiness(
     )
     # Assignment validity includes the actual receiving account and membership,
     # not merely the existence of some other active member with that role.
+    # Responsibility is project-scoped: the project role alone decides, never
+    # the account's platform role.
     valid_members = (
         await db.execute(
             select(ProjectMember.user_id, ProjectMember.role)
@@ -925,7 +946,6 @@ async def get_project_readiness(
             .where(
                 ProjectMember.project_id == project.id,
                 User.is_active.is_(True),
-                User.role == ProjectMember.role,
             )
         )
     ).all()
@@ -1452,19 +1472,45 @@ async def transfer_owner(
     return await _serialize_project(db, project)
 
 
+@router.get("/{project_id}/access", response_model=ProjectAccessOut)
+async def get_project_access(
+    project: Project = Depends(require_project_visible),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Resolved project access for the current account.
+
+    Managers may have null membership fields; ordinary members expose their
+    membership identity/version and fixed capability set.
+    """
+
+    access = await resolve_project_access(db, user=current_user, project=project)
+    return ProjectAccessOut(
+        project_id=access.project_id,
+        user_id=access.user_id,
+        platform_role=access.platform_role,
+        project_role=access.project_role,
+        membership_id=access.membership_id,
+        membership_version=access.membership_version,
+        access_kind=access.access_kind,
+        is_manager=access.is_manager,
+        capabilities=sorted(access.capabilities),
+    )
+
+
 @router.get("/{project_id}/members", response_model=list[ProjectMemberOut])
 async def list_members(
     project: Project = Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
 ):
     rows = await db.execute(
-        select(ProjectMember, User.name, User.email, User.avatar_ref)
+        select(ProjectMember, User.name, User.email, User.avatar_ref, User.role)
         .join(User, User.id == ProjectMember.user_id)
         .where(ProjectMember.project_id == project.id)
         .order_by(ProjectMember.assigned_at.desc())
     )
     out = []
-    for member, user_name, user_email, avatar_ref in rows.all():
+    for member, user_name, user_email, avatar_ref, platform_role in rows.all():
         out.append(
             ProjectMemberOut(
                 id=member.id,
@@ -1472,7 +1518,10 @@ async def list_members(
                 user_name=user_name,
                 user_email=user_email,
                 role=member.role,
+                platform_role=platform_role,
+                version=member.version,
                 assigned_at=member.assigned_at,
+                updated_at=member.updated_at,
                 avatar_ref=avatar_ref,
             )
         )
@@ -1541,56 +1590,93 @@ async def list_mention_candidates(
     return out
 
 
+async def _member_out(db: AsyncSession, member: ProjectMember) -> ProjectMemberOut:
+    target = await db.get(User, member.user_id)
+    return ProjectMemberOut(
+        id=member.id,
+        user_id=member.user_id,
+        user_name=target.name if target else "",
+        user_email=target.email if target else "",
+        role=member.role,
+        platform_role=target.role if target else None,
+        version=member.version,
+        assigned_at=member.assigned_at,
+        updated_at=member.updated_at,
+        avatar_ref=target.avatar_ref if target else None,
+    )
+
+
 @router.post("/{project_id}/members", response_model=ProjectMemberOut, status_code=201)
 async def add_member(
     body: ProjectMemberCreate,
     project: Project = Depends(require_project_owner),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    _access=Depends(require_project_capability(ProjectCapability.MEMBER_MANAGE.value)),
 ):
-    target = await db.get(User, body.user_id)
-    if target is None or not target.is_active:
-        raise HTTPException(status_code=404, detail="目标用户不存在")
-    expected_roles = {
-        "annotator": UserRole.ANNOTATOR.value,
-        "reviewer": UserRole.REVIEWER.value,
-        "viewer": UserRole.VIEWER.value,
-    }
-    if target.role != expected_roles[body.role]:
-        labels = {"annotator": "标注员", "reviewer": "审核员", "viewer": "观察者"}
-        raise HTTPException(
-            status_code=400,
-            detail=f"目标用户角色不是{labels[body.role]}，项目成员职责必须与全局角色匹配",
-        )
+    member = await add_project_member(
+        db,
+        project=project,
+        actor=current_user,
+        target_user_id=body.user_id,
+        project_role=body.role,
+    )
+    return await _member_out(db, member)
 
-    existing = await db.execute(
-        select(ProjectMember).where(
-            ProjectMember.project_id == project.id,
-            ProjectMember.user_id == body.user_id,
-        )
-    )
-    if existing.scalar_one_or_none() is not None:
-        raise HTTPException(status_code=409, detail="该用户已在项目中")
 
-    member = ProjectMember(
-        id=uuid.uuid4(),
-        project_id=project.id,
-        user_id=body.user_id,
-        role=body.role,
-        assigned_by=current_user.id,
+@router.post(
+    "/{project_id}/members/{member_id}/role/preview",
+    response_model=ProjectMemberRolePreviewOut,
+)
+async def preview_member_role_change(
+    member_id: uuid.UUID,
+    body: ProjectMemberRolePreviewRequest,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _access=Depends(require_project_capability(ProjectCapability.MEMBER_MANAGE.value)),
+):
+    """Read-only role-change preview: blockers, resource snapshot and token."""
+
+    result = await preview_project_member_role_change(
+        db,
+        project=project,
+        actor=current_user,
+        member_id=member_id,
+        target_role=body.project_role,
+        replacement_annotator_id=body.replacement_annotator_id,
+        replacement_reviewer_id=body.replacement_reviewer_id,
     )
-    db.add(member)
-    await db.commit()
-    await db.refresh(member)
-    return ProjectMemberOut(
-        id=member.id,
-        user_id=member.user_id,
-        user_name=target.name,
-        user_email=target.email,
-        role=member.role,
-        assigned_at=member.assigned_at,
-        avatar_ref=target.avatar_ref,
+    return ProjectMemberRolePreviewOut(**result)
+
+
+@router.patch(
+    "/{project_id}/members/{member_id}/role",
+    response_model=ProjectMemberOut,
+)
+async def change_member_role(
+    member_id: uuid.UUID,
+    body: ProjectMemberRoleChangeRequest,
+    project: Project = Depends(require_project_owner),
+    db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _access=Depends(require_project_capability(ProjectCapability.MEMBER_MANAGE.value)),
+):
+    """Role change with expected version, preview token and explicit handoff."""
+
+    member = await change_project_member_role(
+        db,
+        project=project,
+        actor=current_user,
+        member_id=member_id,
+        target_role=body.project_role,
+        expected_version=body.expected_version,
+        preview_token=body.preview_token,
+        reason=body.reason,
+        replacement_annotator_id=body.replacement_annotator_id,
+        replacement_reviewer_id=body.replacement_reviewer_id,
     )
+    return await _member_out(db, member)
 
 
 @router.delete("/{project_id}/members/{member_id}", status_code=204)
@@ -1598,12 +1684,12 @@ async def remove_member(
     member_id: uuid.UUID,
     project: Project = Depends(require_project_owner),
     db: AsyncSession = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+    _access=Depends(require_project_capability(ProjectCapability.MEMBER_MANAGE.value)),
 ):
-    member = await db.get(ProjectMember, member_id)
-    if member is None or member.project_id != project.id:
-        raise HTTPException(status_code=404, detail="成员不存在")
-    await db.delete(member)
-    await db.commit()
+    await remove_project_member(
+        db, project=project, actor=current_user, member_id=member_id
+    )
     return Response(status_code=204)
 
 
@@ -1627,6 +1713,9 @@ async def preflight_project_lidar_export(
     body: LidarExportPreflightRequest,
     project: Project = Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
+    _access=Depends(
+        require_project_capability(ProjectCapability.EXPORT_ANNOTATIONS.value)
+    ),
 ) -> LidarExportPreflightResponse:
     if project.data_type != "lidar":
         raise HTTPException(status_code=422, detail="project is not a lidar project")
@@ -1688,6 +1777,9 @@ async def export_project(
     project: Project = Depends(require_project_visible),
     actor: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
+    _access=Depends(
+        require_project_capability(ProjectCapability.EXPORT_ANNOTATIONS.value)
+    ),
 ):
     # v0.10.27 · 导出异步化：创建 async_job(kind=export) + 派发 run_export，返回 {job_id}。
     # v0.10.43 · 多目标（方案 B）：一个 job 产一个 zip（>1 目标分子目录）。

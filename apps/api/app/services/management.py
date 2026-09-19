@@ -32,6 +32,7 @@ from app.schemas.management import (
     RoleImpactProject,
     UserStats,
 )
+from app.services.invitation import invitation_project_role
 
 
 USER_STATUS = Literal["active", "inactive", "all"]
@@ -43,6 +44,7 @@ INVITATION_STATUS = Literal["pending", "accepted", "expired", "revoked", "all"]
 # member-assignment candidate list. Super admins stay read-only-visible but
 # never manageable, and deactivated accounts stay out of scope.
 _PA_OPERABLE_ROLES = (
+    UserRole.EMPLOYEE.value,
     UserRole.ANNOTATOR.value,
     UserRole.REVIEWER.value,
 )
@@ -467,7 +469,7 @@ async def _invitation_outputs(
             group_name=row.group_name,
             project_id=row.project_id,
             project_name=projects.get(row.project_id),
-            project_member_role=row.role if row.project_id else None,
+            project_member_role=invitation_project_role(row),
             status=row.status,
             expires_at=row.expires_at,
             invited_by=row.invited_by,

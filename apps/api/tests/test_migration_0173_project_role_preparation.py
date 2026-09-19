@@ -8,6 +8,7 @@ and historical unknowns stay NULL.  No role values are converted here.
 from __future__ import annotations
 
 import asyncio
+import os
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -132,8 +133,12 @@ def test_0173_is_additive_default_safe_and_round_trips(test_db_url, apply_migrat
                         )
                     )
                     assert invitation is not None
-                    assert invitation.project_role is None
                     assert invitation.project_id == saved["project"]
+                    # Re-upgrading to head also runs the later 0174 conversion,
+                    # which backfills the pending project invitation's project
+                    # role and normalises its platform role to employee.
+                    assert invitation.project_role == "annotator"
+                    assert invitation.role == "employee"
 
                     # Legacy writer: an INSERT that omits the new columns must
                     # still succeed, with the server defaults applied.
@@ -204,6 +209,11 @@ def test_0173_is_additive_default_safe_and_round_trips(test_db_url, apply_migrat
         finally:
             await engine.dispose()
 
+    # Downgrading below 0173 crosses the gated 0174 conversion; this isolated
+    # test database is explicitly allowed to run the lossy reverse.
+    gate_env = "AAP_ALLOW_ROLE_MIGRATION_DOWNGRADE"
+    previous_gate = os.environ.get(gate_env)
+    os.environ[gate_env] = "1"
     try:
         asyncio.run(step("seed"))
         command.downgrade(config, "0172")
@@ -211,6 +221,10 @@ def test_0173_is_additive_default_safe_and_round_trips(test_db_url, apply_migrat
         command.upgrade(config, "head")
         asyncio.run(step("verify"))
     finally:
+        if previous_gate is None:
+            os.environ.pop(gate_env, None)
+        else:
+            os.environ[gate_env] = previous_gate
         # Restore the current schema even if an assertion or upgrade failed.
         command.upgrade(config, "head")
         asyncio.run(step("cleanup"))
