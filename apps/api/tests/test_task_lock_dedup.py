@@ -19,7 +19,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
-from app.db.models.task_batch import TaskBatch
 from app.db.models.task_lock import TaskLock
 from app.services.task_lock import TaskLockService
 
@@ -249,31 +248,23 @@ class TestTaskLockMultiRowResilience:
         assert locked is True
 
     async def test_acquire_conflict_returns_lock_holder_detail(
-        self, httpx_client_bound, db_session, annotator, reviewer
+        self, httpx_client_bound, db_session, annotator, reviewer, super_admin
     ):
         """活跃他人锁冲突时，API 返回可展示的锁持有人信息。"""
-        ann_user, ann_token = annotator
+        ann_user, _ = annotator
         rev_user, _ = reviewer
+        _, admin_token = super_admin
         task = await _seed_project_and_task(db_session, owner_id=ann_user.id)
-        # The caller is not the assignee but can see the task through an active
-        # open-pool batch, so the request reaches the lock-conflict response.
-        open_batch = TaskBatch(
-            project_id=task.project_id,
-            display_id=f"B-LD-OPEN-{uuid.uuid4().hex[:6]}",
-            name="open pool",
-            status="active",
-            assigned_user_ids=[],
-        )
-        db_session.add(open_batch)
-        await db_session.flush()
-        task.batch_id = open_batch.id
+        # The legitimate manager can see the task, while the task belongs to the
+        # other user; the caller is therefore not the effective assignee, so the
+        # real lock-conflict path runs instead of the assignee force-takeover.
         task.assignee_id = rev_user.id
         db_session.add(_stale_lock(task.id, rev_user.id, ttl_s=280))
         await db_session.flush()
 
         response = await httpx_client_bound.post(
             f"/api/v1/tasks/{task.id}/lock",
-            headers=_bearer(ann_token),
+            headers=_bearer(admin_token),
         )
 
         assert response.status_code == 409

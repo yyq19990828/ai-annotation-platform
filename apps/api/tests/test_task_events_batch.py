@@ -35,6 +35,7 @@ async def test_task_events_batch_sync_fallback(httpx_client, annotator, db_sessi
         file_name="x.jpg",
         file_path="/x",
     )
+    task.assignee_id = user.id
     db_session.add(task)
     db_session.add(
         ProjectMember(project_id=project.id, user_id=user.id, role="annotator")

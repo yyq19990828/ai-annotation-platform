@@ -800,11 +800,13 @@ async def test_idempotent_replay_rechecks_actor_ownership(
     assert first.status_code == 200, first.text
     project = await db_session.get(Project, task.project_id)
     project.owner_id = other.id
-    # Literal employee owner: ownership alone is not management, so the replay
-    # actor needs an explicit membership to reach the idempotency owner check.
+    # Literal employee owner: ownership alone is not management. An explicit
+    # annotator membership plus the task assignment make the replayed task
+    # visible so the request reaches the idempotency owner check.
     db_session.add(
         ProjectMember(project_id=project.id, user_id=other.id, role="annotator")
     )
+    task.assignee_id = other.id
     await db_session.flush()
 
     replay = await httpx_client_bound.post(

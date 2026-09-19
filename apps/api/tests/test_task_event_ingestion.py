@@ -65,6 +65,8 @@ async def test_task_event_derives_project_and_is_idempotent(
     user, token = annotator
     project = _project(user.id, "P-TE-TRUST")
     task = _task(project.id, "T-TE-TRUST")
+    # Explicit unbatched assignment makes the task visible to its annotator.
+    task.assignee_id = user.id
     db_session.add_all([project, task, _member(project.id, user.id, "annotator")])
     await db_session.flush()
     event_id = uuid.uuid4()
@@ -132,6 +134,7 @@ async def test_task_event_batch_discards_stale_row_without_blocking_valid_row(
     user, token = annotator
     project = _project(user.id, "P-TE-PARTIAL")
     task = _task(project.id, "T-TE-PARTIAL")
+    task.assignee_id = user.id
     db_session.add_all([project, task, _member(project.id, user.id, "annotator")])
     await db_session.flush()
     monkeypatch.setattr(settings, "task_events_async", False)
@@ -194,6 +197,7 @@ async def test_async_payload_coverage_survives_worker_revalidation(
     user, token = annotator
     project = _project(user.id, "P-TE-ASYNC-COVERAGE")
     task = _task(project.id, "T-TE-ASYNC-COVERAGE")
+    task.assignee_id = user.id
     db_session.add_all([project, task, _member(project.id, user.id, "annotator")])
     await db_session.flush()
 
