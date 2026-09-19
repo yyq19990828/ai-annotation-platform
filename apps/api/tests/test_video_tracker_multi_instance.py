@@ -1576,12 +1576,24 @@ async def test_accept_tracker_job_rechecks_task_status(
         return None
 
     await run_tracker_job(db_session, job.id, publisher=collect)
+    # Review-state accept is rejected by the canonical frozen-evidence guard
+    # (unknown legacy evidence) before the legacy status lock message.
     task.status = "review"
     await db_session.commit()
-    with pytest.raises(TrackerJobStateConflict, match="task is locked"):
+    with pytest.raises(TrackerJobStateConflict) as exc:
         await accept_tracker_job(
             db_session, job.id, actor_id=user.id, publisher=collect
         )
+    assert exc.value.detail["reason"] == "review_contributors_unknown"
+
+    # A completed task is still rejected by the status/phase lock.
+    task.status = "completed"
+    await db_session.commit()
+    with pytest.raises(TrackerJobStateConflict) as exc:
+        await accept_tracker_job(
+            db_session, job.id, actor_id=user.id, publisher=collect
+        )
+    assert exc.value.detail["reason"] == "task_locked"
 
 
 async def test_accept_tracker_job_rechecks_segment_lease(
