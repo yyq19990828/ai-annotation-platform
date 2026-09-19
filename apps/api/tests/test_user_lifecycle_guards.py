@@ -62,6 +62,14 @@ async def seed_handoff(db, actor, role="annotator", project_count=2):
             setattr(
                 task, "assignee_id" if role == "annotator" else "reviewer_id", target.id
             )
+        if role == "reviewer":
+            # A reviewable post-cutover task carries frozen contributor evidence.
+            # The outgoing reviewer submitted the round; the receiver is not a
+            # contributor, so the handoff decision is not a self-review.
+            task.review_round_id = uuid.uuid4()
+            task.annotation_contributor_ids = []
+            task.review_contributor_ids = [str(target.id)]
+            task.review_submitter_id = target.id
         projects.append(project)
         batches.append(batch)
         tasks.append(task)

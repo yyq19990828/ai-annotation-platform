@@ -7,7 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import (
     get_db,
-    require_roles,
+    get_current_user,
 )
 from app.db.models.user import User
 from app.services.annotation_evidence import (
@@ -15,14 +15,13 @@ from app.services.annotation_evidence import (
     freeze_review_contributor_evidence,
 )
 from app.services.audit import AuditAction, AuditService
+from app.services.project_access import ProjectAccess
 from app.services.task_lock import TaskLockService
 
 
 from app.api.v1.tasks._shared import (
     _load_task_or_404,
-    _ANNOTATORS,
     _assert_task_visible,
-    _assert_current_project_member,
     _assert_effective_task_assignee,
     _effective_task_assignee_id,
     _assert_task_editable,
@@ -32,6 +31,7 @@ from app.api.v1.tasks._shared import (
     _task_contributor_snapshot,
     _submission_assignment_start,
     perform_task_submit,
+    require_task_annotation_write,
 )
 
 router = APIRouter()
@@ -42,7 +42,8 @@ async def submit_task(
     task_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write),
 ):
     from app.db.models.task import Task
 
@@ -56,12 +57,14 @@ async def submit_task(
     ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    await _assert_task_visible(db, task, current_user)
+    await _assert_task_visible(db, task, current_user, access=access)
     _assert_effective_task_assignee(
         current_user,
         await _effective_task_assignee_id(db, task),
         action="submit",
+        project_id=task.project_id,
         allow_open_pool=True,
+        access=access,
     )
     if task.status not in ("pending", "in_progress"):
         raise HTTPException(
@@ -69,7 +72,7 @@ async def submit_task(
             detail={"reason": "task_not_submittable", "status": task.status},
         )
 
-    _assert_task_editable(task, current_user)
+    _assert_task_editable(task, current_user, access=access)
 
     now = datetime.now(timezone.utc)
     result = await perform_task_submit(db, task, actor=current_user, now=now)
@@ -147,7 +150,8 @@ async def skip_task(
     body: SkipTaskRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write),
 ):
     """v0.8.7 F7 · 标注员跳过任务并附原因，自动转 reviewer 复核。
 
@@ -178,12 +182,14 @@ async def skip_task(
     ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    await _assert_task_visible(db, task, current_user)
+    await _assert_task_visible(db, task, current_user, access=access)
     _assert_effective_task_assignee(
         current_user,
         await _effective_task_assignee_id(db, task),
         action="skip",
+        project_id=task.project_id,
         allow_open_pool=True,
+        access=access,
     )
     if task.status not in ("pending", "in_progress"):
         raise HTTPException(
@@ -191,7 +197,7 @@ async def skip_task(
             detail={"reason": "task_not_skippable", "status": task.status},
         )
 
-    _assert_task_editable(task, current_user)
+    _assert_task_editable(task, current_user, access=access)
 
     now = datetime.now(timezone.utc)
     # A2 · capture the inherited batch assignee before the legacy path replaces
@@ -273,7 +279,8 @@ async def withdraw_task(
     task_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write),
 ):
     """v0.6.5: 标注员撤回质检提交。
     前提：status=review、assignee == 当前用户、reviewer_claimed_at IS NULL。
@@ -284,11 +291,12 @@ async def withdraw_task(
     project = await db.get(Project, task.project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    await _assert_current_project_member(db, project, current_user)
     _assert_effective_task_assignee(
         current_user,
         await _effective_task_assignee_id(db, task),
         action="withdraw",
+        project_id=task.project_id,
+        access=access,
     )
     if task.status != "review":
         raise HTTPException(
@@ -343,7 +351,8 @@ async def reopen_task(
     task_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write),
 ):
     """v0.6.5: 标注员对已通过任务单方面重开编辑。
     前提：status=completed 且 assignee == 当前用户（admin 兜底）。
@@ -355,11 +364,12 @@ async def reopen_task(
     project = await db.get(Project, task.project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    await _assert_current_project_member(db, project, current_user)
     _assert_effective_task_assignee(
         current_user,
         await _effective_task_assignee_id(db, task),
         action="reopen",
+        project_id=task.project_id,
+        access=access,
     )
     if task.status != "completed":
         raise HTTPException(
@@ -440,7 +450,8 @@ async def accept_rejection(
     task_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write),
 ):
     """M1 · 标注员接受退回，将 task 从 rejected 转回 in_progress 开始重做。
     不清空 reject_reason（保留审核员退回原因，前端可降级为"重做中"提示）。"""
@@ -450,11 +461,12 @@ async def accept_rejection(
     project = await db.get(Project, task.project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    await _assert_current_project_member(db, project, current_user)
     _assert_effective_task_assignee(
         current_user,
         await _effective_task_assignee_id(db, task),
         action="accept rejection",
+        project_id=task.project_id,
+        access=access,
     )
     if task.status != "rejected":
         raise HTTPException(

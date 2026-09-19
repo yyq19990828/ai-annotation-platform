@@ -3,7 +3,7 @@ import logging
 import uuid
 from collections.abc import Iterable
 from datetime import datetime, timezone
-from fastapi import HTTPException
+from fastapi import Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -18,7 +18,12 @@ from app.schemas.task import (
     VideoMetadata,
 )
 from app.schemas.image_pyramid import ImagePyramidSummary
-from app.services.project_access import ProjectAccess, resolve_project_access
+from app.deps import get_current_user, get_db
+from app.services.project_access import (
+    ProjectAccess,
+    ProjectCapability,
+    resolve_project_access,
+)
 from app.services.scheduler import (
     effective_task_assignee_id,
     visible_batch_statuses_for_project_role,
@@ -324,7 +329,112 @@ def _assert_effective_task_assignee(
     raise HTTPException(status_code=403, detail=f"only effective assignee can {action}")
 
 
-async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None:
+def _task_write_allowed(
+    task: Task,
+    access: ProjectAccess,
+    *,
+    allow_review_adjustment: bool,
+) -> bool:
+    """Whether ``access`` may write annotation-phase content on ``task``.
+
+    A manager keeps the existing management path.  An annotator needs
+    ``annotation.write``.  A reviewer is admitted only for a *review
+    adjustment* (``task.status == "review"``) and only with ``review.write``;
+    every other combination fails closed.  No global account role is consulted.
+    """
+
+    if access.is_manager:
+        return True
+    if access.project_role == ProjectRole.ANNOTATOR.value and access.has(
+        ProjectCapability.ANNOTATION_WRITE.value
+    ):
+        return True
+    if (
+        allow_review_adjustment
+        and access.project_role == ProjectRole.REVIEWER.value
+        and task.status == "review"
+        and access.has(ProjectCapability.REVIEW_WRITE.value)
+    ):
+        return True
+    return False
+
+
+async def _resolve_task_access(
+    db: AsyncSession,
+    task: Task,
+    user: User,
+    *,
+    lock_membership: bool = False,
+) -> ProjectAccess:
+    """Resolve the current project access for the task's actual project."""
+
+    from app.db.models.project import Project
+
+    project = await db.get(Project, task.project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return await resolve_project_access(
+        db, user=user, project=project, lock_membership=lock_membership
+    )
+
+
+async def require_task_annotation_write(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ProjectAccess:
+    """FastAPI dependency: annotation write authority for ``task_id``.
+
+    The membership is acquired ``FOR SHARE`` so a concurrent member role change
+    (``FOR UPDATE``) cannot commit while this authorized mutation is in flight.
+    Reviewers are admitted only for a review adjustment; annotators, managers
+    and unknown roles are handled by :func:`_task_write_allowed`.
+    """
+
+    task = await _load_task_or_404(db, task_id)
+    access = await _resolve_task_access(db, task, user, lock_membership=True)
+    if not _task_write_allowed(task, access, allow_review_adjustment=True):
+        raise HTTPException(status_code=403, detail="缺少项目权限: annotation.write")
+    return access
+
+
+async def require_task_annotation_write_strict(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ProjectAccess:
+    """Annotation write authority without the reviewer review-adjustment path."""
+
+    task = await _load_task_or_404(db, task_id)
+    access = await _resolve_task_access(db, task, user, lock_membership=True)
+    if not _task_write_allowed(task, access, allow_review_adjustment=False):
+        raise HTTPException(status_code=403, detail="缺少项目权限: annotation.write")
+    return access
+
+
+async def require_task_review_write(
+    task_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
+) -> ProjectAccess:
+    """FastAPI dependency: review write authority for ``task_id``."""
+
+    task = await _load_task_or_404(db, task_id)
+    access = await _resolve_task_access(db, task, user, lock_membership=True)
+    if not (
+        access.is_manager or ProjectCapability.REVIEW_WRITE.value in access.capabilities
+    ):
+        raise HTTPException(status_code=403, detail="缺少项目权限: review.write")
+    return access
+
+
+async def _assert_task_visible(
+    db: AsyncSession,
+    task: Task,
+    user: User,
+    *,
+    access: ProjectAccess | None = None,
+) -> None:
     """B-16 + v0.7.0：服务端强制 batch 可见性，按角色分支。
     super_admin / 项目 owner 越权放行；reviewer 见 active/annotating/reviewing；
     annotator 见 active/annotating（assigned）+ rejected（assigned 特例）。
@@ -336,7 +446,9 @@ async def _assert_task_visible(db: AsyncSession, task: Task, user: User) -> None
     project = await db.get(Project, task.project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    access = await resolve_project_access(db, user=user, project=project)
+    if access is None:
+        access = await resolve_project_access(db, user=user, project=project)
+    _assert_access_binding(access, user=user, project_id=task.project_id)
     if access.is_manager:
         return
     project_role = access.project_role
@@ -384,6 +496,8 @@ async def _visible_task_ids(
     project,
     user: User,
     task_ids: list[uuid.UUID],
+    *,
+    access: ProjectAccess | None = None,
 ) -> set[uuid.UUID]:
     """v0.15.26 · `_assert_task_visible` 的批量非抛错版,返回 task_ids 中可见的子集。
 
@@ -396,9 +510,11 @@ async def _visible_task_ids(
     if not task_ids:
         return set()
     try:
-        access = await resolve_project_access(db, user=user, project=project)
+        if access is None:
+            access = await resolve_project_access(db, user=user, project=project)
     except HTTPException:
         return set()
+    _assert_access_binding(access, user=user, project_id=project.id)
     if access.is_manager:
         result = await db.execute(
             select(Task.id).where(

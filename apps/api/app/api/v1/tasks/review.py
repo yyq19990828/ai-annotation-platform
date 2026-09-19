@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import (
     get_db,
-    require_roles,
+    get_current_user,
 )
 from app.db.models.user import User
 from app.db.models.project import Project
@@ -16,21 +16,26 @@ from app.db.models.task_batch import TaskBatch
 from app.schemas.task import (
     ReviewClaimResponse,
 )
-from app.services.annotation_evidence import clear_review_contributor_evidence
+from app.services.annotation_evidence import (
+    assert_review_evidence_current,
+    clear_review_contributor_evidence,
+)
 from app.services.audit import AuditAction, AuditService
 
 
 from app.api.v1.tasks._shared import (
-    _REVIEWERS,
+    _assert_access_binding,
     _assert_task_visible,
+    _effective_task_assignee_id,
     _ensure_review_round,
     _record_first_review_fact,
     _review_round_contributor_snapshot,
     _task_contributor_snapshot,
+    require_task_review_write,
 )
+from app.services.project_access import ProjectAccess
 from app.services.scheduler import (
     effective_task_reviewer_id,
-    is_privileged_for_project,
 )
 
 router = APIRouter()
@@ -54,23 +59,50 @@ class ApproveTaskRequest(BaseModel):
     note: str | None = Field(default=None, max_length=2000)
 
 
-async def _lock_review_task(db: AsyncSession, task_id: uuid.UUID, user: User):
+async def _lock_review_task(
+    db: AsyncSession, task_id: uuid.UUID, user: User, access: ProjectAccess
+):
     from app.db.models.task import Task
 
     task = (
-        await db.execute(select(Task).where(Task.id == task_id).with_for_update())
+        await db.execute(
+            select(Task)
+            .where(Task.id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
     ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    await _assert_task_visible(db, task, user)
+    await _assert_task_visible(db, task, user, access=access)
     return task
 
 
-async def _assert_review_owner(db: AsyncSession, *, task, user: User) -> Project:
+async def _assert_review_evidence_allowed(
+    db: AsyncSession, *, task, user: User
+) -> None:
+    """Block self-review and unknown-evidence decisions before privileged returns.
+
+    Called for every review claim/decision so a manager cannot review work they
+    contributed to, a revoked round cannot be completed, and legacy tasks whose
+    contributor evidence is unknown stay blocked (409).  Historical performance
+    attribution keeps using ``_review_round_contributor_snapshot``.
+    """
+
+    effective_annotator_id = await _effective_task_assignee_id(db, task)
+    assert_review_evidence_current(
+        task, user.id, effective_annotator_id=effective_annotator_id
+    )
+
+
+async def _assert_review_owner(
+    db: AsyncSession, *, task, user: User, access: ProjectAccess
+) -> Project:
     project = await db.get(Project, task.project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Project not found")
-    if is_privileged_for_project(user, project):
+    _assert_access_binding(access, user=user, project_id=task.project_id)
+    if access.is_manager:
         return project
     batch = await db.get(TaskBatch, task.batch_id) if task.batch_id else None
     effective_reviewer_id = effective_task_reviewer_id(task, batch)
@@ -92,29 +124,28 @@ async def claim_review(
     task_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_review_write),
 ):
     """v0.6.5: 审核员进入审核页时调用（幂等）。
     第一个调用者写 reviewer_id + reviewer_claimed_at；
     后续调用者读取已存在的认领信息（不覆盖）。
     `reviewer_claimed_at` 一经设置即冻结标注员的 withdraw 入口。"""
-    task = await _lock_review_task(db, task_id, current_user)
+    task = await _lock_review_task(db, task_id, current_user, access)
     if task.status != "review":
         raise HTTPException(
             status_code=409,
             detail={"reason": "task_not_in_review", "status": task.status},
         )
+    await _assert_review_evidence_allowed(db, task=task, user=current_user)
 
     if task.reviewer_claimed_at is None:
-        project = await db.get(Project, task.project_id)
         batch = await db.get(TaskBatch, task.batch_id) if task.batch_id else None
         effective_reviewer_id = effective_task_reviewer_id(task, batch)
         if (
             effective_reviewer_id is not None
             and effective_reviewer_id != current_user.id
-            and not (
-                project is not None and is_privileged_for_project(current_user, project)
-            )
+            and not access.is_manager
         ):
             raise HTTPException(
                 status_code=409,
@@ -156,16 +187,20 @@ async def approve_task(
     request: Request,
     body: ApproveTaskRequest | None = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_review_write),
 ):
-    task = await _lock_review_task(db, task_id, current_user)
+    task = await _lock_review_task(db, task_id, current_user, access)
     if task.status != "review":
         raise HTTPException(
             status_code=409,
             detail={"reason": "task_not_in_review", "status": task.status},
         )
 
-    project = await _assert_review_owner(db, task=task, user=current_user)
+    await _assert_review_evidence_allowed(db, task=task, user=current_user)
+    project = await _assert_review_owner(
+        db, task=task, user=current_user, access=access
+    )
     from app.services.video_canonical import (
         VideoBoundaryUnreconciledError,
         assert_task_boundaries_reconciled,
@@ -309,15 +344,17 @@ async def reject_task(
     request: Request,
     body: ReviewAction | None = None,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_review_write),
 ):
-    task = await _lock_review_task(db, task_id, current_user)
+    task = await _lock_review_task(db, task_id, current_user, access)
     if task.status != "review":
         raise HTTPException(
             status_code=409,
             detail={"reason": "task_not_in_review", "status": task.status},
         )
-    await _assert_review_owner(db, task=task, user=current_user)
+    await _assert_review_evidence_allowed(db, task=task, user=current_user)
+    await _assert_review_owner(db, task=task, user=current_user, access=access)
 
     reason_type = body.reason_type if body else None
     if reason_type is None:
