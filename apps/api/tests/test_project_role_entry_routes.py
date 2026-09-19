@@ -34,7 +34,8 @@ from app.db.models.task import Task
 from app.db.models.user import User
 from app.db.models.video_tracker_job import VideoTrackerJob
 from app.services.project_access import ProjectAccess, ProjectCapability
-from tests.factory import create_project, create_task, create_user
+from app.services.data_management.views import TaskViewService
+from tests.factory import create_batch, create_project, create_task, create_user
 
 pytestmark = pytest.mark.asyncio
 
@@ -690,3 +691,81 @@ async def test_mask_qc_locked_review_access_denies_revoked_reviewer(
             db_session, task=task, user=reviewer, lock=True
         )
     assert exc.value.status_code in {403, 404}
+
+
+async def test_task_view_query_and_count_share_project_role_scope(
+    db_session: AsyncSession, super_admin
+):
+    """Both TaskViewService count and query apply the caller's project_role."""
+
+    admin, _ = super_admin
+    project = await create_project(db_session, owner_id=admin.id, name="Parity")
+    annotator = await _employee(db_session, prefix="parity-a")
+    await _add_member(
+        db_session, project_id=project.id, user=annotator, role="annotator", by=admin.id
+    )
+    other = await _employee(db_session, prefix="parity-b")
+    await _add_member(
+        db_session, project_id=project.id, user=other, role="annotator", by=admin.id
+    )
+
+    batch_a = await create_batch(db_session, project_id=project.id, status="active")
+    batch_a.annotator_id = annotator.id
+    task_a = await create_task(db_session, project_id=project.id, status="pending")
+    task_a.batch_id = batch_a.id
+    batch_b = await create_batch(db_session, project_id=project.id, status="active")
+    batch_b.annotator_id = other.id
+    task_b = await create_task(db_session, project_id=project.id, status="pending")
+    task_b.batch_id = batch_b.id
+    await db_session.flush()
+
+    svc = TaskViewService(db_session)
+    rows, total = await svc.query_tasks(
+        project_id=project.id,
+        filter_json={},
+        sort_json=[],
+        columns_json=[],
+        limit=50,
+        offset=0,
+        user=annotator,
+        project=project,
+        project_role="annotator",
+    )
+    count = await svc.count_for_filter(
+        project.id,
+        {},
+        user=annotator,
+        project=project,
+        project_role="annotator",
+    )
+    assert {row[0].id for row in rows} == {task_a.id}
+    assert total == count == 1
+
+    # Missing project_role stays fail-closed for a non-privileged caller.
+    rows_none, total_none = await svc.query_tasks(
+        project_id=project.id,
+        filter_json={},
+        sort_json=[],
+        columns_json=[],
+        limit=50,
+        offset=0,
+        user=annotator,
+        project=project,
+        project_role=None,
+    )
+    assert rows_none == []
+    assert total_none == 0
+
+    # A manager sees the whole project regardless of membership role.
+    _manager_rows, manager_total = await svc.query_tasks(
+        project_id=project.id,
+        filter_json={},
+        sort_json=[],
+        columns_json=[],
+        limit=50,
+        offset=0,
+        user=admin,
+        project=project,
+        project_role=None,
+    )
+    assert manager_total == 2

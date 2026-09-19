@@ -6,6 +6,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.tasks._shared import _assert_task_visible, _visible_task_ids
@@ -28,6 +29,7 @@ from app.deps import (
 from app.services.project_access import (
     ProjectAccess,
     ProjectCapability,
+    assert_capability,
     resolve_project_access,
 )
 from app.schemas.point_cloud_quality import (
@@ -141,6 +143,27 @@ async def _assert_issue_visible(
     return project, access
 
 
+async def _lock_task_nowait(db: AsyncSession, task_id: uuid.UUID) -> Task:
+    try:
+        task = (
+            await db.execute(
+                select(Task)
+                .where(Task.id == task_id)
+                .with_for_update(nowait=True)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+    except DBAPIError as exc:
+        if getattr(exc.orig, "sqlstate", None) in {"55P03", "40P01", "40001"}:
+            raise HTTPException(
+                status_code=409, detail={"reason": "task_busy"}
+            ) from exc
+        raise
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
+
+
 @router.post(
     "/projects/{project_id}/point-cloud-quality/runs",
     response_model=PointCloudQualityRunOut,
@@ -155,10 +178,12 @@ async def create_run(
         require_project_capability(ProjectCapability.REVIEW_WRITE.value)
     ),
 ):
-    # Re-resolve current authority under a membership lock for the write path.
+    # Re-resolve current authority under a membership lock for the write path and
+    # re-assert the capability on the fresh access.
     access = await resolve_project_access(
         db, user=current_user, project=project, lock_membership=True
     )
+    assert_capability(access, ProjectCapability.REVIEW_WRITE.value)
     await _assert_request_visible(
         db, project=project, user=current_user, access=access, body=body
     )
@@ -305,17 +330,32 @@ async def patch_issue(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    issue = (
-        await db.execute(
-            select(PointCloudQualityIssue)
-            .where(PointCloudQualityIssue.id == issue_id)
-            .with_for_update()
-        )
-    ).scalar_one_or_none()
+    issue = await db.get(PointCloudQualityIssue, issue_id)
     if issue is None:
         raise HTTPException(status_code=404, detail="Quality issue not found")
+    # Account-first: resolve the locked membership, then take bounded task and
+    # resource locks so a busy row cannot block indefinitely.
     _project, access = await _assert_issue_visible(db, issue, current_user, lock=True)
     _assert_review_authority(access)
+    if issue.task_id is not None:
+        task = await db.get(Task, issue.task_id, populate_existing=True)
+        if task is not None:
+            await _lock_task_nowait(db, task.id)
+    try:
+        issue = (
+            await db.execute(
+                select(PointCloudQualityIssue)
+                .where(PointCloudQualityIssue.id == issue_id)
+                .with_for_update(nowait=True)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+    except DBAPIError as exc:
+        if getattr(exc.orig, "sqlstate", None) in {"55P03", "40P01", "40001"}:
+            raise HTTPException(
+                status_code=409, detail={"reason": "point_cloud_quality_issue_busy"}
+            ) from exc
+        raise
     if await refresh_issue_staleness(db, issue):
         raise HTTPException(
             status_code=409, detail={"reason": "point_cloud_quality_issue_stale"}
@@ -375,9 +415,10 @@ async def create_project_evaluation(
         require_project_capability(ProjectCapability.PROJECT_MANAGE.value)
     ),
 ):
-    await resolve_project_access(
+    fresh_access = await resolve_project_access(
         db, user=current_user, project=project, lock_membership=True
     )
+    assert_capability(fresh_access, ProjectCapability.PROJECT_MANAGE.value)
     try:
         evaluation = await create_evaluation(
             db,
@@ -460,9 +501,10 @@ async def promote_project_evaluation(
         require_project_capability(ProjectCapability.PROJECT_MANAGE.value)
     ),
 ):
-    await resolve_project_access(
+    fresh_access = await resolve_project_access(
         db, user=current_user, project=project, lock_membership=True
     )
+    assert_capability(fresh_access, ProjectCapability.PROJECT_MANAGE.value)
     try:
         evaluation, locked_project = await promote_evaluation(
             db,

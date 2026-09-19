@@ -8,6 +8,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response, status
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.tasks._shared import _assert_task_visible, _visible_task_ids
@@ -29,6 +30,7 @@ from app.deps import (
 from app.services.project_access import (
     ProjectAccess,
     ProjectCapability,
+    assert_capability,
     resolve_project_access,
 )
 from app.schemas.mask_qc import (
@@ -102,6 +104,27 @@ async def _resolve_task_review_access(
     )
     _assert_review_authority(access)
     return project, access
+
+
+async def _lock_task_nowait(db: AsyncSession, task_id: uuid.UUID) -> Task:
+    try:
+        task = (
+            await db.execute(
+                select(Task)
+                .where(Task.id == task_id)
+                .with_for_update(nowait=True)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+    except DBAPIError as exc:
+        if getattr(exc.orig, "sqlstate", None) in {"55P03", "40P01", "40001"}:
+            raise HTTPException(
+                status_code=409, detail={"reason": "task_busy"}
+            ) from exc
+        raise
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
 
 
 def _raise_mask_repair_error(exc: MaskRepairError) -> None:
@@ -487,26 +510,33 @@ async def patch_issue(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> MaskQCIssueOut:
-    issue = (
-        await db.execute(
-            select(MaskQCIssue).where(MaskQCIssue.id == issue_id).with_for_update()
-        )
-    ).scalar_one_or_none()
+    issue = await db.get(MaskQCIssue, issue_id)
     if issue is None:
         raise HTTPException(status_code=404, detail="Mask QC issue not found")
-    task = (
-        await db.execute(
-            select(Task)
-            .where(Task.id == issue.task_id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
-    ).scalar_one_or_none()
+    task = await db.get(Task, issue.task_id, populate_existing=True)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
+    # Account-first: resolve the locked membership before any resource lock, then
+    # take the bounded task/resource locks so a busy row cannot block forever.
     _project, access = await _resolve_task_review_access(
         db, task=task, user=current_user, lock=True
     )
+    task = await _lock_task_nowait(db, task.id)
+    try:
+        issue = (
+            await db.execute(
+                select(MaskQCIssue)
+                .where(MaskQCIssue.id == issue_id)
+                .with_for_update(nowait=True)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one()
+    except DBAPIError as exc:
+        if getattr(exc.orig, "sqlstate", None) in {"55P03", "40P01", "40001"}:
+            raise HTTPException(
+                status_code=409, detail={"reason": "mask_qc_issue_busy"}
+            ) from exc
+        raise
     await _assert_task_visible(db, task, current_user, access=access)
     if await effective_issue_status(db, issue) == "stale":
         raise HTTPException(
@@ -673,11 +703,13 @@ async def execute_mask_repairs(
         require_project_capability(ProjectCapability.REVIEW_WRITE.value)
     ),
 ) -> MaskRepairBatchOut:
-    # Write boundary: hold the current membership FOR SHARE (and lock the project
-    # row) while the repair plan mutates annotations.
-    await resolve_project_access(
+    # Write boundary: re-resolve the current membership under lock and re-assert
+    # the capability on that fresh access (a downgrade after the dependency
+    # resolved must not proceed).
+    fresh_access = await resolve_project_access(
         db, user=current_user, project=project, lock_membership=True
     )
+    assert_capability(fresh_access, ProjectCapability.REVIEW_WRITE.value)
     try:
         batch, should_dispatch = await execute_repair_plan(
             db,

@@ -143,6 +143,7 @@ async def list_task_views(
             valid_filters,
             user=user,
             project=project,
+            project_role=access.project_role,
         )
         if entity_scope == "tasks"
         else await count_entity_filters(
@@ -152,6 +153,7 @@ async def list_task_views(
             filters=valid_filters,
             user=user,
             project=project,
+            project_role=access.project_role,
         )
     )
     counts: list[int | None] = []
@@ -251,7 +253,11 @@ async def get_task_view(
     if not invalid:
         if view.entity_scope == "tasks":
             count = await svc.count_for_filter(
-                project_id, view.filter_json, user=user, project=project
+                project_id,
+                view.filter_json,
+                user=user,
+                project=project,
+                project_role=access.project_role,
             )
         else:
             count = (
@@ -262,6 +268,7 @@ async def get_task_view(
                     filters=[view.filter_json],
                     user=user,
                     project=project,
+                    project_role=access.project_role,
                 )
             )[0]
     return _view_out(view, task_count=count, invalid_fields=invalid)
@@ -416,6 +423,7 @@ async def query_project_tasks(
         offset=payload.offset,
         user=user,
         project=project,
+        project_role=access.project_role,
     )
     tasks = [row[0] for row in rows]
     dims = await _attach_dimensions_batch(db, tasks)

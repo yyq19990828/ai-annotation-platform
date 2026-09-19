@@ -13,6 +13,7 @@ from aap_protocol_v2 import (
 )
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import (
@@ -131,25 +132,50 @@ async def _reacquire_write_boundary(
     """Re-acquire task and locked membership at the final write boundary.
 
     Long-running ML compute must not hold database locks.  Immediately before a
-    restricted write or response we lock the task row, refresh it, and
-    re-resolve the current membership and review-phase frozen evidence so a
-    concurrent revocation or role change cannot slip a stale authority through.
+    restricted write or response we re-check the active account, re-resolve the
+    current membership and lock the refreshed task row ``NOWAIT`` so a concurrent
+    revocation or role change cannot slip a stale authority through and a busy
+    resource cannot block the request indefinitely.  Account-first, then
+    membership, then the bounded task lock.
     """
 
-    task = (
-        await db.execute(
-            select(Task)
-            .where(Task.id == task_id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
+    from app.services.task_lock import assert_task_user_active
+
+    if not await assert_task_user_active(db, user.id):
+        raise HTTPException(
+            status_code=401,
+            detail="账号已停用，请联系管理员",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    ).scalar_one_or_none()
+    task = await db.get(Task, task_id, populate_existing=True)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
     access = await _resolve_task_access(db, task, user, lock_membership=True)
+    task = await _lock_task_nowait(db, task_id)
     assert_annotation_write_allowed(task, access)
     await _assert_review_adjustment_evidence(db, task, user, access)
     return task, access
+
+
+async def _lock_task_nowait(db: AsyncSession, task_id: uuid.UUID) -> Task:
+    try:
+        task = (
+            await db.execute(
+                select(Task)
+                .where(Task.id == task_id)
+                .with_for_update(nowait=True)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+    except DBAPIError as exc:
+        if getattr(exc.orig, "sqlstate", None) in {"55P03", "40P01", "40001"}:
+            raise HTTPException(
+                status_code=409, detail={"reason": "task_busy"}
+            ) from exc
+        raise
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    return task
 
 
 # v0.23.5 · WS-D · D2 · cap on uploaded frame bytes (predict-frame /

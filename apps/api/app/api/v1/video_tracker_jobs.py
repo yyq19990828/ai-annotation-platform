@@ -11,6 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy import and_, func, or_, select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.tasks import _assert_task_visible
@@ -175,28 +176,50 @@ async def _lock_visible_job_task_row(
 ) -> tuple[Task, VideoTrackerJob, ProjectAccess]:
     """Lock and refresh the job's task at the mutation boundary.
 
-    Tracker mutations are short: lock the task row ``FOR UPDATE`` first, then
-    acquire the membership ``FOR SHARE`` and re-check the current phase plus the
-    frozen review evidence.  This keeps the route preflight from relying on an
-    unlocked ``db.get`` snapshot and preserves the task-before-membership order.
+    Account-first, then the membership ``FOR SHARE``, then the refreshed task row
+    ``NOWAIT``: a busy resource returns a retryable 409 instead of blocking, and
+    the route preflight no longer relies on an unlocked ``db.get`` snapshot.
     """
 
+    from app.services.task_lock import assert_task_user_active
+
     row = await get_tracker_job(db, job_id)
-    task = (
-        await db.execute(
-            select(Task)
-            .where(Task.id == row.task_id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
+    if not await assert_task_user_active(db, user.id):
+        raise HTTPException(
+            status_code=401,
+            detail="账号已停用，请联系管理员",
+            headers={"WWW-Authenticate": "Bearer"},
         )
-    ).scalar_one_or_none()
+    task = await db.get(Task, row.task_id, populate_existing=True)
     if task is None:
         raise HTTPException(status_code=404, detail="Video tracker job not found")
     access = await _resolve_task_access(db, task, user, lock_membership=True)
+    task = await _lock_task_nowait(db, row.task_id)
     assert_annotation_write_allowed(task, access)
     await _assert_review_adjustment_evidence(db, task, user, access)
     await _assert_task_visible(db, task, user, access=access)
     return task, row, access
+
+
+async def _lock_task_nowait(db: AsyncSession, task_id: uuid.UUID) -> Task:
+    try:
+        task = (
+            await db.execute(
+                select(Task)
+                .where(Task.id == task_id)
+                .with_for_update(nowait=True)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+    except DBAPIError as exc:
+        if getattr(exc.orig, "sqlstate", None) in {"55P03", "40P01", "40001"}:
+            raise HTTPException(
+                status_code=409, detail={"reason": "task_busy"}
+            ) from exc
+        raise
+    if task is None:
+        raise HTTPException(status_code=404, detail="Video tracker job not found")
+    return task
 
 
 async def _assert_can_cancel(
