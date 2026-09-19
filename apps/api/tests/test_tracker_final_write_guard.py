@@ -82,3 +82,30 @@ async def test_runner_guard_denies_revoked_employee_actor(
     with pytest.raises(TrackerJobStateConflict) as exc:
         await _assert_tracker_actor_authority(db_session, task, employee.id)
     assert exc.value.detail["reason"] == "permission_changed"
+
+
+async def test_runner_guard_denies_self_review_evidence(
+    db_session: AsyncSession, super_admin
+):
+    owner, _ = super_admin
+    project = await create_project(db_session, owner_id=owner.id, name="Guard Self")
+    employee = await create_user(
+        db_session, "employee", f"guard-self-{uuid.uuid4()}@test.local", "Guard Self"
+    )
+    await _add_member(
+        db_session,
+        project_id=project.id,
+        user_id=employee.id,
+        role="reviewer",
+        assigned_by=owner.id,
+    )
+    task = await create_task(db_session, project_id=project.id, status="review")
+    task.annotation_contributor_ids = [str(employee.id)]
+    task.review_round_id = uuid.uuid4()
+    task.review_contributor_ids = [str(employee.id)]
+    task.review_submitter_id = str(employee.id)
+    await db_session.commit()
+
+    with pytest.raises(TrackerJobStateConflict) as exc:
+        await _assert_tracker_actor_authority(db_session, task, employee.id)
+    assert exc.value.detail["reason"] == "permission_changed"
