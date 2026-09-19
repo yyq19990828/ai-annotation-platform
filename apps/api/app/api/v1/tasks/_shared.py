@@ -378,6 +378,32 @@ async def _resolve_task_access(
     )
 
 
+async def _assert_review_adjustment_evidence(
+    db: AsyncSession,
+    task: Task,
+    user: User,
+    access: ProjectAccess,
+) -> None:
+    """Enforce frozen non-self evidence before a review-phase annotation edit.
+
+    An annotator is blocked from a task in ``review`` by ``_assert_task_editable``
+    (``task_locked``); a manager or project reviewer reaching this state is a
+    *review adjustment* and must not be a contributor, the round submitter or the
+    effective annotator.  Unknown legacy evidence fails closed (409).
+    """
+
+    if task.status != "review":
+        return
+    if not (access.is_manager or access.project_role == ProjectRole.REVIEWER.value):
+        return
+    from app.services.annotation_evidence import assert_review_evidence_current
+
+    effective_annotator_id = await _effective_task_assignee_id(db, task)
+    assert_review_evidence_current(
+        task, user.id, effective_annotator_id=effective_annotator_id
+    )
+
+
 async def require_task_annotation_write(
     task_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
@@ -395,6 +421,7 @@ async def require_task_annotation_write(
     access = await _resolve_task_access(db, task, user, lock_membership=True)
     if not _task_write_allowed(task, access, allow_review_adjustment=True):
         raise HTTPException(status_code=403, detail="缺少项目权限: annotation.write")
+    await _assert_review_adjustment_evidence(db, task, user, access)
     return access
 
 
@@ -409,6 +436,7 @@ async def require_task_annotation_write_strict(
     access = await _resolve_task_access(db, task, user, lock_membership=True)
     if not _task_write_allowed(task, access, allow_review_adjustment=False):
         raise HTTPException(status_code=403, detail="缺少项目权限: annotation.write")
+    await _assert_review_adjustment_evidence(db, task, user, access)
     return access
 
 

@@ -11,7 +11,6 @@ from fastapi import Request
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.enums import UserRole
 from app.db.models.annotation import Annotation
 from app.db.models.annotation_conversion_plan import AnnotationConversionPlan
 from app.db.models.annotation_operation import (
@@ -851,6 +850,7 @@ class AnnotationConversionService:
         task: Task,
         actor: User,
         payload: AnnotationConversionDryRunRequest,
+        access: Any = None,
     ) -> AnnotationConversionDryRunResponse:
         try:
             await assert_task_lock_for_legacy_video(self.db, task, actor.id)
@@ -1047,6 +1047,7 @@ class AnnotationConversionService:
         actor: User,
         payload: AnnotationConversionExecuteRequest,
         request: Request,
+        access: Any = None,
     ) -> AnnotationConversionExecuteResponse:
         execution_payload = payload.model_dump(mode="json")
         execution_payload.pop("plan_token")
@@ -1091,10 +1092,12 @@ class AnnotationConversionService:
             raise AnnotationConversionError(
                 status_code=404, reason="task_not_found", message="Task not found"
             )
+        is_review_adjuster = bool(
+            access is not None
+            and (access.is_manager or access.project_role == "reviewer")
+        )
         if task.status == "completed" or (
-            task.status == "review"
-            and actor.role
-            not in {UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER}
+            task.status == "review" and not is_review_adjuster
         ):
             raise AnnotationConversionError(
                 status_code=409,

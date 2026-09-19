@@ -11,7 +11,6 @@ from aap_protocol_v2 import native_mask_candidate_id
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.enums import UserRole
 from app.db.models.ai_mask_accept_decision import AiMaskAcceptDecision
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem
@@ -92,6 +91,8 @@ def _validate_replay(
     decision: AiMaskAcceptDecision,
     request_digest: str,
     current_user: User,
+    *,
+    access: Any = None,
 ) -> AiMaskAcceptResponse:
     if decision.request_digest != request_digest:
         raise AiMaskAcceptError(
@@ -108,7 +109,7 @@ def _validate_replay(
     if (
         decision.actor_id is not None
         and decision.actor_id != current_user.id
-        and current_user.role not in {UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN}
+        and not (access is not None and access.is_manager)
     ):
         raise AiMaskAcceptError(
             status_code=403,
@@ -239,14 +240,14 @@ async def _resolve_routing_lineage(
     )
 
 
-def _assert_task_still_editable(task: Task, current_user: User) -> None:
+def _assert_task_still_editable(
+    task: Task, current_user: User, *, access: Any = None
+) -> None:
     if task.status not in {"review", "completed"}:
         return
-    if task.status == "review" and current_user.role in {
-        UserRole.SUPER_ADMIN,
-        UserRole.PROJECT_ADMIN,
-        UserRole.REVIEWER,
-    }:
+    if task.status == "review" and (
+        access is not None and (access.is_manager or access.project_role == "reviewer")
+    ):
         return
     raise AiMaskAcceptError(
         status_code=409,
@@ -396,6 +397,7 @@ async def accept_ai_mask_candidate(
     current_user: User,
     request,
     expected_version: int | None,
+    access: Any = None,
 ) -> AiMaskAcceptResponse:
     request_digest = ai_mask_accept_request_digest(data)
     candidate = data.candidate.candidate
@@ -426,7 +428,7 @@ async def accept_ai_mask_candidate(
         raise AiMaskAcceptError(
             status_code=404, reason="task_not_found", message="task was not found"
         )
-    _assert_task_still_editable(task, current_user)
+    _assert_task_still_editable(task, current_user, access=access)
     try:
         await TaskLockService(db).assert_write_allowed(task_id, current_user.id)
     except TaskLockConflictError as exc:
@@ -448,7 +450,8 @@ async def accept_ai_mask_candidate(
             message="AI interactive is disabled for this project",
         )
     if (
-        current_user.role == UserRole.ANNOTATOR
+        access is not None
+        and access.project_role == "annotator"
         and task.assignee_id is not None
         and task.assignee_id != current_user.id
     ):
@@ -462,7 +465,7 @@ async def accept_ai_mask_candidate(
         db, task_id=task_id, idempotency_key=data.idempotency_key
     )
     if existing is not None:
-        return _validate_replay(existing, request_digest, current_user)
+        return _validate_replay(existing, request_digest, current_user, access=access)
 
     receipt_claims = _validate_receipt(
         data,

@@ -115,6 +115,7 @@ async def dry_run_annotation_conversion(
             task=task,
             actor=current_user,
             payload=data,
+            access=access,
         )
     except AnnotationConversionError as exc:
         _raise_conversion_error(exc)
@@ -146,6 +147,7 @@ async def execute_annotation_conversion(
             actor=current_user,
             payload=data,
             request=request,
+            access=access,
         )
     except AnnotationConversionError as exc:
         _raise_conversion_error(exc)
@@ -944,7 +946,8 @@ async def update_annotation(
     await heartbeat_task_lock_for_legacy_video(db, _task, current_user.id)
     _audit_action = (
         AuditAction.TASK_REVIEWER_EDIT
-        if _task.status == "review" and access.project_role == "reviewer"
+        if _task.status == "review"
+        and (access.is_manager or access.project_role == "reviewer")
         else AuditAction.ANNOTATION_UPDATE
     )
     await AuditService.log(

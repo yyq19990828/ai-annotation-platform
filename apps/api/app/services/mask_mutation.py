@@ -1222,17 +1222,26 @@ class MaskMutationService:
         actor: User,
         *,
         request: Any = None,
+        access: Any = None,
     ) -> MaskMutationCommitResponse:
         digest = request_digest(payload)
         task = await self._lock_task(task_id)
 
-        from app.api.v1.tasks._shared import _assert_task_editable, _assert_task_visible
+        from app.api.v1.tasks._shared import (
+            _assert_task_editable,
+            _assert_task_visible,
+            _resolve_task_access,
+        )
 
-        await _assert_task_visible(self.db, task, actor)
+        if access is None:
+            access = await _resolve_task_access(
+                self.db, task, actor, lock_membership=True
+            )
+        await _assert_task_visible(self.db, task, actor, access=access)
         replay = await self._idempotent_replay(task_id, actor.id, payload, digest)
         if replay is not None:
             return replay
-        _assert_task_editable(task, actor)
+        _assert_task_editable(task, actor, access=access)
 
         if payload.operation == "slice_mask" and task.file_type != "image":
             raise MaskMutationError(

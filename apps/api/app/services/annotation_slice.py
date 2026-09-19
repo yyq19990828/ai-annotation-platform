@@ -60,10 +60,12 @@ class AnnotationSliceService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    async def _assert_task_writable(self, task: Task, actor: User) -> None:
+    async def _assert_task_writable(
+        self, task: Task, actor: User, *, access: Any = None
+    ) -> None:
         from app.api.v1.tasks._shared import _assert_task_editable
 
-        _assert_task_editable(task, actor)
+        _assert_task_editable(task, actor, access=access)
         if task.file_type != "image":
             raise AnnotationSliceError(422, "unsupported_media", "切割仅支持图片任务")
         try:
@@ -73,8 +75,13 @@ class AnnotationSliceService:
                 409, "task_lock_conflict", "任务正由其他用户编辑"
             ) from exc
 
-    async def _lock_task(self, task_id: uuid.UUID, actor: User) -> Task:
-        from app.api.v1.tasks._shared import _assert_task_visible
+    async def _lock_task(
+        self, task_id: uuid.UUID, actor: User, *, access: Any = None
+    ) -> Task:
+        from app.api.v1.tasks._shared import (
+            _assert_task_visible,
+            _resolve_task_access,
+        )
 
         task = await self.db.scalar(
             select(Task)
@@ -84,7 +91,11 @@ class AnnotationSliceService:
         )
         if task is None:
             raise AnnotationSliceError(404, "task_not_found", "任务不存在")
-        await _assert_task_visible(self.db, task, actor)
+        if access is None:
+            access = await _resolve_task_access(
+                self.db, task, actor, lock_membership=True
+            )
+        await _assert_task_visible(self.db, task, actor, access=access)
         return task
 
     async def _replay(
@@ -185,13 +196,14 @@ class AnnotationSliceService:
         actor: User,
         *,
         request: Any = None,
+        access: Any = None,
     ) -> AnnotationSliceResponse:
-        task = await self._lock_task(task_id, actor)
+        task = await self._lock_task(task_id, actor, access=access)
         digest = _digest({"kind": "slice_polygon", **payload.model_dump(mode="json")})
         replay = await self._replay(task_id, actor, payload.idempotency_key, digest)
         if replay:
             return replay
-        await self._assert_task_writable(task, actor)
+        await self._assert_task_writable(task, actor, access=access)
         rows = await self._lock_annotations(task_id, [payload.annotation_id])
         source = rows[str(payload.annotation_id)]
         if not source.is_active or source.version != payload.expected_version:
@@ -305,8 +317,9 @@ class AnnotationSliceService:
         actor: User,
         *,
         request: Any = None,
+        access: Any = None,
     ) -> AnnotationSliceResponse:
-        task = await self._lock_task(task_id, actor)
+        task = await self._lock_task(task_id, actor, access=access)
         digest = _digest(
             {
                 "kind": "restore_slice",
@@ -317,7 +330,7 @@ class AnnotationSliceService:
         replay = await self._replay(task_id, actor, payload.idempotency_key, digest)
         if replay:
             return replay
-        await self._assert_task_writable(task, actor)
+        await self._assert_task_writable(task, actor, access=access)
         original = await self.db.scalar(
             select(AnnotationOperation)
             .where(
