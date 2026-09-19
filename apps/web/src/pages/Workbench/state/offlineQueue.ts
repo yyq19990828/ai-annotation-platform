@@ -320,6 +320,13 @@ export async function replaceAnnotationId(
  */
 export interface DrainOptions {
   shouldProcess?: (op: OfflineOp) => boolean | Promise<boolean>;
+  /**
+   * Classify a handler error as a permanent authority denial (e.g. 403/404 from
+   * a replay).  Such an op is retained and skipped without stopping the pass so
+   * unrelated authorized projects still sync; other errors keep the existing
+   * retry_count + stop behavior.
+   */
+  isAuthorityDenial?: (error: unknown) => boolean;
 }
 
 export function drain(
@@ -379,8 +386,15 @@ async function runDrain(
     try {
       // The network handler may enqueue or replace IDs: never hold accessTail here.
       await handler(structuredClone(op));
-    } catch {
+    } catch (error) {
       if (normalizedScope?.isCurrent && !normalizedScope.isCurrent()) break;
+      if (options?.isAuthorityDenial?.(error)) {
+        // Permanent authority denial: retain the draft but skip it so a later
+        // authorized op in the same account queue can still sync.
+        denied++;
+        skipped.add(op.id);
+        continue;
+      }
       failed++;
       const failedId = op.id;
       await mutateQueue((queue) =>
@@ -404,7 +418,7 @@ async function runDrain(
       break;
     }
   }
-  return options?.shouldProcess ? { ok, failed, denied } : { ok, failed };
+  return options ? { ok, failed, denied } : { ok, failed };
 }
 
 /** 清空队列（仅用于测试 / 手动 reset）。 */

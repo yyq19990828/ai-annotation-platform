@@ -48,11 +48,13 @@ export function MemberRoleChangeModal({ open, projectId, member, members, onClos
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
   const requestRef = useRef(0);
-  const memberIdRef = useRef<string | null>(member?.id ?? null);
-  memberIdRef.current = member?.id ?? null;
+  // Dialog-lifetime token: bumped whenever the dialog closes/reopens or the
+  // project/member/version context changes, so a late success/error from a
+  // previous dialog cannot close or mutate the new one.
+  const dialogRef = useRef(0);
 
   const inputKey = member
-    ? `${member.id}|${targetRole}|${replacementAnnotatorId}|${replacementReviewerId}`
+    ? `${projectId}|${member.id}|${member.version}|${targetRole}|${replacementAnnotatorId}|${replacementReviewerId}`
     : "";
 
   const annotatorOptions = useMemo(
@@ -66,7 +68,8 @@ export function MemberRoleChangeModal({ open, projectId, member, members, onClos
 
   const runPreview = useCallback(async () => {
     if (!member) return;
-    const key = `${member.id}|${targetRole}|${replacementAnnotatorId}|${replacementReviewerId}`;
+    const key = `${projectId}|${member.id}|${member.version}|${targetRole}|${replacementAnnotatorId}|${replacementReviewerId}`;
+    const dialog = dialogRef.current;
     const request = ++requestRef.current;
     setPreviewPending(true);
     setPreview(null);
@@ -83,17 +86,25 @@ export function MemberRoleChangeModal({ open, projectId, member, members, onClos
           ...(replacementReviewerId ? { replacement_reviewer_id: replacementReviewerId } : {}),
         },
       });
-      if (request !== requestRef.current) return;
+      if (request !== requestRef.current || dialog !== dialogRef.current) return;
       setPreview(data);
       setPreviewKey(key);
     } catch (error) {
-      if (request !== requestRef.current) return;
+      if (request !== requestRef.current || dialog !== dialogRef.current) return;
       if (error instanceof ApiError && error.status === 409) setStale(true);
       else setPreviewError(error instanceof Error ? error.message : String(error));
     } finally {
-      if (request === requestRef.current) setPreviewPending(false);
+      if (request === requestRef.current && dialog === dialogRef.current) setPreviewPending(false);
     }
-  }, [member, targetRole, replacementAnnotatorId, replacementReviewerId, previewMutation, change]);
+  }, [
+    member,
+    projectId,
+    targetRole,
+    replacementAnnotatorId,
+    replacementReviewerId,
+    previewMutation,
+    change,
+  ]);
 
   useEffect(() => {
     if (!open || !member) return;
@@ -101,17 +112,35 @@ export function MemberRoleChangeModal({ open, projectId, member, members, onClos
     setReason("");
     setReplacementAnnotatorId("");
     setReplacementReviewerId("");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open, member?.id]);
+
+  // Context lifetime: a project/member/version change or close/reopen invalidates
+  // any in-flight preview and the write callbacks bound to the old dialog.
+  useEffect(() => {
+    dialogRef.current += 1;
     requestRef.current += 1;
     setPreview(null);
     setPreviewKey(null);
     setStale(false);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, member?.id]);
+    return () => {
+      dialogRef.current += 1;
+      requestRef.current += 1;
+    };
+  }, [open, projectId, member?.id, member?.version]);
 
   useEffect(() => {
     if (open && member) void runPreview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, member?.id, targetRole, replacementAnnotatorId, replacementReviewerId]);
+  }, [
+    open,
+    projectId,
+    member?.id,
+    member?.version,
+    targetRole,
+    replacementAnnotatorId,
+    replacementReviewerId,
+  ]);
 
   if (!member) return null;
 
@@ -129,6 +158,7 @@ export function MemberRoleChangeModal({ open, projectId, member, members, onClos
 
   const submit = () => {
     if (!canSubmit || !preview) return;
+    const dialog = dialogRef.current;
     const submittingMemberId = member.id;
     change.mutate(
       {
@@ -144,8 +174,9 @@ export function MemberRoleChangeModal({ open, projectId, member, members, onClos
       },
       {
         onSuccess: () => {
-          // Ignore a late response if the dialog moved to another member.
-          if (memberIdRef.current !== submittingMemberId) return;
+          // Ignore a late response once the dialog closed/reopened or moved to
+          // another project/member/version.
+          if (dialog !== dialogRef.current) return;
           pushToast({
             msg: `已将 ${member.user_name} 的职责改为${PROJECT_ROLE_LABELS[targetRole]}`,
             kind: "success",
@@ -153,7 +184,7 @@ export function MemberRoleChangeModal({ open, projectId, member, members, onClos
           onClose();
         },
         onError: (error) => {
-          if (memberIdRef.current !== submittingMemberId) return;
+          if (dialog !== dialogRef.current) return;
           if (error instanceof ApiError && error.status === 409) {
             setStale(true);
             pushToast({ msg: "预览已过期，请重新预览后再保存", kind: "warning" });

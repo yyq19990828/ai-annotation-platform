@@ -168,3 +168,84 @@ describe("MemberRoleChangeModal", () => {
     expect(screen.getByRole("button", { name: "保存职责" })).toBeDisabled();
   });
 });
+
+describe("MemberRoleChangeModal context binding", () => {
+  beforeEach(() => {
+    previewApi.mutateAsync.mockReset();
+    previewApi.reset.mockReset();
+    changeApi.mutate.mockReset();
+    changeApi.reset.mockReset();
+    changeApi.isPending = false;
+  });
+
+  it("invalidates a previous preview when the member version changes", async () => {
+    let resolveSecond!: (value: unknown) => void;
+    previewApi.mutateAsync.mockResolvedValueOnce(basePreview).mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveSecond = resolve;
+        }),
+    );
+    const { rerender } = renderModal();
+    await screen.findByText(/当前职责/);
+    fireEvent.change(screen.getByLabelText("变更原因"), { target: { value: "调整" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "保存职责" })).toBeEnabled());
+
+    rerender(
+      <MemberRoleChangeModal
+        open
+        projectId="p1"
+        member={{ ...member, version: 4 }}
+        members={[member, otherAnnotator]}
+        onClose={vi.fn()}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "保存职责" })).toBeDisabled();
+    await act(async () => {
+      resolveSecond({ ...basePreview, current_version: 4 });
+    });
+    await waitFor(() => expect(screen.getByRole("button", { name: "保存职责" })).toBeEnabled());
+  });
+
+  it("ignores an old success after close and reopen of the same member", async () => {
+    previewApi.mutateAsync.mockResolvedValue(basePreview);
+    const onClose = vi.fn();
+    const view = render(
+      <MemberRoleChangeModal
+        open
+        projectId="p1"
+        member={member}
+        members={[member, otherAnnotator]}
+        onClose={onClose}
+      />,
+    );
+    await screen.findByText(/当前职责/);
+    fireEvent.change(screen.getByLabelText("变更原因"), { target: { value: "调整" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: "保存职责" })).toBeEnabled());
+    fireEvent.click(screen.getByRole("button", { name: "保存职责" }));
+    const options = changeApi.mutate.mock.calls[0][1];
+
+    view.rerender(
+      <MemberRoleChangeModal
+        open={false}
+        projectId="p1"
+        member={member}
+        members={[member, otherAnnotator]}
+        onClose={onClose}
+      />,
+    );
+    view.rerender(
+      <MemberRoleChangeModal
+        open
+        projectId="p1"
+        member={member}
+        members={[member, otherAnnotator]}
+        onClose={onClose}
+      />,
+    );
+    await act(async () => {
+      options.onSuccess();
+    });
+    expect(onClose).not.toHaveBeenCalled();
+  });
+});

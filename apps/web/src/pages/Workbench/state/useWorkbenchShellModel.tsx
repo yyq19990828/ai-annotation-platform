@@ -3033,28 +3033,32 @@ export function useWorkbenchShellModel({
     return tasks.filter((t) => t.status !== "completed" && t.id !== taskId).length;
   }, [tasks, taskId]);
 
-  const currentProjectCanWrite =
-    projectAccess.hasCapability("annotation.write") || projectAccess.hasCapability("review.write");
-  // Authorize each queued op against its own project so a revoked A retains its
-  // drafts without blocking an unrelated authorized B in the same account queue.
+  // Authorize each queued op against its own project with fresh authority so a
+  // stale cache cannot permit a revoked project; a revoked A retains its drafts
+  // without blocking an unrelated authorized B in the same account queue.
   const authorizeOfflineFlush = useCallback(
     async (op: OfflineOp) => {
       const opProjectId = op.projectId ?? projectId;
-      if (!opProjectId || !meUserId) return false;
-      if (opProjectId === projectId) return currentProjectCanWrite;
+      const owner = useAuthStore.getState().user?.id ?? null;
+      if (!opProjectId || !owner) return false;
       try {
+        // staleTime:0 forces a fresh access read for every op.
         const data = await queryClient.fetchQuery({
-          queryKey: projectAccessQueryKey(opProjectId, meUserId),
+          queryKey: projectAccessQueryKey(opProjectId, owner),
           queryFn: ({ signal }) => projectsApi.getAccess(opProjectId, { signal }),
-          staleTime: 30_000,
+          staleTime: 0,
         });
+        // Bind the response to the exact op context and re-check the owner after
+        // the await so a switched account cannot authorize with stale caps.
+        if (data.project_id !== opProjectId || data.user_id !== owner) return false;
+        if ((useAuthStore.getState().user?.id ?? null) !== owner) return false;
         const capabilities = new Set(data.capabilities ?? []);
         return capabilities.has("annotation.write") || capabilities.has("review.write");
       } catch {
         return false;
       }
     },
-    [currentProjectCanWrite, meUserId, projectId, queryClient],
+    [projectId, queryClient],
   );
 
   const offlineQ = useWorkbenchOfflineQueue({

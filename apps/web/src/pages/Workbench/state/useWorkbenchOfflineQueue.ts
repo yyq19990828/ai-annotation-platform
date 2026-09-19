@@ -9,6 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { QueryClient } from "@tanstack/react-query";
 
 import { tasksApi } from "@/api/tasks";
+import { ApiError } from "@/api/client";
 import { useOnlineStatus } from "@/hooks/useOnlineStatus";
 import { isCurrentAuthOwner } from "@/stores/authStore";
 import type { AnnotationResponse } from "@/types";
@@ -179,22 +180,23 @@ export function useWorkbenchOfflineQueue({
 
   const flushAll = useCallback(async () => {
     if (!queueScope) return;
-    const authorize = authorizeFlushRef.current;
-    const result = await drain(
-      flushOne,
-      queueScope,
-      authorize
-        ? {
-            shouldProcess: async (op) => {
-              try {
-                return await authorize(op);
-              } catch {
-                return false;
-              }
-            },
-          }
-        : undefined,
-    );
+    const result = await drain(flushOne, queueScope, {
+      // Read the latest authorizer for every op: a project/account switch while
+      // a drain is in flight must not keep using a captured decision.
+      shouldProcess: async (op) => {
+        const authorize = authorizeFlushRef.current;
+        if (!authorize) return true;
+        try {
+          return await authorize(op);
+        } catch {
+          return false;
+        }
+      },
+      // A replay rejected with 403/404 has lost authority: retain the draft and
+      // keep draining so unrelated authorized projects can still sync.
+      isAuthorityDenial: (error) =>
+        error instanceof ApiError && (error.status === 403 || error.status === 404),
+    });
     if (!queueScope.isCurrent?.()) return;
     if (result.ok > 0) {
       setSyncError(null);

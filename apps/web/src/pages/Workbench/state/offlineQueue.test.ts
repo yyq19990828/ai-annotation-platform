@@ -2,6 +2,7 @@
 // put(), including failures before get.onsuccess and after a successful put().
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@/api/client";
 
 const storage = vi.hoisted(() => ({
   values: new Map<string, unknown>(),
@@ -610,5 +611,40 @@ describe("offlineQueue.drain · per-operation authorization", () => {
     expect(result).toEqual({ ok: 0, failed: 0, denied: 1 });
     expect(handler).not.toHaveBeenCalled();
     expect((await getAll()).map((op) => op.id)).toEqual(["a"]);
+  });
+});
+
+describe("offlineQueue.drain · permanent authority denial", () => {
+  it("retains a 403-denied op and continues with the next authorized op", async () => {
+    await enqueueDurably({ ...deleteOp("a"), projectId: "A" });
+    await enqueueDurably({ ...deleteOp("b"), projectId: "B" });
+    const processed: string[] = [];
+    const result = await drain(
+      async (op) => {
+        if (op.id === "a") throw new ApiError(403, "forbidden");
+        processed.push(op.id);
+      },
+      undefined,
+      { isAuthorityDenial: (error) => error instanceof ApiError && error.status === 403 },
+    );
+    expect(result).toEqual({ ok: 1, failed: 0, denied: 1 });
+    expect(processed).toEqual(["b"]);
+    const all = await getAll();
+    expect(all.map((op) => op.id)).toEqual(["a"]);
+    expect(all[0].retry_count).toBeUndefined();
+  });
+
+  it("stops on a non-authority error as before", async () => {
+    await enqueueDurably({ ...deleteOp("a"), projectId: "A" });
+    await enqueueDurably({ ...deleteOp("b"), projectId: "B" });
+    const result = await drain(
+      async () => {
+        throw new Error("network");
+      },
+      undefined,
+      { isAuthorityDenial: (error) => error instanceof ApiError && error.status === 403 },
+    );
+    expect(result).toEqual({ ok: 0, failed: 1, denied: 0 });
+    expect((await getAll()).map((op) => op.id)).toEqual(["a", "b"]);
   });
 });
