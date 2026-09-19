@@ -719,6 +719,7 @@ async def reject_batch(
         batch_id,
         feedback=data.feedback,
         reviewer_id=current_user.id,
+        actor_id=current_user.id,
     )
     await AuditService.log(
         db,
@@ -1076,7 +1077,9 @@ async def bulk_approve_batches(
     ),
 ):
     svc = BatchService(db)
-    summary = await svc.bulk_approve(project_id, data.batch_ids)
+    summary = await svc.bulk_approve(
+        project_id, data.batch_ids, actor_id=current_user.id
+    )
     await AuditService.log(
         db,
         actor=current_user,
@@ -1109,6 +1112,7 @@ async def bulk_reject_batches(
         data.batch_ids,
         feedback=data.feedback,
         reviewer_id=current_user.id,
+        actor_id=current_user.id,
     )
     audit_detail = _bulk_audit_detail({"batch_ids": data.batch_ids}, summary)
     audit_detail["feedback"] = data.feedback

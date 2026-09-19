@@ -429,6 +429,16 @@ async def accept_ai_mask_candidate(
             status_code=404, reason="task_not_found", message="task was not found"
         )
     _assert_task_still_editable(task, current_user, access=access)
+    from app.api.v1.tasks._shared import (
+        _assert_review_adjustment_evidence,
+        _resolve_task_access,
+    )
+
+    if access is None:
+        access = await _resolve_task_access(
+            db, task, current_user, lock_membership=True
+        )
+    await _assert_review_adjustment_evidence(db, task, current_user, access)
     try:
         await TaskLockService(db).assert_write_allowed(task_id, current_user.id)
     except TaskLockConflictError as exc:

@@ -1033,12 +1033,49 @@ class BatchService:
 
     # ── Batch rejection ────────────────────────────────────────────────────
 
+    async def _assert_batch_review_evidence(
+        self,
+        batch_id: uuid.UUID,
+        actor_id: uuid.UUID | None,
+        batch: TaskBatch,
+        *,
+        statuses: tuple[str, ...] = ("review", "completed"),
+    ) -> None:
+        """Reject a batch decision the actor must not make.
+
+        Each affected review task is checked against its frozen contributor
+        evidence under the current round.  Unknown legacy evidence (409) or a
+        contributor/submitter/effective-annotator actor (403) blocks the
+        decision; the caller keeps its per-batch result shape or rolls back.
+        """
+
+        if actor_id is None:
+            return
+        from app.services.annotation_evidence import assert_review_evidence_current
+
+        rows = (
+            await self.db.execute(
+                select(Task).where(
+                    Task.batch_id == batch_id,
+                    Task.status.in_(list(statuses)),
+                )
+            )
+        ).scalars()
+        for task in rows:
+            effective_annotator_id = (
+                task.assignee_id if task.assignee_id is not None else batch.annotator_id
+            )
+            assert_review_evidence_current(
+                task, actor_id, effective_annotator_id=effective_annotator_id
+            )
+
     async def reject_batch(
         self,
         batch_id: uuid.UUID,
         *,
         feedback: str,
         reviewer_id: uuid.UUID,
+        actor_id: uuid.UUID | None = None,
     ) -> tuple[TaskBatch, int]:
         """v0.7.0 方案 A · 软重置语义：
         - 仅把 review/completed 任务回退到 pending（让标注员可继续动它们）
@@ -1063,6 +1100,9 @@ class BatchService:
                 detail=f"Cannot reject batch in status '{batch.status}'",
             )
 
+        await self._assert_batch_review_evidence(
+            batch_id, actor_id or reviewer_id, batch
+        )
         result = await self.db.execute(
             update(Task)
             .where(
@@ -1567,6 +1607,8 @@ class BatchService:
         self,
         project_id: uuid.UUID,
         batch_ids: list[uuid.UUID],
+        *,
+        actor_id: uuid.UUID | None = None,
     ) -> dict[str, list]:
         loaded = await self._load_batches_for_bulk(project_id, batch_ids)
         succeeded: list[uuid.UUID] = []
@@ -1588,6 +1630,19 @@ class BatchService:
                     {"batch_id": bid, "reason": f"cannot approve from '{batch.status}'"}
                 )
                 continue
+            try:
+                await self._assert_batch_review_evidence(
+                    bid, actor_id, batch, statuses=("review",)
+                )
+            except HTTPException as exc:
+                detail = exc.detail if isinstance(exc.detail, dict) else {}
+                failed.append(
+                    {
+                        "batch_id": bid,
+                        "reason": detail.get("reason") or "review_evidence_invalid",
+                    }
+                )
+                continue
             batch.status = BatchStatus.APPROVED
             succeeded.append(bid)
         await self.db.flush()
@@ -1600,6 +1655,7 @@ class BatchService:
         *,
         feedback: str,
         reviewer_id: uuid.UUID,
+        actor_id: uuid.UUID | None = None,
     ) -> dict[str, list]:
         loaded = await self._load_batches_for_bulk(project_id, batch_ids)
         succeeded: list[uuid.UUID] = []
@@ -1616,6 +1672,19 @@ class BatchService:
             if batch.status != BatchStatus.REVIEWING:
                 failed.append(
                     {"batch_id": bid, "reason": f"cannot reject from '{batch.status}'"}
+                )
+                continue
+            try:
+                await self._assert_batch_review_evidence(
+                    bid, actor_id or reviewer_id, batch
+                )
+            except HTTPException as exc:
+                detail = exc.detail if isinstance(exc.detail, dict) else {}
+                failed.append(
+                    {
+                        "batch_id": bid,
+                        "reason": detail.get("reason") or "review_evidence_invalid",
+                    }
                 )
                 continue
             # soft reset: review/completed tasks → pending

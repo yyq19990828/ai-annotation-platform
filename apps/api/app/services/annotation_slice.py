@@ -79,6 +79,7 @@ class AnnotationSliceService:
         self, task_id: uuid.UUID, actor: User, *, access: Any = None
     ) -> Task:
         from app.api.v1.tasks._shared import (
+            _assert_review_adjustment_evidence,
             _assert_task_visible,
             _resolve_task_access,
         )
@@ -96,6 +97,7 @@ class AnnotationSliceService:
                 self.db, task, actor, lock_membership=True
             )
         await _assert_task_visible(self.db, task, actor, access=access)
+        await _assert_review_adjustment_evidence(self.db, task, actor, access)
         return task
 
     async def _replay(

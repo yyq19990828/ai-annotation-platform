@@ -1228,6 +1228,7 @@ class MaskMutationService:
         task = await self._lock_task(task_id)
 
         from app.api.v1.tasks._shared import (
+            _assert_review_adjustment_evidence,
             _assert_task_editable,
             _assert_task_visible,
             _resolve_task_access,
@@ -1238,6 +1239,10 @@ class MaskMutationService:
                 self.db, task, actor, lock_membership=True
             )
         await _assert_task_visible(self.db, task, actor, access=access)
+        # The FastAPI dependency precheck is not authoritative: re-read the
+        # freshly locked task and revalidate the round's frozen non-self
+        # evidence before an idempotent replay or any mutation.
+        await _assert_review_adjustment_evidence(self.db, task, actor, access)
         replay = await self._idempotent_replay(task_id, actor.id, payload, digest)
         if replay is not None:
             return replay
