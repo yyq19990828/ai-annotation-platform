@@ -63,6 +63,7 @@ export interface ProjectRolesSeedData {
   viewer_email: string;
   viewer_unassigned_email: string;
   spare_email: string;
+  solo_email: string;
   users: Record<
     | "employee"
     | "peer"
@@ -71,7 +72,8 @@ export interface ProjectRolesSeedData {
     | "owner_c"
     | "spare"
     | "viewer"
-    | "viewer_unassigned",
+    | "viewer_unassigned"
+    | "solo",
     ProjectRolesSeedUser
   >;
   projects: Record<"a" | "b" | "c" | "d", ProjectRolesSeedProject>;

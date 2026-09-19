@@ -201,13 +201,25 @@ async def test_project_roles_seed_builds_multi_project_employee_matrix(
         await db_session.scalar(
             select(func.count()).select_from(User).where(User.email.like("%@e2e.test"))
         )
-        == 8
+        == 9
     )
 
     employee = await db_session.scalar(
         select(User).where(User.email == body["employee_email"])
     )
     assert employee is not None and employee.role == "employee"
+
+    # The no-project employee exists but holds no membership.
+    solo = await db_session.scalar(select(User).where(User.email == body["solo_email"]))
+    assert solo is not None and solo.role == "employee"
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(ProjectMember)
+            .where(ProjectMember.user_id == solo.id)
+        )
+        == 0
+    )
 
     memberships = {
         (row.project_id, row.user_id): row.role
@@ -283,7 +295,7 @@ async def test_project_roles_seed_is_idempotent(httpx_client, db_session):
         await db_session.scalar(
             select(func.count()).select_from(User).where(User.email.like("%@e2e.test"))
         )
-        == 8
+        == 9
     )
 
 

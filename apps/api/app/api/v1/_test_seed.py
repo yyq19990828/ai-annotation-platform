@@ -744,6 +744,7 @@ class ProjectRolesSeed(BaseModel):
     ``employee`` is an annotator in ``a`` and a reviewer in ``b``, has no
     membership in ``c`` (whose task is nevertheless assigned to them), and is an
     idle annotator in ``d`` so the test can revoke that membership cleanly.
+    ``solo`` is an employee with no membership at all.
     """
 
     employee_email: str
@@ -754,6 +755,7 @@ class ProjectRolesSeed(BaseModel):
     viewer_email: str
     viewer_unassigned_email: str
     spare_email: str
+    solo_email: str
     users: dict[str, ProjectRolesSeedUser]
     projects: dict[str, ProjectRolesSeedProject]
     annotation_task_id: str
@@ -793,6 +795,9 @@ async def seed_project_roles(db: AsyncSession = Depends(get_db)) -> ProjectRoles
     viewer_unassigned = await create_user(
         db, "viewer", "viewer-unassigned@e2e.test", "E2E Viewer Unassigned"
     )
+    # Platform employee with no project membership: exercises the no-project
+    # employee empty state without a new production endpoint.
+    solo = await create_user(db, "employee", "solo@e2e.test", "E2E Solo")
 
     project_a, tasks_a = await _build_project_roles_image_project(
         db,
@@ -946,6 +951,7 @@ async def seed_project_roles(db: AsyncSession = Depends(get_db)) -> ProjectRoles
         viewer_email=viewer.email,
         viewer_unassigned_email=viewer_unassigned.email,
         spare_email=spare.email,
+        solo_email=solo.email,
         users={
             "employee": user_payload(employee),
             "peer": user_payload(peer),
@@ -955,6 +961,7 @@ async def seed_project_roles(db: AsyncSession = Depends(get_db)) -> ProjectRoles
             "spare": user_payload(spare),
             "viewer": user_payload(viewer),
             "viewer_unassigned": user_payload(viewer_unassigned),
+            "solo": user_payload(solo),
         },
         projects={
             "a": project_payload(

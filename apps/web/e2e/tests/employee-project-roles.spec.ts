@@ -448,4 +448,64 @@ test.describe("project-scoped employee roles", () => {
     ]);
     expect(approved.status(), await approved.text()).toBe(200);
   });
+
+  test("employee dashboard separates annotator and reviewer projects", async ({
+    page,
+    request,
+    seed,
+  }) => {
+    test.setTimeout(90_000);
+    const data = await seed.projectRoles();
+    await submitPeerAnnotation(request, seed, data);
+
+    await seed.injectToken(page, data.employee_email);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/dashboard");
+    await expect(page.getByTestId("employee-tab-annotate")).toBeVisible({ timeout: 20_000 });
+
+    // Annotate pane shows only the employee's annotator projects (A and D);
+    // review-only B must not appear, and C is not visible at all.
+    await expect(page.getByText("E2E Project Roles A")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("E2E Project Roles D")).toBeVisible();
+    await expect(page.getByText("E2E Project Roles B")).toHaveCount(0);
+    await expect(page.getByText("E2E Project Roles C")).toHaveCount(0);
+
+    // Review pane shows B's pending review work and no annotator project.
+    await page.getByTestId("employee-tab-review").click();
+    await expect(page.getByText("E2E Project Roles B")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("E2E Project Roles A")).toHaveCount(0);
+    await expect(page.getByText("E2E Project Roles D")).toHaveCount(0);
+    await expect(page.getByText("E2E Project Roles C")).toHaveCount(0);
+  });
+
+  test("viewer project entry reaches the read-only data manager", async ({ page, seed }) => {
+    test.setTimeout(90_000);
+    const data = await seed.projectRoles();
+
+    await seed.injectToken(page, data.viewer_email);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/dashboard");
+
+    const projectRow = page.getByRole("row").filter({ hasText: "E2E Project Roles A" });
+    await expect(projectRow).toBeVisible({ timeout: 20_000 });
+    await projectRow.click();
+    await expect(page).toHaveURL(
+      new RegExp(`/projects/${data.projects.a.project_id}/data-manager`),
+      { timeout: 15_000 },
+    );
+    await expect(page.getByText("Data Manager · 项目工作面")).toBeVisible({ timeout: 20_000 });
+    // A viewer reaches the read-only surface: no editor and no management actions.
+    await expect(page.getByTestId("workbench-stage")).toHaveCount(0);
+    await expect(page.getByTestId("data-manager-task-actions")).toHaveCount(0);
+  });
+
+  test("employee without projects sees the empty state", async ({ page, seed }) => {
+    test.setTimeout(60_000);
+    const data = await seed.projectRoles();
+
+    await seed.injectToken(page, data.solo_email);
+    await page.setViewportSize({ width: 1440, height: 900 });
+    await page.goto("/dashboard");
+    await expect(page.getByText("等待分配项目")).toBeVisible({ timeout: 20_000 });
+  });
 });
