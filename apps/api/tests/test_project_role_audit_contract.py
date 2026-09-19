@@ -1,8 +1,8 @@
 """Pure contract checks for the read-only project-role audit.
 
-No database is required; these tests pin the versioned report contract and the
-Alembic graph invariants so a later increment cannot silently drop the
-preparation revision or change the report version.
+No database is required; these tests pin the versioned report contract, the
+pre-migration NULL projections and the Alembic graph invariants so later
+increments cannot silently drop preparation handling or change the version.
 """
 
 from __future__ import annotations
@@ -17,17 +17,29 @@ from alembic.script import ScriptDirectory
 
 from scripts.audit_project_roles import (
     AUDIT_REPORT_VERSION,
+    PREPARATION_COLUMNS,
     _json_default,
     _limited,
     build_summary,
     collect_limits,
+    project_role_backfill_filter,
+    project_role_projection,
+    review_evidence_columns,
+    review_evidence_predicates,
     script_heads,
+)
+
+_ALL_CAPABILITIES = tuple(
+    f"{table}.{column}"
+    for table, columns in PREPARATION_COLUMNS.items()
+    for column in columns
 )
 
 _MEMBERSHIP_KEYS = (
     "unknown_platform_roles",
     "unknown_member_roles",
-    "cross_project_mixed_roles",
+    "legacy_global_member_mismatches",
+    "cross_project_role_diversity",
     "viewer_membership_conflicts",
     "administrator_memberships",
     "invalid_administrative_owners",
@@ -44,7 +56,7 @@ _ASSIGNMENT_KEYS = (
 
 
 def test_report_version_is_explicit() -> None:
-    assert AUDIT_REPORT_VERSION == "project-role-audit/1"
+    assert AUDIT_REPORT_VERSION == "project-role-audit/2"
 
 
 def test_script_graph_has_single_head_and_preparation_revision() -> None:
@@ -60,6 +72,43 @@ def test_script_graph_has_single_head_and_preparation_revision() -> None:
     }
     # Later increments may extend the chain; 0173 must never be dropped.
     assert "0173" in revisions
+
+
+def test_pre_migration_projections_are_null_not_columns() -> None:
+    none_present = {key: False for key in _ALL_CAPABILITIES}
+    assert project_role_projection(none_present) == "NULL::varchar"
+    assert project_role_backfill_filter(none_present) == ""
+
+    predicates = review_evidence_predicates(none_present)
+    for name in ("complete", "missing_submitter", "malformed_review_array"):
+        assert "NULL::uuid" in predicates[name] or "NULL::jsonb" in predicates[name]
+    for absent in (
+        "review_submitter_id",
+        "review_contributor_ids",
+        "annotation_contributor_ids",
+    ):
+        assert absent not in predicates["complete"]
+
+    columns = review_evidence_columns(none_present)
+    assert columns["review_submitter_id"] == "NULL::uuid AS review_submitter_id"
+    assert columns["review_contributor_ids"] == "NULL::jsonb AS review_contributor_ids"
+
+
+def test_post_migration_predicates_require_round_submitter_and_accummulator() -> None:
+    present = {key: True for key in _ALL_CAPABILITIES}
+    assert project_role_projection(present) == "i.project_role"
+    assert project_role_backfill_filter(present) == "AND project_role IS NULL"
+
+    predicates = review_evidence_predicates(present)
+    assert "review_submitter_id) IS NOT NULL" in predicates["complete"]
+    assert "jsonb_typeof(review_contributor_ids) = 'array'" in predicates["complete"]
+    assert (
+        "jsonb_typeof(annotation_contributor_ids) = 'array'" in predicates["complete"]
+    )
+    # A non-NULL frozen array alone is not complete: every incomplete reason
+    # participates in the incomplete union.
+    assert predicates["missing_submitter"] in predicates["incomplete"]
+    assert predicates["unknown_accumulator"] in predicates["incomplete"]
 
 
 def test_limited_marks_truncation() -> None:
@@ -89,15 +138,19 @@ def test_json_default_serializes_uuid_and_datetime() -> None:
 
 
 def test_build_summary_projects_each_finding() -> None:
-    baseline = {"schema_in_sync": True}
+    baseline = {
+        "schema_in_sync": True,
+        "schema_capabilities": {key: True for key in _ALL_CAPABILITIES},
+    }
     roles = {key: {"total": index} for index, key in enumerate(_MEMBERSHIP_KEYS)}
     assignments = {key: {"total": 100 + i} for i, key in enumerate(_ASSIGNMENT_KEYS)}
     invitations = {
         "status_counts": {"pending": 7},
         "pending_deleted_project_target": {"total": 2},
         "pending_project_role_to_backfill": {"total": 3},
+        "account_invitation_with_project_role": {"total": 4},
     }
-    evidence = {"unknown": {"total": 11}, "complete": {"total": 4}}
+    evidence = {"complete": {"total": 4}, "incomplete": {"total": 11}}
 
     summary = build_summary(
         baseline=baseline,
@@ -108,13 +161,17 @@ def test_build_summary_projects_each_finding() -> None:
     )
 
     assert summary["schema_in_sync"] is True
+    assert summary["preparation_columns_present"] is True
     assert summary["unknown_platform_roles"] == 0
-    assert summary["inactive_administrative_owners"] == 6
+    assert summary["legacy_global_member_mismatches"] == 2
+    assert summary["cross_project_role_diversity"] == 3
+    assert summary["inactive_administrative_owners"] == 7
     assert summary["annotator_missing_membership"] == 100
     assert summary["inactive_accounts_with_unfinished_work"] == 105
     assert summary["pending_invitations"] == 7
     assert summary["pending_deleted_project_target"] == 2
     assert summary["pending_project_role_to_backfill"] == 3
-    assert summary["review_evidence_unknown"] == 11
+    assert summary["account_invitation_with_project_role"] == 4
     assert summary["review_evidence_complete"] == 4
+    assert summary["review_evidence_incomplete"] == 11
     json.dumps(summary)

@@ -1,19 +1,24 @@
 """Read-only project-role discrepancy / reconciliation audit.
 
 Increment A preparation for the project-scoped employee roles plan
-(``docs/plans/1789807315_project-scoped-employee-roles.md``).  The command
-only reads the database: it opens a ``READ ONLY`` transaction and never
-writes roles, memberships or assignments.  It is safe to run before the
-employee conversion and is meant to gate the later data migration.
+(``docs/plans/1789807315_project-scoped-employee-roles.md``).  The CLI opens a
+``REPEATABLE READ, READ ONLY`` transaction enforced by PostgreSQL and never
+writes roles, memberships or assignments.
+
+The audit also runs *before* revision 0173 exists.  It inspects
+``information_schema`` for the additive preparation columns and substitutes
+``NULL`` projections plus missing-evidence classifications, so reviewing a
+production schema ahead of the migration is safe and reports unknown rather
+than fabricating completeness.
 
 Report shape (versioned JSON)::
 
     {
-      "report_version": "project-role-audit/1",
+      "report_version": "project-role-audit/2",
       "run_id": "<uuid>",
       "generated_at": "<iso8601>",
       "read_only": true,
-      "baseline": {...alembic revisions + script heads...},
+      "baseline": {...revisions, heads, available preparation columns...},
       "limits": {...},
       "summary": {...},
       "findings": {
@@ -35,7 +40,7 @@ Usage::
     uv run python scripts/audit_project_roles.py --pretty
 
 Exit codes:
-    0  audit completed (findings do not fail the command)
+    0  audit completed (findings never fail the command)
     2  the audit could not run (connection or schema error)
 """
 
@@ -46,34 +51,63 @@ import asyncio
 import json
 import sys
 import uuid
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
-AUDIT_REPORT_VERSION = "project-role-audit/1"
+AUDIT_REPORT_VERSION = "project-role-audit/2"
 DEFAULT_MAX_ROWS = 1000
 
-# Fixed role vocabularies.  They are embedded as SQL literals because they are
-# module constants, never user input.
-PLATFORM_ROLES = ("super_admin", "project_admin", "annotator", "reviewer", "viewer")
+# Fixed role vocabularies.  ``employee`` is recognized for post-conversion
+# reconciliation while the legacy annotator/reviewer values stay distinct so a
+# pre-migration mismatch is not mistaken for project-role diversity.
+PLATFORM_ROLES = (
+    "super_admin",
+    "project_admin",
+    "employee",
+    "annotator",
+    "reviewer",
+    "viewer",
+)
+EMPLOYEE_PLATFORM_ROLE = "employee"
+LEGACY_EMPLOYEE_PLATFORM_ROLES = ("annotator", "reviewer")
 PROJECT_ROLES = ("annotator", "reviewer", "viewer")
-EMPLOYEE_PLATFORM_ROLES = ("annotator", "reviewer")
 ADMIN_PLATFORM_ROLES = ("super_admin", "project_admin")
-LEGACY_MIRRORED_PROJECT_ROLE = {
-    "annotator": "annotator",
-    "reviewer": "reviewer",
-    "viewer": "viewer",
-}
 
-_PLATFORM_ROLES_SQL = "('super_admin','project_admin','annotator','reviewer','viewer')"
+_PLATFORM_ROLES_SQL = (
+    "('super_admin','project_admin','employee','annotator','reviewer','viewer')"
+)
+_LEGACY_EMPLOYEE_SQL = "('annotator','reviewer')"
 _PROJECT_ROLES_SQL = "('annotator','reviewer','viewer')"
-_EMPLOYEE_PLATFORM_ROLES_SQL = "('annotator','reviewer')"
 _ADMIN_PLATFORM_ROLES_SQL = "('super_admin','project_admin')"
 
 PLAN_DOCUMENT = "docs/plans/1789807315_project-scoped-employee-roles.md"
+
+# Columns introduced by revision 0173.  Their presence is inspected, never
+# assumed, so the same report runs on a pre-0173 production schema.
+PREPARATION_COLUMNS: dict[str, tuple[str, ...]] = {
+    "project_members": ("version", "updated_at"),
+    "user_invitations": ("project_role",),
+    "tasks": (
+        "annotation_contributor_ids",
+        "review_contributor_ids",
+        "review_submitter_id",
+    ),
+}
+
+_REVIEW_ACTIVITY_SQL = (
+    "review_round_id IS NOT NULL OR reviewer_claimed_at IS NOT NULL "
+    "OR reviewed_at IS NOT NULL OR status IN ('review','completed')"
+)
 
 # Effective task assignment: an explicit task value wins over the inherited
 # batch default, matching existing business semantics.
@@ -105,10 +139,136 @@ _EFFECTIVE_ASSIGNMENT_SELECT = (
     "FROM effective e " + _EFFECTIVE_ASSIGNMENT_JOINS
 )
 
-_REVIEW_ACTIVITY_SQL = (
-    "review_round_id IS NOT NULL OR reviewer_claimed_at IS NOT NULL "
-    "OR reviewed_at IS NOT NULL OR status IN ('review','completed')"
-)
+
+class AuditError(RuntimeError):
+    """Raised when the audit cannot produce a trustworthy report."""
+
+
+# ---------------------------------------------------------------------------
+# Schema capability inspection
+# ---------------------------------------------------------------------------
+
+
+async def detect_schema_capabilities(db: AsyncSession) -> dict[str, bool]:
+    """Report which 0173 preparation columns exist, without assuming any."""
+    rows = await _fetch(
+        db,
+        "SELECT table_name, column_name FROM information_schema.columns "
+        "WHERE table_schema = ANY(current_schemas(false)) "
+        "AND table_name IN ('project_members', 'user_invitations', 'tasks')",
+    )
+    available: dict[str, set[str]] = {table: set() for table in PREPARATION_COLUMNS}
+    for row in rows:
+        table = row["table_name"]
+        if table in available:
+            available[table].add(row["column_name"])
+    return {
+        f"{table}.{column}": column in available[table]
+        for table, columns in PREPARATION_COLUMNS.items()
+        for column in columns
+    }
+
+
+def project_role_projection(capabilities: dict[str, bool]) -> str:
+    """Return the invitation project-role select expression, NULL before 0173."""
+    if capabilities.get("user_invitations.project_role"):
+        return "i.project_role"
+    return "NULL::varchar"
+
+
+def project_role_backfill_filter(capabilities: dict[str, bool]) -> str:
+    """Legacy project invitations need a project_role backfill.
+
+    Before 0173 every pending project invitation qualifies: its project role
+    only exists in the platform ``role`` column.
+    """
+    if capabilities.get("user_invitations.project_role"):
+        return "AND project_role IS NULL"
+    return ""
+
+
+def review_evidence_predicates(capabilities: dict[str, bool]) -> dict[str, str]:
+    """Build mutually exclusive review-evidence predicates.
+
+    Complete evidence requires a round, a submitter, a JSON array of frozen
+    reviewers and a known (non-NULL, array) annotation accumulator.  A
+    non-NULL frozen array alone is not enough: a missing round/submitter,
+    malformed array or sticky-unknown accumulator stays incomplete.  Before
+    0173 every missing column is projected as NULL, so all review activity is
+    classified incomplete.
+    """
+    submitter = (
+        "review_submitter_id"
+        if capabilities.get("tasks.review_submitter_id")
+        else "NULL::uuid"
+    )
+    review_array = (
+        "review_contributor_ids"
+        if capabilities.get("tasks.review_contributor_ids")
+        else "NULL::jsonb"
+    )
+    accumulator = (
+        "annotation_contributor_ids"
+        if capabilities.get("tasks.annotation_contributor_ids")
+        else "NULL::jsonb"
+    )
+    activity = f"({_REVIEW_ACTIVITY_SQL})"
+    missing_round = f"{activity} AND review_round_id IS NULL"
+    missing_submitter = (
+        f"{activity} AND review_round_id IS NOT NULL AND ({submitter}) IS NULL"
+    )
+    malformed_review_array = (
+        f"{activity} AND review_round_id IS NOT NULL AND ({submitter}) IS NOT NULL "
+        f"AND jsonb_typeof({review_array}) IS DISTINCT FROM 'array'"
+    )
+    unknown_accumulator = (
+        f"{activity} AND review_round_id IS NOT NULL AND ({submitter}) IS NOT NULL "
+        f"AND jsonb_typeof({review_array}) = 'array' "
+        f"AND jsonb_typeof({accumulator}) IS DISTINCT FROM 'array'"
+    )
+    complete = (
+        f"{activity} AND review_round_id IS NOT NULL AND ({submitter}) IS NOT NULL "
+        f"AND jsonb_typeof({review_array}) = 'array' "
+        f"AND jsonb_typeof({accumulator}) = 'array'"
+    )
+    return {
+        "complete": complete,
+        "missing_round": missing_round,
+        "missing_submitter": missing_submitter,
+        "malformed_review_array": malformed_review_array,
+        "unknown_accumulator": unknown_accumulator,
+        "incomplete": "("
+        + " OR ".join(
+            (
+                missing_round,
+                missing_submitter,
+                malformed_review_array,
+                unknown_accumulator,
+            )
+        )
+        + ")",
+    }
+
+
+def review_evidence_columns(capabilities: dict[str, bool]) -> dict[str, str]:
+    """Return aliased NULL-safe select expressions for evidence detail rows."""
+    return {
+        "review_submitter_id": (
+            "review_submitter_id"
+            if capabilities.get("tasks.review_submitter_id")
+            else "NULL::uuid AS review_submitter_id"
+        ),
+        "review_contributor_ids": (
+            "review_contributor_ids"
+            if capabilities.get("tasks.review_contributor_ids")
+            else "NULL::jsonb AS review_contributor_ids"
+        ),
+        "annotation_contributor_ids": (
+            "annotation_contributor_ids"
+            if capabilities.get("tasks.annotation_contributor_ids")
+            else "NULL::jsonb AS annotation_contributor_ids"
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +316,7 @@ async def _count_and_rows(
 
 
 def script_heads() -> list[str]:
-    """Return the Alembic head revisions declared by the checked-in scripts."""
+    """Return the Alembic head revisions declared by the checked-in graph."""
     from alembic.config import Config
     from alembic.script import ScriptDirectory
 
@@ -166,7 +326,9 @@ def script_heads() -> list[str]:
     return sorted(ScriptDirectory.from_config(config).get_heads())
 
 
-async def audit_schema_baseline(db: AsyncSession) -> dict:
+async def audit_schema_baseline(
+    db: AsyncSession, capabilities: dict[str, bool]
+) -> dict:
     database_revisions = [
         row["version_num"]
         for row in await _fetch(db, "SELECT version_num FROM alembic_version")
@@ -179,6 +341,7 @@ async def audit_schema_baseline(db: AsyncSession) -> dict:
         "database_revisions": sorted(database_revisions),
         "script_heads": heads,
         "schema_in_sync": set(database_revisions) == set(heads),
+        "schema_capabilities": capabilities,
     }
 
 
@@ -214,30 +377,45 @@ async def audit_role_discrepancies(db: AsyncSession, *, max_rows: int) -> dict:
         ),
         max_rows=max_rows,
     )
-    # Cross-project mixed roles are expected after the feature ships: an
-    # employee may annotate in A and review in B.  Report them separately so a
-    # migration review does not mistake them for corruption.
-    mixed_roles = await _count_and_rows(
+    # Legacy mismatch: the account's global annotator/reviewer role disagrees
+    # with this membership.  Distinct from true cross-project diversity below.
+    legacy_mismatches = await _count_and_rows(
         db,
         count_sql=(
             "SELECT count(*) FROM project_members pm "
             "JOIN users u ON u.id = pm.user_id "
-            f"WHERE u.role IN {_EMPLOYEE_PLATFORM_ROLES_SQL} "
+            f"WHERE u.role IN {_LEGACY_EMPLOYEE_SQL} "
             f"AND pm.role IN {_PROJECT_ROLES_SQL} AND pm.role <> u.role"
         ),
         rows_sql=(
             "SELECT pm.id, pm.project_id, pm.user_id, u.role AS platform_role, "
-            "pm.role AS project_role FROM project_members pm "
-            "JOIN users u ON u.id = pm.user_id "
-            f"WHERE u.role IN {_EMPLOYEE_PLATFORM_ROLES_SQL} "
+            "pm.role AS project_role, u.role AS expected_project_role "
+            "FROM project_members pm JOIN users u ON u.id = pm.user_id "
+            f"WHERE u.role IN {_LEGACY_EMPLOYEE_SQL} "
             f"AND pm.role IN {_PROJECT_ROLES_SQL} AND pm.role <> u.role "
             "ORDER BY pm.project_id, pm.user_id LIMIT :max_rows"
         ),
         max_rows=max_rows,
     )
+    # Post-conversion diversity: one account holding different project roles in
+    # different projects.  Legitimate, reported separately.
+    role_diversity = await _count_and_rows(
+        db,
+        count_sql=(
+            "SELECT count(*) FROM (SELECT pm.user_id FROM project_members pm "
+            "GROUP BY pm.user_id HAVING count(DISTINCT pm.role) > 1) AS diverse"
+        ),
+        rows_sql=(
+            "SELECT pm.user_id, count(DISTINCT pm.role) AS distinct_project_roles, "
+            "array_agg(DISTINCT pm.role ORDER BY pm.role) AS project_roles "
+            "FROM project_members pm GROUP BY pm.user_id "
+            "HAVING count(DISTINCT pm.role) > 1 ORDER BY pm.user_id LIMIT :max_rows"
+        ),
+        max_rows=max_rows,
+    )
     # A platform viewer may only hold viewer memberships; anything else is a
     # genuine inconsistency rather than a legitimate mixed role.
-    viewer_membership_conflicts = await _count_and_rows(
+    viewer_conflicts = await _count_and_rows(
         db,
         count_sql=(
             "SELECT count(*) FROM project_members pm "
@@ -248,8 +426,7 @@ async def audit_role_discrepancies(db: AsyncSession, *, max_rows: int) -> dict:
         rows_sql=(
             "SELECT pm.id, pm.project_id, pm.user_id, u.role AS platform_role, "
             "pm.role AS project_role FROM project_members pm "
-            "JOIN users u ON u.id = pm.user_id "
-            "WHERE u.role = 'viewer' "
+            "JOIN users u ON u.id = pm.user_id WHERE u.role = 'viewer' "
             "AND (pm.role IS NULL OR pm.role IS DISTINCT FROM 'viewer') "
             "ORDER BY pm.project_id, pm.user_id LIMIT :max_rows"
         ),
@@ -278,8 +455,7 @@ async def audit_role_discrepancies(db: AsyncSession, *, max_rows: int) -> dict:
     invalid_owners = await _count_and_rows(
         db,
         count_sql=(
-            "SELECT count(*) FROM projects p "
-            "LEFT JOIN users u ON u.id = p.owner_id "
+            "SELECT count(*) FROM projects p LEFT JOIN users u ON u.id = p.owner_id "
             f"WHERE u.id IS NULL OR u.role IS NULL OR u.role NOT IN {_ADMIN_PLATFORM_ROLES_SQL}"
         ),
         rows_sql=(
@@ -306,8 +482,9 @@ async def audit_role_discrepancies(db: AsyncSession, *, max_rows: int) -> dict:
     return {
         "unknown_platform_roles": unknown_platform_roles,
         "unknown_member_roles": unknown_member_roles,
-        "cross_project_mixed_roles": mixed_roles,
-        "viewer_membership_conflicts": viewer_membership_conflicts,
+        "legacy_global_member_mismatches": legacy_mismatches,
+        "cross_project_role_diversity": role_diversity,
+        "viewer_membership_conflicts": viewer_conflicts,
         "administrator_memberships": administrator_memberships,
         "invalid_administrative_owners": invalid_owners,
         "inactive_administrative_owners": inactive_owners,
@@ -329,8 +506,11 @@ async def audit_assignment_gaps(db: AsyncSession, *, max_rows: int) -> dict:
         )
 
     def rows_sql(predicate: str) -> str:
+        # The rows query needs the same CTE as the count query, otherwise
+        # ``FROM effective`` does not resolve on a nonempty result.
         return (
-            _EFFECTIVE_ASSIGNMENT_SELECT
+            _EFFECTIVE_ASSIGNMENT_CTE
+            + _EFFECTIVE_ASSIGNMENT_SELECT
             + f" WHERE {predicate} ORDER BY e.task_id LIMIT :max_rows"
         )
 
@@ -391,7 +571,9 @@ async def audit_assignment_gaps(db: AsyncSession, *, max_rows: int) -> dict:
 # ---------------------------------------------------------------------------
 
 
-async def audit_invitations(db: AsyncSession, *, max_rows: int) -> dict:
+async def audit_invitations(
+    db: AsyncSession, *, capabilities: dict[str, bool], max_rows: int
+) -> dict:
     status_counts = {
         "pending": await _scalar(
             db,
@@ -412,9 +594,11 @@ async def audit_invitations(db: AsyncSession, *, max_rows: int) -> dict:
             "WHERE accepted_at IS NULL AND revoked_at IS NULL AND expires_at <= now()",
         ),
     }
+    project_role = project_role_projection(capabilities)
     pending_rows_sql = (
-        "SELECT i.id, i.project_id, i.role, i.project_role, i.expires_at, "
-        "i.invited_by, (p.id IS NOT NULL) AS target_exists "
+        "SELECT i.id, i.project_id, i.role, "
+        f"{project_role} AS project_role, i.expires_at, i.invited_by, "
+        "(p.id IS NOT NULL) AS target_exists "
         "FROM user_invitations i LEFT JOIN projects p ON p.id = i.project_id "
         "WHERE i.accepted_at IS NULL AND i.revoked_at IS NULL "
         "AND i.expires_at > now() ORDER BY i.project_id NULLS FIRST, i.id "
@@ -448,7 +632,8 @@ async def audit_invitations(db: AsyncSession, *, max_rows: int) -> dict:
             "AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now()"
         ),
         rows_sql=(
-            "SELECT i.id, i.project_id, i.role, i.project_role, i.expires_at "
+            "SELECT i.id, i.project_id, i.role, "
+            f"{project_role} AS project_role, i.expires_at "
             "FROM user_invitations i LEFT JOIN projects p ON p.id = i.project_id "
             "WHERE i.project_id IS NOT NULL AND p.id IS NULL "
             "AND i.accepted_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now() "
@@ -456,29 +641,33 @@ async def audit_invitations(db: AsyncSession, *, max_rows: int) -> dict:
         ),
         max_rows=max_rows,
     )
-    # Legacy pending project invitations still carry their project role in the
-    # platform ``role`` column; the migration must move it before converting.
+    # Legacy pending project invitations keep their project role in the platform
+    # ``role`` column; the migration must move it before converting.  Without
+    # the 0173 column every pending project invitation needs the backfill.
     project_role_to_backfill = await _scalar(
         db,
         "SELECT count(*) FROM user_invitations WHERE project_id IS NOT NULL "
-        "AND project_role IS NULL AND accepted_at IS NULL AND revoked_at IS NULL "
-        "AND expires_at > now()",
+        f"{project_role_backfill_filter(capabilities)} "
+        "AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()",
     )
-    account_invitation_with_project_role = await _count_and_rows(
-        db,
-        count_sql=(
-            "SELECT count(*) FROM user_invitations "
-            "WHERE project_id IS NULL AND project_role IS NOT NULL "
-            "AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()"
-        ),
-        rows_sql=(
-            "SELECT id, role, project_role FROM user_invitations "
-            "WHERE project_id IS NULL AND project_role IS NOT NULL "
-            "AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now() "
-            "ORDER BY id LIMIT :max_rows"
-        ),
-        max_rows=max_rows,
-    )
+    if capabilities.get("user_invitations.project_role"):
+        account_invitation_with_project_role = await _count_and_rows(
+            db,
+            count_sql=(
+                "SELECT count(*) FROM user_invitations "
+                "WHERE project_id IS NULL AND project_role IS NOT NULL "
+                "AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now()"
+            ),
+            rows_sql=(
+                "SELECT id, role, project_role FROM user_invitations "
+                "WHERE project_id IS NULL AND project_role IS NOT NULL "
+                "AND accepted_at IS NULL AND revoked_at IS NULL AND expires_at > now() "
+                "ORDER BY id LIMIT :max_rows"
+            ),
+            max_rows=max_rows,
+        )
+    else:
+        account_invitation_with_project_role = _limited([], 0, max_rows)
     return {
         "status_counts": status_counts,
         "pending": pending,
@@ -495,58 +684,65 @@ async def audit_invitations(db: AsyncSession, *, max_rows: int) -> dict:
 # ---------------------------------------------------------------------------
 
 
-async def audit_review_evidence(db: AsyncSession, *, max_rows: int) -> dict:
-    complete = await _count_and_rows(
-        db,
-        count_sql=(
-            "SELECT count(*) FROM tasks WHERE "
-            f"({_REVIEW_ACTIVITY_SQL}) AND review_contributor_ids IS NOT NULL"
-        ),
-        rows_sql=(
-            "SELECT id AS task_id, project_id, review_round_id, "
-            "review_submitter_id FROM tasks WHERE "
-            f"({_REVIEW_ACTIVITY_SQL}) AND review_contributor_ids IS NOT NULL "
-            "ORDER BY id LIMIT :max_rows"
-        ),
-        max_rows=max_rows,
+async def audit_review_evidence(
+    db: AsyncSession, *, capabilities: dict[str, bool], max_rows: int
+) -> dict:
+    predicates = review_evidence_predicates(capabilities)
+    columns = review_evidence_columns(capabilities)
+    detail = (
+        "SELECT id AS task_id, project_id, review_round_id, "
+        f"{columns['review_submitter_id']}, "
+        f"{columns['review_contributor_ids']}, "
+        f"{columns['annotation_contributor_ids']} FROM tasks "
     )
-    # Unknown evidence (NULL) on a task that has review activity is the
-    # rollout-blocking case: review writes must stay blocked until repaired.
-    unknown = await _count_and_rows(
-        db,
-        count_sql=(
-            "SELECT count(*) FROM tasks WHERE "
-            f"({_REVIEW_ACTIVITY_SQL}) AND review_contributor_ids IS NULL"
-        ),
-        rows_sql=(
-            "SELECT id AS task_id, project_id, review_round_id, "
-            "review_submitter_id FROM tasks WHERE "
-            f"({_REVIEW_ACTIVITY_SQL}) AND review_contributor_ids IS NULL "
-            "ORDER BY id LIMIT :max_rows"
-        ),
-        max_rows=max_rows,
-    )
-    absent = await _scalar(
-        db,
-        "SELECT count(*) FROM tasks WHERE "
-        f"NOT ({_REVIEW_ACTIVITY_SQL}) AND review_contributor_ids IS NULL",
-    )
-    first_review_eligible_counts = {
-        row["first_review_eligible"]: int(row["count"])
-        for row in await _fetch(
+
+    async def category(name: str) -> dict:
+        return await _count_and_rows(
             db,
-            "SELECT first_review_eligible, count(*) AS count FROM tasks "
-            "GROUP BY first_review_eligible",
+            count_sql="SELECT count(*) FROM tasks WHERE " + predicates[name],
+            rows_sql=detail
+            + "WHERE "
+            + predicates[name]
+            + " ORDER BY id LIMIT :max_rows",
+            max_rows=max_rows,
+        )
+
+    complete = await category("complete")
+    incomplete = await category("incomplete")
+    incomplete_reasons = {
+        name: {
+            "total": await _scalar(
+                db, "SELECT count(*) FROM tasks WHERE " + predicates[name]
+            )
+        }
+        for name in (
+            "missing_round",
+            "missing_submitter",
+            "malformed_review_array",
+            "unknown_accumulator",
         )
     }
+    # A task without review activity has no evidence to freeze yet; NULL there
+    # is expected, not a defect (no default marks a legacy writer's row known).
+    no_review_activity = await _scalar(
+        db,
+        "SELECT count(*) FROM tasks WHERE NOT (" + _REVIEW_ACTIVITY_SQL + ")",
+    )
+    if capabilities.get("tasks.annotation_contributor_ids"):
+        accumulator_known = await _scalar(
+            db,
+            "SELECT count(*) FROM tasks WHERE ("
+            + _REVIEW_ACTIVITY_SQL
+            + ") AND annotation_contributor_ids IS NOT NULL",
+        )
+    else:
+        accumulator_known = 0
     return {
         "complete": complete,
-        "unknown": unknown,
-        "no_review_activity": {"total": absent},
-        "first_review_eligible_distribution": {
-            ("true" if key is True else "false" if key is False else "unknown"): value
-            for key, value in first_review_eligible_counts.items()
-        },
+        "incomplete": incomplete,
+        "incomplete_reasons": incomplete_reasons,
+        "no_review_activity": {"total": no_review_activity},
+        "accumulator_known": {"total": accumulator_known},
     }
 
 
@@ -582,9 +778,6 @@ async def audit_reconciliation(db: AsyncSession) -> dict:
         "WHERE first_review_result IS NOT NULL GROUP BY first_review_result",
         "first_review_result",
     )
-    # Per-author annotation totals and per-assignee unfinished workload keep the
-    # report bounded while allowing the deployment maintainer to reconcile
-    # historical performance against the approved transformation.
     annotations_by_author = await _fetch(
         db,
         "SELECT user_id, count(*) AS active_annotations FROM annotations "
@@ -685,9 +878,13 @@ def build_summary(
     """Derive the headline counts the deployer triages first (pure function)."""
     return {
         "schema_in_sync": baseline["schema_in_sync"],
+        "preparation_columns_present": all(baseline["schema_capabilities"].values()),
         "unknown_platform_roles": roles["unknown_platform_roles"]["total"],
         "unknown_member_roles": roles["unknown_member_roles"]["total"],
-        "cross_project_mixed_roles": roles["cross_project_mixed_roles"]["total"],
+        "legacy_global_member_mismatches": roles["legacy_global_member_mismatches"][
+            "total"
+        ],
+        "cross_project_role_diversity": roles["cross_project_role_diversity"]["total"],
         "viewer_membership_conflicts": roles["viewer_membership_conflicts"]["total"],
         "administrator_memberships": roles["administrator_memberships"]["total"],
         "invalid_administrative_owners": roles["invalid_administrative_owners"][
@@ -721,17 +918,12 @@ def build_summary(
         "pending_project_role_to_backfill": invitations[
             "pending_project_role_to_backfill"
         ]["total"],
-        "review_evidence_unknown": evidence["unknown"]["total"],
+        "account_invitation_with_project_role": invitations[
+            "account_invitation_with_project_role"
+        ]["total"],
         "review_evidence_complete": evidence["complete"]["total"],
+        "review_evidence_incomplete": evidence["incomplete"]["total"],
     }
-
-
-def collect_limits(*sections: dict, max_rows: int = DEFAULT_MAX_ROWS) -> dict:
-    """Return the ``limits`` block for any truncated entity list."""
-    truncated = sorted(
-        {name for section in sections for name, _ in _walk_sections(section)}
-    )
-    return {"max_rows_per_section": max_rows, "truncated_sections": truncated}
 
 
 def _walk_sections(section: dict) -> list[tuple[str, dict]]:
@@ -742,6 +934,14 @@ def _walk_sections(section: dict) -> list[tuple[str, dict]]:
     return found
 
 
+def collect_limits(*sections: dict, max_rows: int = DEFAULT_MAX_ROWS) -> dict:
+    """Return the ``limits`` block for any truncated entity list."""
+    truncated = sorted(
+        {name for section in sections for name, _ in _walk_sections(section)}
+    )
+    return {"max_rows_per_section": max_rows, "truncated_sections": truncated}
+
+
 async def collect_report(
     db: AsyncSession,
     *,
@@ -749,13 +949,24 @@ async def collect_report(
     generated_at: datetime | None = None,
     max_rows: int = DEFAULT_MAX_ROWS,
 ) -> dict:
+    """Compose the report from read-only queries.
+
+    This is a composable helper: it does not set transaction isolation itself.
+    The CLI wraps it in :func:`read_only_audit_session`; fixture-based tests may
+    call it directly after reading existing rows.
+    """
     run_id = run_id or str(uuid.uuid4())
     generated_at = generated_at or datetime.now(timezone.utc)
-    baseline = await audit_schema_baseline(db)
+    capabilities = await detect_schema_capabilities(db)
+    baseline = await audit_schema_baseline(db, capabilities)
     roles = await audit_role_discrepancies(db, max_rows=max_rows)
     assignments = await audit_assignment_gaps(db, max_rows=max_rows)
-    invitations = await audit_invitations(db, max_rows=max_rows)
-    evidence = await audit_review_evidence(db, max_rows=max_rows)
+    invitations = await audit_invitations(
+        db, capabilities=capabilities, max_rows=max_rows
+    )
+    evidence = await audit_review_evidence(
+        db, capabilities=capabilities, max_rows=max_rows
+    )
     reconciliation = await audit_reconciliation(db)
     summary = build_summary(
         baseline=baseline,
@@ -788,6 +999,33 @@ async def collect_report(
 # CLI
 # ---------------------------------------------------------------------------
 
+# REPEATABLE READ gives totals and detail rows one stable audit snapshot;
+# READ ONLY is enforced by PostgreSQL, not only by this module.
+_READ_ONLY_TRANSACTION_SQL = (
+    "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
+)
+
+
+@asynccontextmanager
+async def read_only_audit_session(engine: AsyncEngine):
+    """Yield a session inside a PostgreSQL-enforced read-only transaction."""
+    sessionmaker = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False
+    )
+    async with sessionmaker() as db:
+        await db.execute(text(_READ_ONLY_TRANSACTION_SQL))
+        try:
+            yield db
+        finally:
+            await db.rollback()
+
+
+def _positive_int(value: str) -> int:
+    parsed = int(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be a positive integer")
+    return parsed
+
 
 def _json_default(value: Any) -> Any:
     if isinstance(value, uuid.UUID):
@@ -802,15 +1040,8 @@ async def _run(
 ) -> int:
     engine = create_async_engine(database_url, echo=False)
     try:
-        sessionmaker = async_sessionmaker(
-            engine, class_=AsyncSession, expire_on_commit=False
-        )
-        async with sessionmaker() as db:
-            # Read-only at the transaction level: even a future bug cannot
-            # mutate roles or memberships from this command.
-            await db.execute(text("SET TRANSACTION READ ONLY"))
+        async with read_only_audit_session(engine) as db:
             report = await collect_report(db, max_rows=max_rows)
-            await db.rollback()
     except Exception as exc:  # noqa: BLE001 - CLI boundary
         print(f"audit failed: {type(exc).__name__}", file=sys.stderr)
         return 2
@@ -840,9 +1071,9 @@ def main() -> None:
     parser.add_argument("--output", help="write the JSON report to this path")
     parser.add_argument(
         "--max-rows",
-        type=int,
+        type=_positive_int,
         default=DEFAULT_MAX_ROWS,
-        help="cap on entity rows returned per finding (counts stay exact)",
+        help="positive cap on entity rows per finding (counts stay exact)",
     )
     parser.add_argument("--pretty", action="store_true", help="indent output")
     args = parser.parse_args()
