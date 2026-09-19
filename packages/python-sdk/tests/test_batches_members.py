@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import httpx
 import pytest
+from pydantic import ValidationError
 
 from ai_annotation.errors import ConflictError, PermissionDeniedError
 from ai_annotation.models import (
@@ -363,6 +364,24 @@ def test_me(client, respx_mock):
     assert isinstance(me, Me)
     assert me.role == "project_admin"
     assert me.email == "me@x.io"
+
+
+def test_me_role_is_platform_role_not_legacy_staff(client, respx_mock):
+    # /auth/me 是实时账号契约: 平台角色, 不是历史全局 annotator/reviewer。
+    respx_mock.get(f"{API}/auth/me").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "id": str(uuid4()),
+                "email": "me@x.io",
+                "name": "Me",
+                "role": "annotator",
+                "status": "active",
+            },
+        )
+    )
+    with pytest.raises(ValidationError):
+        client.me()
 
 
 def test_members_permission_denied(client, respx_mock):

@@ -57,7 +57,7 @@ last_reviewed: 2026-09-19
 
 - 任务上新增 `annotation_contributor_ids`（标注阶段实际操作者的去重并集）、`review_contributor_ids`（冻结在当前 `review_round_id`）与 `review_submitter_id`。
 - 所有标注阶段变更（批量、撤销 / 恢复、转换、导入、AI 接受、视频 / 场景 / 多相机）在任务锁事务内累积**实际操作者**，而不仅是原始作者；改派不清空已冻结贡献者。
-- 遗留任务的“未知”是黏性的：`NULL` 不会因新增一条标注变成“已知集合”；未知证据的审核写入返回 `409 review_contributors_unknown` 并阻断，**不**按全局角色回退。可信回填与不可用任务的恢复是运维闸门，见 [迁移与回滚 runbook](/ops/runbooks/project-role-migration)。
+- “已知为空”与“未知”不同：`annotation_contributor_ids = []` 是新建任务在尚无作者 / 提交前的合法空集；`NULL`（旧二进制或迁移前创建）、结构畸形，或审核轮次缺少有效 `review_round_id` + `review_submitter_id` + 完整集合，才是“未知”。“未知”是黏性的：`NULL` 不会因新增一条标注变成“已知集合”；未知证据的审核写入返回 `409 review_contributors_unknown` 并阻断，**不**按全局角色回退。**平台不附带自动回填工具**，证据修复与不可用任务的恢复是单独批准的运维闸门，见 [迁移与回滚 runbook](/ops/runbooks/project-role-migration)。
 
 ### 成员角色变更与交接
 

@@ -64,7 +64,7 @@
 
 在任务上新增 `annotation_contributor_ids`（可空 JSONB，标注阶段参与者的去重并集）、`review_contributor_ids`（冻结在 `review_round_id`）、`review_submitter_id`。所有标注阶段变更（含批量、撤销 / 恢复、转换、导入、AI 接受、视频 / 场景 / 多相机）在任务锁事务内累积**实际操作者**，而不只是原始作者。
 
-- “未知”是黏性的：遗留任务的 `NULL` 不得因为新增一条标注就被当成“已知集合”；在可信回填前，未知证据的审核写入返回 `409 review_contributors_unknown` 并阻断，不按全局角色回退。
+- “已知为空”与“未知”不同：`annotation_contributor_ids = []` 是新建任务在尚无作者 / 提交前的合法空集；列为 `NULL`（旧二进制或迁移前创建）、结构畸形，或审核轮次缺少有效 `review_round_id` + `review_submitter_id` + 完整集合，才是“未知”。未知是黏性的：不得因为新增一条标注就把 `NULL` 当成“已知集合”；未知证据的审核写入返回 `409 review_contributors_unknown` 并阻断，不按全局角色回退。**平台不附带自动的贡献者回填工具**，修复需单独批准。
 - 领取 / 编辑 / 通过 / 退回（含批处理与改变已审内容的 QC 接受）都校验当前冻结证据；改派不得移除已冻结贡献者。
 - 保留既有首审绩效事实，不改历史归属。
 
@@ -83,8 +83,9 @@
 
 ### 迁移与回滚边界
 
-- `0173_project_role_preparation.py`：加性、向前 / 向后兼容的列与只读审计，旧二进制可继续运行。`0174_project_role_conversion.py`：只把全局 `annotator` / `reviewer` 转为 `employee`，回填待处理邀请的项目角色，保留 ID、停用状态与全部历史；**不**从全局角色创建成员关系，缺失成员关系保持缺失并 fail closed。
-- 0174 **不可逆到旧的全局角色模型**：一旦写入跨项目职责或员工邀请，旧模型无法无损表达。回滚只有两个合法选项——前一冻结窗口内用受保护的迁移前快照整体回退（视为业务数据回滚，不是 schema downgrade），或在支持新 schema / 模型的新二进制上向前修复。相关 runbook 见 `docs-site/ops/runbooks/project-role-migration.md`。
+- `0173_project_role_preparation.py`：加性、向前 / 向后兼容的列与只读审计，旧二进制可继续运行。**Increment A 的准备层可独立兼容部署且不改变现有授权**；只有完整的 Increment B 是单次协调切换，其内部工作包（B1…）不可分别部署。`0174_project_role_conversion.py`：只把全局 `annotator` / `reviewer` 转为 `employee`，回填**待处理**邀请的项目角色，保留 ID、停用状态与全部历史；它不改写成员关系行 / 角色；**不**从全局角色创建成员关系，缺失成员关系保持缺失并 fail closed。
+- 0174 的 downgrade **在任何窗口都始终抛错**，即使是在重开写入之前的冻结窗口；不存在“旧二进制 + 自动降级”的旧模型回退。前置恢复只有一种：恢复**精确的迁移前快照**并回退旧二进制。重开写入之后，旧全局角色模型无法无损表达跨项目职责，只能向前修复（支持新 schema / 模型的新二进制）或把备份恢复视为一次显式业务数据回滚。相关 runbook 见 `docs-site/ops/runbooks/project-role-migration.md`。
+- 贡献者证据只有在**所有** API / worker 写入生产者都已部署（旧写入经过排空边界）后才可信；混合新旧写入者无法建立完整来源。旧二进制回滚后加性列不再维护，重开写入前必须归档已收集证据并把受影响可变任务的完整性标记为未知。
 - 最终 CHECK 约束属于兼容性清理阶段；在此之前未知 / 意外遗留值由运维按审计闸门逐行核对，禁止自动猜测或补建成员关系。
 
 ## Consequences
@@ -99,7 +100,7 @@
 负向：
 
 - 必须是 API / worker / 前端**同版本**协调切换；前端发 `employee` 而后端未匹配、或后端放开员工而兄弟端点仍保留全局质检旁路，都会破坏一致性。
-- 遗留任务中“未知审阅证据”在可信回填前会**阻断**对应审核写入；运维需识别受影响任务并约定恢复方式。
+- 遗留任务中“未知审阅证据”在单独批准的修复完成前会**阻断**对应审核写入（平台不附带自动回填工具）；运维需识别受影响任务并约定恢复方式（批准的数据修复或用单独归属的新任务替换）。
 - 已有签发的直接存储 URL 在撤销后仍有到期前的可用窗口（当前下载默认 1 小时、最多 10 分钟对齐；评论附件 5 分钟无对齐；导出 7 天且调用方另受对齐约束）。立即失效需单独规划存储 / 代理改造。
 - 旧二进制在 0173 之后仍可运行但不再维护加性列；回滚重开写入前必须归档已收集的授权证据并把受影响可变任务标记为“完整性未知”。
 
@@ -122,4 +123,4 @@
 - 迁移：`apps/api/alembic/versions/0173_project_role_preparation.py`、`0174_project_role_conversion.py`。
 - 前端（同功能增量，另行落地）：`apps/web/src/hooks/useProjectAccess.ts` 等；Python SDK：`packages/python-sdk/src/ai_annotation/models.py`、`client.py`、`cli/members.py`。
 - 相关文档：[可见性与权限](../../docs-site/dev/concepts/visibility-and-permissions.md)、[迁移与回滚 runbook](../../docs-site/ops/runbooks/project-role-migration.md)、[完整计划](../plans/1789807315_project-scoped-employee-roles.md)、[ADR-0005 任务锁与审核矩阵](archive/0005-task-lock-and-review-matrix.md)。
-- 已知边界 / 后续：撤销后已签发 URL 的立即失效、兼容性清理阶段的最终 CHECK 约束、遗留审阅证据的可信回填方式。
+- 已知边界 / 后续：撤销后已签发 URL 的立即失效、兼容性清理阶段的最终 CHECK 约束、遗留审阅证据的单独批准修复方式（无自动回填工具）。

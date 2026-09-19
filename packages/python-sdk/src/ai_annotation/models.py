@@ -681,7 +681,9 @@ class Me(_AAPModel):
     id: UUID
     email: str
     name: str
-    role: str
+    #: 实时账号契约: 服务端 `/auth/me` 返回平台角色 (`PlatformRole`), 不是
+    #: 历史全局 `annotator` / `reviewer`; 历史值只出现在历史记录 DTO 中。
+    role: PlatformRole
 
 
 class TaskActionResult(_AAPModel):
