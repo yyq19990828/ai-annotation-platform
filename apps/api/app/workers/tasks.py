@@ -1099,6 +1099,36 @@ async def _run_batch(
                 await engine.dispose()
                 return
 
+            # Reauthorize the initiating actor against fresh state before each
+            # final write: a long inference must not keep writing after the
+            # actor's account or project authority was revoked.  A bounded
+            # system job (actor is None) keeps its own explicit authority.
+            if actor is not None:
+                await db.refresh(actor)
+                fresh_project = await db.get(
+                    Project, project_uuid, populate_existing=True
+                )
+                if (
+                    not actor.is_active
+                    or fresh_project is None
+                    or not is_privileged_for_project(actor, fresh_project)
+                ):
+                    await async_job_svc.mark_failed(
+                        db, async_job_id, error="preannotation_actor_revoked"
+                    )
+                    await notify_job_terminal(db, job_id=async_job_id)
+                    await db.commit()
+                    _publish_progress(
+                        project_id,
+                        i,
+                        total,
+                        status="failed",
+                        error="permission_revoked",
+                        job_meta=job_meta_base,
+                    )
+                    await engine.dispose()
+                    return
+
             try:
                 results, pipeline_extra, stage_stats = await _run_task_pipeline(
                     task,

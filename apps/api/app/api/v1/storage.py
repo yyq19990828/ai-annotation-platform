@@ -4,7 +4,7 @@ from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_current_user, get_db, require_roles
@@ -13,15 +13,48 @@ from app.db.models.dataset import DatasetItem, VideoChunk, VideoFrameCache
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
+from app.services.scheduler import is_privileged_for_project
 from app.services.storage import storage_service
 from app.schemas.storage import BucketSummary, BucketsResponse
 
 router = APIRouter()
 
 #: Global media/asset maintenance is a platform-administrator surface.  These
-#: endpoints are not project-path scoped; project authority is enforced on the
-#: project-scoped storage callers instead (exports, task media, attachments).
+#: endpoints are not project-path scoped; a project-scoped asset is additionally
+#: restricted to its legitimate project manager.
 _MEDIA_MANAGERS = (PlatformRole.SUPER_ADMIN, PlatformRole.PROJECT_ADMIN)
+
+
+def _managed_project_scope(user: User) -> list:
+    """Extra predicate for project-scoped media rows.
+
+    Super administrators keep global scope.  A platform project administrator
+    may keep dataset-only rows (no owning project) but only sees/retries assets
+    that belong to a project they legitimately own.
+    """
+
+    if user.role == PlatformRole.SUPER_ADMIN.value:
+        return []
+    return [or_(Project.id.is_(None), Project.owner_id == user.id)]
+
+
+async def _assert_media_asset_manager(
+    db: AsyncSession, item: DatasetItem, user: User
+) -> None:
+    """Recheck project ownership for a project-scoped dataset asset."""
+
+    task = (
+        await db.execute(select(Task).where(Task.dataset_item_id == item.id).limit(1))
+    ).scalar_one_or_none()
+    if task is None:
+        return
+    project = await db.get(Project, task.project_id)
+    if project is None or not is_privileged_for_project(user, project):
+        raise HTTPException(
+            status_code=403, detail="仅项目负责人或超级管理员可管理该项目的媒体资源"
+        )
+
+
 VideoAssetKind = Literal["probe", "poster", "frame_timetable", "chunk", "frame"]
 
 
@@ -139,14 +172,15 @@ async def list_video_asset_failures(
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_roles(*_MEDIA_MANAGERS)),
+    current_user: User = Depends(require_roles(*_MEDIA_MANAGERS)),
 ):
+    project_scope = _managed_project_scope(current_user)
     rows = (
         await db.execute(
             select(DatasetItem, Task, Project)
             .outerjoin(Task, Task.dataset_item_id == DatasetItem.id)
             .outerjoin(Project, Project.id == Task.project_id)
-            .where(DatasetItem.file_type == "video")
+            .where(DatasetItem.file_type == "video", *project_scope)
         )
     ).all()
 
@@ -161,7 +195,7 @@ async def list_video_asset_failures(
             .join(DatasetItem, DatasetItem.id == VideoChunk.dataset_item_id)
             .outerjoin(Task, Task.dataset_item_id == DatasetItem.id)
             .outerjoin(Project, Project.id == Task.project_id)
-            .where(VideoChunk.status == "failed")
+            .where(VideoChunk.status == "failed", *project_scope)
         )
     ).all()
     for chunk, item, task, project in chunk_rows:
@@ -186,7 +220,7 @@ async def list_video_asset_failures(
             .join(DatasetItem, DatasetItem.id == VideoFrameCache.dataset_item_id)
             .outerjoin(Task, Task.dataset_item_id == DatasetItem.id)
             .outerjoin(Project, Project.id == Task.project_id)
-            .where(VideoFrameCache.status == "failed")
+            .where(VideoFrameCache.status == "failed", *project_scope)
         )
     ).all()
     for frame, item, task, project in frame_rows:
@@ -228,11 +262,14 @@ async def list_video_asset_failures(
 async def retry_video_asset(
     payload: VideoAssetRetryRequest,
     db: AsyncSession = Depends(get_db),
-    _: User = Depends(require_roles(*_MEDIA_MANAGERS)),
+    current_user: User = Depends(require_roles(*_MEDIA_MANAGERS)),
 ):
     item = await db.get(DatasetItem, payload.dataset_item_id)
     if not item or item.file_type != "video":
         raise HTTPException(status_code=404, detail="Video item not found")
+    # A project-owned asset may only be retried by its legitimate manager;
+    # dataset-only media keeps the platform-manager policy.
+    await _assert_media_asset_manager(db, item, current_user)
 
     if payload.asset_type in {"probe", "poster", "frame_timetable"}:
         from app.workers.media import generate_video_metadata

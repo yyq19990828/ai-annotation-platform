@@ -182,6 +182,59 @@ async def test_async_job_access_drops_after_membership_revocation(
     assert await _can_access_job(db_session, job=job, user=employee) is False
 
 
+async def test_export_job_result_denied_to_annotator_membership(
+    httpx_client: httpx.AsyncClient, db_session: AsyncSession, super_admin
+):
+    """Export result/URL is a reviewer/manager capability on every read path."""
+
+    admin, _ = super_admin
+    project = await create_project(db_session, owner_id=admin.id, name="Agg Exp Job")
+    annotator = await _employee(db_session, "exp-job-anno")
+    reviewer = await _employee(db_session, "exp-job-rev")
+    await _add_member(
+        db_session,
+        project_id=project.id,
+        user=annotator,
+        role="annotator",
+        assigned_by=admin.id,
+    )
+    await _add_member(
+        db_session,
+        project_id=project.id,
+        user=reviewer,
+        role="reviewer",
+        assigned_by=admin.id,
+    )
+    job = AsyncJob(
+        kind="export",
+        project_id=project.id,
+        user_id=annotator.id,
+        status="completed",
+        payload={},
+        result={"download_url": "https://download.invalid/export.zip"},
+    )
+    db_session.add(job)
+    await db_session.commit()
+
+    denied = await httpx_client.get(
+        f"/api/v1/async-jobs/{job.id}", headers=_headers(annotator)
+    )
+    assert denied.status_code == 403
+    listed = await httpx_client.get(
+        f"/api/v1/async-jobs?project_id={project.id}", headers=_headers(annotator)
+    )
+    assert listed.status_code == 200
+    assert listed.json()["total"] == 0
+
+    job.user_id = reviewer.id
+    await db_session.commit()
+    allowed = await httpx_client.get(
+        f"/api/v1/async-jobs/{job.id}", headers=_headers(reviewer)
+    )
+    assert allowed.status_code == 200
+    assert allowed.json()["result"]["download_url"].endswith("export.zip")
+
+
 async def test_export_worker_requires_export_capability(
     db_session: AsyncSession, super_admin
 ):

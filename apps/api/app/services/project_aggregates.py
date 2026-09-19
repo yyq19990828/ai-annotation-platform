@@ -16,10 +16,11 @@ role set means "any membership", never "any account role".
 
 from __future__ import annotations
 
-from sqlalchemy import Select, or_, select
+from sqlalchemy import Select, false, or_, select
 
 from app.db.enums import (
     MANAGER_PLATFORM_ROLES,
+    PLATFORM_ROLES,
     PlatformRole,
     ProjectRole,
 )
@@ -48,19 +49,46 @@ def platform_role_is_manager(platform_role: str | None) -> bool:
     return platform_role in MANAGER_PLATFORM_ROLES
 
 
-def membership_project_ids(user: User, *project_roles: str) -> Select[tuple[object]]:
-    """Project IDs where ``user`` holds a membership, optionally role-filtered."""
+def _valid_membership_conditions():
+    """SQL conditions mirroring the shared resolver's membership contract.
 
-    stmt = select(ProjectMember.project_id).where(ProjectMember.user_id == user.id)
+    A membership only authorizes when the account is active, its platform role
+    is a current known value (never legacy ``annotator``/``reviewer``) and the
+    platform/project-role pairing is valid (a platform viewer may only hold a
+    viewer membership).  Callers must join :class:`User` on the membership.
+    """
+
+    return (
+        User.is_active.is_(True),
+        User.role.in_(list(PLATFORM_ROLES)),
+        or_(
+            User.role != PlatformRole.VIEWER.value,
+            ProjectMember.role == ProjectRole.VIEWER.value,
+        ),
+    )
+
+
+def membership_project_ids(user: User, *project_roles: str) -> Select[tuple[object]]:
+    """Project IDs where ``user`` holds a valid membership, optionally role-filtered."""
+
+    stmt = (
+        select(ProjectMember.project_id)
+        .join(User, User.id == ProjectMember.user_id)
+        .where(ProjectMember.user_id == user.id, *_valid_membership_conditions())
+    )
     if project_roles:
         stmt = stmt.where(ProjectMember.role.in_(list(project_roles)))
     return stmt
 
 
 def member_user_ids(project_id, *project_roles: str) -> Select[tuple[object]]:
-    """User IDs holding a membership in ``project_id``, optionally role-filtered."""
+    """User IDs holding a valid membership in ``project_id``, optionally role-filtered."""
 
-    stmt = select(ProjectMember.user_id).where(ProjectMember.project_id == project_id)
+    stmt = (
+        select(ProjectMember.user_id)
+        .join(User, User.id == ProjectMember.user_id)
+        .where(ProjectMember.project_id == project_id, *_valid_membership_conditions())
+    )
     if project_roles:
         stmt = stmt.where(ProjectMember.role.in_(list(project_roles)))
     return stmt
@@ -83,6 +111,11 @@ def project_scope_clause(user: User, project_column, *, project_roles=()):
     add a predicate (global scope).
     """
 
+    # Fail closed for an inactive account or a legacy/unknown platform role;
+    # the resolver would reject the request, and aggregate SQL must not open a
+    # wider scope than the request can ever pass.
+    if not getattr(user, "is_active", False) or user.role not in PLATFORM_ROLES:
+        return false()
     if user.role == PlatformRole.SUPER_ADMIN.value:
         return None
     arms = [project_column.in_(membership_project_ids(user, *project_roles))]

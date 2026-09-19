@@ -46,6 +46,80 @@ async def _load_active_user(user_id: str | None):
         return user
 
 
+async def _authenticate_socket_token(token: str):
+    """Resolve a socket token (JWT or ``ak_`` API key) to an active account."""
+
+    from app.services import api_key_service
+
+    if api_key_service.is_api_key_token(token):
+        from app.db.base import async_session
+
+        async with async_session() as db:
+            resolved = await api_key_service.resolve_token(db, token)
+            if resolved is None:
+                return None
+            _key, user = resolved
+            await db.commit()  # 持久化 last_used_at
+            return user if user.is_active else None
+    try:
+        payload = decode_access_token(token)
+    except Exception:
+        return None
+    return await _load_active_user(payload.get("sub"))
+
+
+async def _revalidate_active_account(user_id: str) -> bool:
+    return await _load_active_user(user_id) is not None
+
+
+async def _revalidate_admin_account(user_id: str) -> bool:
+    user = await _load_active_user(user_id)
+    return user is not None and user.role in _ADMIN_SOCKET_ROLES
+
+
+async def _revalidate_project_access(project_id: uuid.UUID, user_id: str) -> bool:
+    """Re-resolve current project access for an ongoing restricted stream.
+
+    Project removal must stop future messages for that project while unrelated
+    authorized sockets keep working.
+    """
+
+    from app.db.base import async_session
+    from app.db.models.project import Project
+    from app.db.models.user import User
+    from app.services.project_access import resolve_project_access
+
+    async with async_session() as db:
+        project = await db.get(Project, project_id)
+        user = await db.get(User, uuid.UUID(str(user_id)))
+        if project is None or user is None:
+            return False
+        try:
+            await resolve_project_access(db, user=user, project=project)
+        except Exception:
+            return False
+        return True
+
+
+async def _revalidate_task_visible(task_id: uuid.UUID, user_id: str) -> bool:
+    from app.api.v1.tasks._shared import _assert_task_visible
+    from app.db.base import async_session
+    from app.db.models.task import Task
+
+    user = await _load_active_user(user_id)
+    if user is None:
+        return False
+    async with async_session() as db:
+        task = await db.get(Task, task_id)
+        if task is None:
+            return False
+        try:
+            await _assert_task_visible(db, task, user)
+        except Exception:
+            return False
+        return True
+
+
 # v0.7.0：模块级共享连接池，避免每次 WS 连接都新建 Redis socket。
 # WS 副本数 ↑ 时 Redis 连接数受 max_connections 上限保护。
 _REDIS_POOL: ConnectionPool | None = None
@@ -104,11 +178,18 @@ async def _heartbeat_loop(websocket: WebSocket) -> None:
         log.debug("heartbeat loop ended: %s", e)
 
 
+#: Restricted streams re-check current authority at least this often while
+#: delivering, so a project/role revocation stops future messages without
+#: disconnecting unrelated authorized streams (plan section 7).
+REVALIDATE_INTERVAL = 5.0
+
+
 async def _run_pubsub_ws(
     websocket: WebSocket,
     pubsub: aioredis.client.PubSub,
     *,
     heartbeat: bool = True,
+    revalidate=None,
 ) -> None:
     """把 Redis pub/sub 消息转发给 WebSocket, 直到任意一方关闭。caller 负责 subscribe/cleanup。
 
@@ -120,13 +201,26 @@ async def _run_pubsub_ws(
     listen() 时漏判客户端断开的问题。
     """
 
+    last_revalidated = 0.0
+
     async def _relay() -> None:
+        nonlocal last_revalidated
         async for message in pubsub.listen():
-            if message["type"] == "message":
-                data = message["data"]
-                await websocket.send_text(
-                    data.decode() if isinstance(data, bytes) else data
-                )
+            if message["type"] != "message":
+                continue
+            if revalidate is not None:
+                loop_time = asyncio.get_running_loop().time()
+                if loop_time - last_revalidated >= REVALIDATE_INTERVAL:
+                    last_revalidated = loop_time
+                    if not await revalidate():
+                        # Authority changed after the handshake: stop delivering
+                        # restricted messages.  The endpoint's finally block
+                        # unsubscribes; unrelated sockets are untouched.
+                        return
+            data = message["data"]
+            await websocket.send_text(
+                data.decode() if isinstance(data, bytes) else data
+            )
 
     async def _watch_disconnect() -> None:
         # 不期望客户端→服务端帧; await receive() 仅用于感知客户端断开 / 服务端关闭。
@@ -160,14 +254,36 @@ async def _run_pubsub_ws(
 
 
 @router.websocket("/ws/projects/{project_id}/preannotate")
-async def preannotate_progress(websocket: WebSocket, project_id: uuid.UUID):
+async def preannotate_progress(
+    websocket: WebSocket,
+    project_id: uuid.UUID,
+    token: str = Query(...),
+):
+    """Project preannotation progress.
+
+    Handshake contract (B3 -> B4): connect with ``?token=<JWT or ak_ api_key>``.
+    The stream re-checks current project access every
+    :data:`REVALIDATE_INTERVAL` seconds so losing the project stops delivery.
+    """
+
+    user = await _authenticate_socket_token(token)
+    if user is None or not await _revalidate_project_access(project_id, str(user.id)):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    user_id = str(user.id)
+
     await websocket.accept()
     r = aioredis.Redis(connection_pool=_get_redis_pool())
     pubsub = r.pubsub()
     channel = f"project:{project_id}:preannotate"
     await pubsub.subscribe(channel)
     try:
-        await _run_pubsub_ws(websocket, pubsub, heartbeat=False)
+        await _run_pubsub_ws(
+            websocket,
+            pubsub,
+            heartbeat=False,
+            revalidate=lambda: _revalidate_project_access(project_id, user_id),
+        )
     except WebSocketDisconnect:
         pass
     finally:
@@ -179,7 +295,11 @@ async def preannotate_progress(websocket: WebSocket, project_id: uuid.UUID):
 
 
 @router.websocket("/ws/batches/project/{project_id}")
-async def batch_events_socket(websocket: WebSocket, project_id: uuid.UUID):
+async def batch_events_socket(
+    websocket: WebSocket,
+    project_id: uuid.UUID,
+    token: str = Query(...),
+):
     """v0.9.13 · 项目级 batch 状态变更广播.
 
     Channel: `project:{project_id}:batch` (BatchService.transition / check_auto_transitions
@@ -187,16 +307,28 @@ async def batch_events_socket(websocket: WebSocket, project_id: uuid.UUID):
     useBatchEventsSocket 收到后 invalidate ["batches", projectId], 让标注员/admin
     多端实时看到 batch 状态翻转 (B-15).
 
-    无鉴权 (与 /ws/projects/{id}/preannotate 一致), batch 状态非机密信息;
-    项目内成员均需感知, 限管理员会丢失标注员实时同步语义.
+    Handshake contract (B3 -> B4): connect with ``?token=<JWT or ak_ api_key>``.
+    Project access is required at handshake and re-checked while streaming so a
+    removed member stops receiving this project's events.
     """
+
+    user = await _authenticate_socket_token(token)
+    if user is None or not await _revalidate_project_access(project_id, str(user.id)):
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
+    user_id = str(user.id)
+
     await websocket.accept()
     r = aioredis.Redis(connection_pool=_get_redis_pool())
     pubsub = r.pubsub()
     channel = f"project:{project_id}:batch"
     await pubsub.subscribe(channel)
     try:
-        await _run_pubsub_ws(websocket, pubsub)
+        await _run_pubsub_ws(
+            websocket,
+            pubsub,
+            revalidate=lambda: _revalidate_project_access(project_id, user_id),
+        )
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -243,7 +375,11 @@ async def prediction_jobs_socket(
     channel = "global:prediction-jobs"
     await pubsub.subscribe(channel)
     try:
-        await _run_pubsub_ws(websocket, pubsub)
+        await _run_pubsub_ws(
+            websocket,
+            pubsub,
+            revalidate=lambda: _revalidate_admin_account(str(user.id)),
+        )
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -262,6 +398,7 @@ async def video_tracker_job_socket(
     job_id: uuid.UUID,
     token: str = Query(...),
 ):
+    task_id_for_revalidate: uuid.UUID | None = None
     try:
         payload = decode_access_token(token)
         user_id = payload.get("sub")
@@ -281,6 +418,7 @@ async def video_tracker_job_socket(
             if user is None or not user.is_active or job is None or task is None:
                 raise ValueError("tracker job not visible")
             await _assert_task_visible(db, task, user)
+            task_id_for_revalidate = task.id
     except Exception:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
@@ -291,7 +429,13 @@ async def video_tracker_job_socket(
     channel = f"video-tracker-job:{job_id}"
     await pubsub.subscribe(channel)
     try:
-        await _run_pubsub_ws(websocket, pubsub)
+        await _run_pubsub_ws(
+            websocket,
+            pubsub,
+            revalidate=lambda: _revalidate_task_visible(
+                task_id_for_revalidate, str(user_id)
+            ),
+        )
     except WebSocketDisconnect:
         pass
     finally:
@@ -361,7 +505,11 @@ async def ml_backend_stats_socket(
         log.warning("incr subscribers key failed: %s", e)
 
     try:
-        await _run_pubsub_ws(websocket, pubsub)
+        await _run_pubsub_ws(
+            websocket,
+            pubsub,
+            revalidate=lambda: _revalidate_admin_account(str(user_id)),
+        )
     except WebSocketDisconnect:
         pass
     except Exception as e:
@@ -410,7 +558,11 @@ async def notifications_socket(
     channel = channel_for(user_id)
     await pubsub.subscribe(channel)
     try:
-        await _run_pubsub_ws(websocket, pubsub)
+        await _run_pubsub_ws(
+            websocket,
+            pubsub,
+            revalidate=lambda: _revalidate_active_account(str(user_id)),
+        )
     except WebSocketDisconnect:
         pass
     except Exception as e:

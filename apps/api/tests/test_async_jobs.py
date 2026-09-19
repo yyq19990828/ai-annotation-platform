@@ -123,7 +123,9 @@ async def test_removed_project_member_cannot_read_or_list_export_result(
     membership = ProjectMember(
         project_id=project.id,
         user_id=member.id,
-        role="annotator",
+        # Export result/URL access is a reviewer/manager capability; a reviewer
+        # membership is required before the revocation half of this test.
+        role="reviewer",
         assigned_by=owner.id,
     )
     db_session.add(membership)
@@ -312,9 +314,11 @@ class TestAsyncJobsAPI:
         assert r.json()["total"] >= 1
 
     async def test_list_filters_and_project_meta(
-        self, httpx_client_bound, db_session, annotator
+        self, httpx_client_bound, db_session, project_admin
     ):
-        user, token = annotator
+        # Project-scoped list access needs current management of the owned
+        # project; use the administrative owner so the scope matches.
+        user, token = project_admin
         project = Project(
             display_id="PROJ-AJ-1",
             name="Async Jobs Project",

@@ -48,6 +48,9 @@ CANCELLABLE_KINDS = {
     "point_cloud_quality",
 }
 RETRY_FAILED_KINDS = {"batch_predict"}
+#: Export jobs carry a signed download URL in ``result``; every read path must
+#: apply the project export capability before exposing them.
+EXPORT_JOB_KIND = "export"
 
 AsyncJobStatusParam = Literal["pending", "running", "completed", "failed", "cancelled"]
 
@@ -71,9 +74,22 @@ def _build_async_job_query(
         project_scope = project_scope_clause(
             current_user, AsyncJob.project_id, project_roles=()
         )
+        # Export rows carry a signed download URL in ``result``.  The list and
+        # count endpoints must apply the same export capability as the detail
+        # endpoint, otherwise a downgraded account could still obtain the URL.
+        export_scope = project_scope_clause(
+            current_user,
+            AsyncJob.project_id,
+            project_roles=(ProjectRole.REVIEWER.value,),
+        )
         query = query.where(
             AsyncJob.user_id == current_user.id,
             or_(AsyncJob.project_id.is_(None), project_scope),
+            or_(
+                AsyncJob.kind != EXPORT_JOB_KIND,
+                AsyncJob.project_id.is_(None),
+                export_scope,
+            ),
         )
     if status:
         query = query.where(AsyncJob.status.in_(status))
@@ -112,7 +128,7 @@ async def _can_access_job(db: AsyncSession, *, job: AsyncJob, user: User) -> boo
     project = await db.get(Project, job.project_id)
     if project is None:
         return False
-    from app.services.project_access import resolve_project_access
+    from app.services.project_access import ProjectCapability, resolve_project_access
 
     try:
         access = await resolve_project_access(db, user=user, project=project)
@@ -120,6 +136,12 @@ async def _can_access_job(db: AsyncSession, *, job: AsyncJob, user: User) -> boo
         return False
     if access.is_manager:
         return True
+    if (
+        job.kind == EXPORT_JOB_KIND
+        and ProjectCapability.EXPORT_ANNOTATIONS.value not in access.capabilities
+    ):
+        # A downgraded account must not retrieve a previously issued export URL.
+        return False
     if job.user_id == user.id:
         return True
     if job.kind not in {"mask_qc", "point_cloud_quality"}:

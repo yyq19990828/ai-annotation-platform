@@ -11,6 +11,7 @@ import uuid
 
 import pytest
 
+from app.api.v1.async_jobs import _build_async_job_query
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
@@ -53,11 +54,9 @@ def test_super_admin_gets_global_scope():
     )
 
 
-@pytest.mark.parametrize(
-    "platform_role", ["employee", "viewer", "annotator", "reviewer"]
-)
+@pytest.mark.parametrize("platform_role", ["employee", "viewer"])
 def test_non_manager_scope_is_membership_only(platform_role):
-    """Legacy staff roles and employees get only the membership arm."""
+    """Employee/viewer accounts get only the membership arm."""
 
     clause = task_project_scope(_user(platform_role), project_roles=(ANNOTATOR_ROLE,))
     sql = _sql(clause)
@@ -65,6 +64,24 @@ def test_non_manager_scope_is_membership_only(platform_role):
     assert "project_members" in sql
     assert "project_members.role" in sql
     assert "projects.owner_id" not in sql
+    # Strict membership contract: active account, known platform role, pairing.
+    assert "users.is_active" in sql
+    assert "users.role" in sql
+
+
+@pytest.mark.parametrize("platform_role", ["annotator", "reviewer", "unknown"])
+def test_legacy_or_unknown_platform_role_fails_closed(platform_role):
+    clause = task_project_scope(_user(platform_role), project_roles=(ANNOTATOR_ROLE,))
+    assert clause is not None
+    assert _sql(clause) == "false"
+
+
+def test_inactive_account_fails_closed():
+    inactive = _user("employee")
+    inactive.is_active = False
+    assert (
+        _sql(task_project_scope(inactive, project_roles=(ANNOTATOR_ROLE,))) == "false"
+    )
 
 
 def test_project_admin_scope_includes_owned_and_membership_projects():
@@ -94,12 +111,13 @@ def test_role_filters_are_explicit():
             _user("employee"), Task.project_id, project_roles=(REVIEWER_ROLE,)
         )
     )
-    assert "'annotator'" in annotator_sql
-    assert "'reviewer'" in reviewer_sql
+    assert "project_members.role IN ('annotator')" in annotator_sql
+    assert "project_members.role IN ('reviewer')" in reviewer_sql
     assert annotator_sql != reviewer_sql
-    # The bound role value is a membership role, never an account-role alias.
-    assert "users.role" not in annotator_sql
-    assert "users.role" not in reviewer_sql
+    # The project role is a membership value; the account role is only checked
+    # against the current known platform-role set, never as an alias.
+    assert "users.role IN ('annotator'" not in annotator_sql
+    assert "users.role IN ('reviewer'" not in reviewer_sql
 
 
 def test_membership_helpers_filter_by_role():
@@ -107,6 +125,33 @@ def test_membership_helpers_filter_by_role():
     assert "project_members" in _sql(membership_project_ids(user))
     assert "project_members.role" in _sql(membership_project_ids(user, ANNOTATOR_ROLE))
     assert "project_members.role" in _sql(member_user_ids(uuid.uuid4(), REVIEWER_ROLE))
+
+
+def test_async_job_query_gates_export_results():
+    """The list/count query also gates export rows by reviewer membership."""
+
+    stmt = _build_async_job_query(
+        current_user=_user("employee"),
+        status=None,
+        kind=None,
+        project_id=None,
+        search=None,
+    )
+    sql = _sql(stmt)
+    assert "async_jobs.kind" in sql
+    assert "project_members" in sql
+    # Both the ownership scope and the export-capability scope are present.
+    assert sql.count("project_members") >= 2
+
+
+def test_membership_helpers_require_known_active_account():
+    user = _user("employee")
+    sql = _sql(membership_project_ids(user, ANNOTATOR_ROLE))
+    assert "users.is_active" in sql
+    assert "users.role" in sql
+    member_sql = _sql(member_user_ids(uuid.uuid4(), REVIEWER_ROLE))
+    assert "users.is_active" in member_sql
+    assert "users.role" in member_sql
 
 
 def test_platform_role_is_manager():

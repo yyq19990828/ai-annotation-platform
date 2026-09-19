@@ -14,12 +14,21 @@ from collections.abc import Iterable
 from datetime import datetime, timezone
 
 import redis.asyncio as aioredis
-from sqlalchemy import select, update, func, and_, delete
+from sqlalchemy import select, update, func, and_, delete, or_, tuple_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+from app.db.enums import (
+    MANAGER_PLATFORM_ROLES,
+    PLATFORM_ROLES,
+    PlatformRole,
+    ProjectRole,
+)
 from app.db.models.notification import Notification
 from app.db.models.notification_preference import NotificationPreference
+from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
+from app.db.models.user import User
 
 
 log = logging.getLogger(__name__)
@@ -27,6 +36,21 @@ log = logging.getLogger(__name__)
 
 def channel_for(user_id: uuid.UUID | str) -> str:
     return f"notify:{user_id}"
+
+
+def _notification_project_id(row: Notification) -> uuid.UUID | None:
+    """Extract the project scope carried by a notification payload, if any."""
+
+    payload = row.payload
+    if not isinstance(payload, dict):
+        return None
+    raw = payload.get("project_id")
+    if raw is None:
+        return None
+    try:
+        return uuid.UUID(str(raw))
+    except (TypeError, ValueError):
+        return None
 
 
 class NotificationService:
@@ -114,6 +138,47 @@ class NotificationService:
                 out.append(row)
         return out
 
+    async def delivery_allowed_pairs(
+        self, pairs: set[tuple[uuid.UUID, uuid.UUID]]
+    ) -> set[tuple[uuid.UUID, uuid.UUID]]:
+        """Pairs of ``(project_id, user_id)`` that may still receive deliveries.
+
+        A project-scoped notification is only delivered while the recipient has
+        a current valid membership or legitimate ownership.  One batched query
+        per party keeps fan-out delivery from an N+1 lookup.
+        """
+
+        if not pairs:
+            return set()
+        allowed: set[tuple[uuid.UUID, uuid.UUID]] = set()
+
+        member_rows = await self.db.execute(
+            select(ProjectMember.project_id, ProjectMember.user_id)
+            .join(User, User.id == ProjectMember.user_id)
+            .where(
+                tuple_(ProjectMember.project_id, ProjectMember.user_id).in_(pairs),
+                User.is_active.is_(True),
+                User.role.in_(list(PLATFORM_ROLES)),
+                or_(
+                    User.role != PlatformRole.VIEWER.value,
+                    ProjectMember.role == ProjectRole.VIEWER.value,
+                ),
+            )
+        )
+        allowed.update((pid, uid) for pid, uid in member_rows.all())
+
+        owner_rows = await self.db.execute(
+            select(Project.id, Project.owner_id)
+            .join(User, User.id == Project.owner_id)
+            .where(
+                tuple_(Project.id, Project.owner_id).in_(pairs),
+                User.is_active.is_(True),
+                User.role.in_(list(MANAGER_PLATFORM_ROLES)),
+            )
+        )
+        allowed.update((pid, uid) for pid, uid in owner_rows.all())
+        return allowed
+
     async def publish_committed(self, notifications: Iterable[Notification]) -> None:
         """Best-effort publish for rows whose enclosing transaction committed.
 
@@ -121,8 +186,34 @@ class NotificationService:
         caller owns the request-local collection and invokes it only after a
         successful business ``commit``.  A Redis failure is logged per row and can
         never turn an already committed write into a failed request.
+
+        Project-scoped rows are re-authorized against current project access, so
+        losing a membership stops future restricted deliveries for that project
+        while unrelated notifications still publish.
         """
-        for row in notifications:
+        rows = list(notifications)
+        pairs: set[tuple[uuid.UUID, uuid.UUID]] = set()
+        for row in rows:
+            project_id = _notification_project_id(row)
+            if project_id is not None:
+                pairs.add((project_id, row.user_id))
+        try:
+            allowed = await self.delivery_allowed_pairs(pairs)
+        except Exception:
+            # Fail closed for project-scoped rows; never turn an already
+            # committed business write into a failed request.
+            log.exception("notification delivery authorization failed")
+            allowed = set()
+
+        for row in rows:
+            project_id = _notification_project_id(row)
+            if project_id is not None and (project_id, row.user_id) not in allowed:
+                log.info(
+                    "notification suppressed for revoked project access user=%s type=%s",
+                    row.user_id,
+                    row.type,
+                )
+                continue
             try:
                 await _publish(
                     user_id=row.user_id,

@@ -397,10 +397,16 @@ async def admin_people_list(
     # 计算分位
     def _is_reviewer(u: User) -> bool:
         roles = user_roles_map.get(u.id, set())
+        if role == "reviewer":
+            # The request explicitly asks for reviewers; a mixed employee is
+            # reported by review throughput so the filter and metric agree.
+            return REVIEWER_ROLE in roles
+        if role == "annotator":
+            return False
         if roles:
-            # A reviewer membership classifies the row as review work; an
-            # account that also annotates stays in the annotation cohort, which
-            # matches the previous "reviewer and not annotator" rule.
+            # Unfiltered "both" view: a reviewer membership classifies the row
+            # as review work, while an account that also annotates stays in the
+            # annotation cohort (the previous "reviewer and not annotator" rule).
             return REVIEWER_ROLE in roles and ANNOTATOR_ROLE not in roles
         # Manager accounts without a membership row keep their review-side
         # label.  This is metric labeling only; authority is never derived here.
