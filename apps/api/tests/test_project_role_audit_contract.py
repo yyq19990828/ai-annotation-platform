@@ -18,6 +18,7 @@ from alembic.script import ScriptDirectory
 from scripts.audit_project_roles import (
     AUDIT_REPORT_VERSION,
     PREPARATION_COLUMNS,
+    _UUID_TEXT_REGEX,
     _json_default,
     _limited,
     build_summary,
@@ -90,8 +91,12 @@ def test_pre_migration_projections_are_null_not_columns() -> None:
         assert absent not in predicates["complete"]
 
     columns = review_evidence_columns(none_present)
-    assert columns["review_submitter_id"] == "NULL::uuid AS review_submitter_id"
-    assert columns["review_contributor_ids"] == "NULL::jsonb AS review_contributor_ids"
+    assert columns["has_submitter"] == "false AS has_submitter"
+    assert columns["review_contributor_kind"] == "NULL::text AS review_contributor_kind"
+    assert (
+        columns["annotation_contributor_kind"]
+        == "NULL::text AS annotation_contributor_kind"
+    )
 
 
 def test_post_migration_predicates_require_round_submitter_and_accummulator() -> None:
@@ -105,10 +110,28 @@ def test_post_migration_predicates_require_round_submitter_and_accummulator() ->
     assert (
         "jsonb_typeof(annotation_contributor_ids) = 'array'" in predicates["complete"]
     )
+    # The frozen set must include the submitter and every accumulator ID.
+    assert "@>" in predicates["missing_contributors"]
+    assert "to_jsonb((review_submitter_id)::text)" in predicates["missing_contributors"]
+    assert "(annotation_contributor_ids)" in predicates["missing_contributors"]
     # A non-NULL frozen array alone is not complete: every incomplete reason
     # participates in the incomplete union.
     assert predicates["missing_submitter"] in predicates["incomplete"]
     assert predicates["unknown_accumulator"] in predicates["incomplete"]
+    assert predicates["missing_contributors"] in predicates["incomplete"]
+
+
+def test_review_predicates_validate_uuid_elements() -> None:
+    present = {key: True for key in _ALL_CAPABILITIES}
+    predicates = review_evidence_predicates(present)
+    malformed = predicates["malformed_review_array"]
+    assert "jsonb_array_elements_text(" in malformed
+    assert "jsonb_typeof(review_contributor_ids)" in malformed
+    assert "element.value IS NULL" in malformed
+    assert _UUID_TEXT_REGEX in malformed
+    unknown = predicates["unknown_accumulator"]
+    assert "jsonb_array_elements_text(" in unknown
+    assert "jsonb_typeof(annotation_contributor_ids)" in unknown
 
 
 def test_limited_marks_truncation() -> None:

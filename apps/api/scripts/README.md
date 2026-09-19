@@ -198,7 +198,12 @@ UUID，并硬校验 ML Backend 主绑定、项目启用关联、connected 状态
 cd apps/api
 uv run python scripts/audit_project_roles.py --pretty
 uv run python scripts/audit_project_roles.py --output /tmp/project-role-audit.json
+# 直接运行（脚本自带 apps/api sys.path 引导，不会再报 ModuleNotFoundError: app）
+.venv/bin/python scripts/audit_project_roles.py --max-rows 1
 ```
+
+审计目标库默认取 `settings.database_url`，可用 `--database-url` 覆盖；只读冒烟/CI 场景可通过
+环境变量 `DATABASE_URL` 传入隔离测试库，避免把连接串放到命令行参数里。
 
 输出为带版本的 JSON（`report_version: project-role-audit/2`），包含 run ID、Alembic
 仓储/库基线（含各增量列是否存在）、各清单总数与实体 ID/角色，不包含口令哈希、邀请 token、
@@ -214,8 +219,10 @@ uv run python scripts/audit_project_roles.py --output /tmp/project-role-audit.js
   以及停用账号仍持有未完成工作。
 - 待处理邀请按账号级/项目级、角色、过期与目标项目已删除分类，并标出需要回填
   `project_role` 的历史项目邀请。
-- 有审核活动的任务其贡献者证据按缺失轮次 / 缺失提交人 / 非数组冻结集 / 未知标注累积器
-  分类；只有轮次、提交人、两个数组均有效才算完整，历史未知保持 NULL。
+- 有审核活动的任务其贡献者证据按缺失轮次 / 缺失提交人 / 非数组或含非法 UUID 元素 /
+  未知或非法标注累积器 / 冻结集缺少提交人或累积器成员 分类；只有轮次、提交人、两个均为
+  合法 UUID 数组且包含全部累积器成员与提交人 才算完整，历史未知保持 NULL；报告不回显
+  原始数组内容（只给存在性与 JSON 类型）。
 - 用户、成员、活跃分派、锁、审核认领、任务状态、标注量与历史审核总量的对账计数。
 
 该命令属于增量 A 的附加准备（schema 附加列 + 只读审计），不代表员工角色功能已上线或已部署。

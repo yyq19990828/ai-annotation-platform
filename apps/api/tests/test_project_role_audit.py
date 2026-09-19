@@ -4,18 +4,27 @@ These tests run against a real disposable PostgreSQL schema.  Seeded rows are
 committed so the audit can run in the PostgreSQL-enforced ``REPEATABLE READ,
 READ ONLY`` transaction used by the CLI; every test cleans up in ``finally``.
 Assertions are ID-scoped so pre-existing committed rows do not matter.
+
+Alembic migration steps are synchronous (``asyncio.run`` per isolated step),
+matching ``test_migration_0173_project_role_preparation.py``; calling Alembic
+from inside a running event loop would nest ``asyncio.run``.
 """
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
+import subprocess
+import sys
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.db.models.project_member import ProjectMember
 from app.db.models.task_batch import TaskBatch
@@ -28,7 +37,14 @@ from scripts.audit_project_roles import (
 )
 from tests.factory import create_project, create_task, create_user
 
+_API_ROOT = Path(__file__).resolve().parents[1]
+
 _SENSITIVE_KEYS = {"password_hash", "token", "email", "invite_url", "signed_url"}
+# Unique text embedded in seeded emails/tokens/names: none of it may appear in
+# the serialized report, unlike the report's own run id.
+_EMAIL_SENTINEL = "email-sentinel-probe"
+_TOKEN_SENTINEL = "token-sentinel-probe"
+_NAME_SENTINEL = "NameSentinelProbe"
 
 
 def _item_ids(section: dict) -> set[str]:
@@ -82,7 +98,10 @@ async def _seed_full(engine) -> dict:
 
         async def make_user(role: str, tag: str):
             user = await create_user(
-                db, role, f"audit-{tag}-{uuid.uuid4()}@test.local", tag.title()
+                db,
+                role,
+                f"{_EMAIL_SENTINEL}-{tag}-{uuid.uuid4()}@test.local",
+                f"{_NAME_SENTINEL}-{tag}",
             )
             users.append(user.id)
             return user
@@ -217,29 +236,29 @@ async def _seed_full(engine) -> dict:
 
         future = datetime.now(timezone.utc) + timedelta(days=3)
         deleted_invitation = UserInvitation(
-            email=f"audit-deleted-{uuid.uuid4()}@test.local",
+            email=f"{_EMAIL_SENTINEL}-deleted-{uuid.uuid4()}@test.local",
             role="reviewer",
             project_id=uuid.uuid4(),
             project_role="reviewer",
-            token=uuid.uuid4().hex,
+            token=f"{_TOKEN_SENTINEL}-{uuid.uuid4().hex}",
             expires_at=future,
             invited_by=owner.id,
         )
         legacy_project_invitation = UserInvitation(
-            email=f"audit-legacyinv-{uuid.uuid4()}@test.local",
+            email=f"{_EMAIL_SENTINEL}-legacyinv-{uuid.uuid4()}@test.local",
             role="annotator",
             project_id=project.id,
             project_role=None,
-            token=uuid.uuid4().hex,
+            token=f"{_TOKEN_SENTINEL}-{uuid.uuid4().hex}",
             expires_at=future,
             invited_by=owner.id,
         )
         account_invitation = UserInvitation(
-            email=f"audit-account-{uuid.uuid4()}@test.local",
+            email=f"{_EMAIL_SENTINEL}-account-{uuid.uuid4()}@test.local",
             role="viewer",
             project_id=None,
             project_role="annotator",
-            token=uuid.uuid4().hex,
+            token=f"{_TOKEN_SENTINEL}-{uuid.uuid4().hex}",
             expires_at=future,
             invited_by=owner.id,
         )
@@ -260,11 +279,30 @@ async def _seed_full(engine) -> dict:
         task_missing_submitter.review_contributor_ids = [str(assignee.id)]
         task_missing_submitter.annotation_contributor_ids = [str(assignee.id)]
 
-        task_malformed = await create_task(db, project_id=project.id, status="review")
-        task_malformed.review_round_id = uuid.uuid4()
-        task_malformed.review_submitter_id = assignee.id
-        task_malformed.review_contributor_ids = {"not": "an-array"}
-        task_malformed.annotation_contributor_ids = [str(assignee.id)]
+        task_malformed_object = await create_task(
+            db, project_id=project.id, status="review"
+        )
+        task_malformed_object.review_round_id = uuid.uuid4()
+        task_malformed_object.review_submitter_id = assignee.id
+        task_malformed_object.review_contributor_ids = {"not": "an-array"}
+        task_malformed_object.annotation_contributor_ids = [str(assignee.id)]
+
+        # Numeric and non-UUID string elements are invalid, not complete.
+        task_invalid_number = await create_task(
+            db, project_id=project.id, status="review"
+        )
+        task_invalid_number.review_round_id = uuid.uuid4()
+        task_invalid_number.review_submitter_id = assignee.id
+        task_invalid_number.review_contributor_ids = [123]
+        task_invalid_number.annotation_contributor_ids = [str(assignee.id)]
+
+        task_invalid_string = await create_task(
+            db, project_id=project.id, status="review"
+        )
+        task_invalid_string.review_round_id = uuid.uuid4()
+        task_invalid_string.review_submitter_id = assignee.id
+        task_invalid_string.review_contributor_ids = ["not-a-uuid"]
+        task_invalid_string.annotation_contributor_ids = [str(assignee.id)]
 
         task_unknown_accumulator = await create_task(
             db, project_id=project.id, status="review"
@@ -273,6 +311,15 @@ async def _seed_full(engine) -> dict:
         task_unknown_accumulator.review_submitter_id = assignee.id
         task_unknown_accumulator.review_contributor_ids = [str(assignee.id)]
         task_unknown_accumulator.annotation_contributor_ids = None
+
+        # Valid arrays, but the frozen set does not contain the submitter.
+        task_missing_contributors = await create_task(
+            db, project_id=project.id, status="review"
+        )
+        task_missing_contributors.review_round_id = uuid.uuid4()
+        task_missing_contributors.review_submitter_id = assignee.id
+        task_missing_contributors.review_contributor_ids = [str(reviewer.id)]
+        task_missing_contributors.annotation_contributor_ids = [str(assignee.id)]
 
         task_missing_round = await create_task(
             db, project_id=project.id, status="review"
@@ -283,8 +330,11 @@ async def _seed_full(engine) -> dict:
             [
                 task_complete,
                 task_missing_submitter,
-                task_malformed,
+                task_malformed_object,
+                task_invalid_number,
+                task_invalid_string,
                 task_unknown_accumulator,
+                task_missing_contributors,
                 task_missing_round,
             ]
         )
@@ -313,8 +363,11 @@ async def _seed_full(engine) -> dict:
             "account_invitation": account_invitation.id,
             "task_complete": task_complete.id,
             "task_missing_submitter": task_missing_submitter.id,
-            "task_malformed": task_malformed.id,
+            "task_malformed_object": task_malformed_object.id,
+            "task_invalid_number": task_invalid_number.id,
+            "task_invalid_string": task_invalid_string.id,
             "task_unknown_accumulator": task_unknown_accumulator.id,
+            "task_missing_contributors": task_missing_contributors.id,
             "task_missing_round": task_missing_round.id,
         }
         await db.commit()
@@ -424,14 +477,21 @@ async def test_audit_flags_expected_discrepancies(
 
     evidence = report["findings"]["review_evidence"]
     assert str(ids["task_complete"]) in _item_ids(evidence["complete"])
-    assert str(ids["task_missing_submitter"]) in _item_ids(evidence["incomplete"])
-    assert str(ids["task_malformed"]) in _item_ids(evidence["incomplete"])
-    assert str(ids["task_unknown_accumulator"]) in _item_ids(evidence["incomplete"])
-    assert str(ids["task_missing_round"]) in _item_ids(evidence["incomplete"])
+    for key in (
+        "task_missing_submitter",
+        "task_malformed_object",
+        "task_invalid_number",
+        "task_invalid_string",
+        "task_unknown_accumulator",
+        "task_missing_contributors",
+        "task_missing_round",
+    ):
+        assert str(ids[key]) in _item_ids(evidence["incomplete"]), key
     reasons = evidence["incomplete_reasons"]
     assert reasons["missing_submitter"]["total"] >= 1
-    assert reasons["malformed_review_array"]["total"] >= 1
+    assert reasons["malformed_review_array"]["total"] >= 3
     assert reasons["unknown_accumulator"]["total"] >= 1
+    assert reasons["missing_contributors"]["total"] >= 1
     assert reasons["missing_round"]["total"] >= 1
 
     reconciliation = report["reconciliation"]
@@ -439,25 +499,113 @@ async def test_audit_flags_expected_discrepancies(
     assert reconciliation["memberships"]["total"] >= 4
     assert reconciliation["tasks"]["total"] >= 6
 
+    # Privacy: seeded email/token/name sentinels and the DSN must not appear,
+    # and the malformed payloads must not be echoed.
     rendered = json.dumps(report, default=_json_default)
-    assert "audit-" not in rendered
+    assert _EMAIL_SENTINEL not in rendered
+    assert _TOKEN_SENTINEL not in rendered
+    assert _NAME_SENTINEL not in rendered
+    assert "not-a-uuid" not in rendered
+    assert "an-array" not in rendered
     _assert_no_sensitive_keys(report)
 
 
-async def test_audit_runs_before_0173_migration(
-    test_engine, test_db_url, apply_migrations
-) -> None:
+def test_audit_runs_before_0173_migration(test_db_url, apply_migrations) -> None:
+    """Synchronous migration test: Alembic must run outside the event loop."""
     config = Config("alembic.ini")
     config.set_main_option("sqlalchemy.url", test_db_url)
-    ctx = await _seed_minimal(test_engine)
-    ids = ctx["ids"]
+    state: dict = {"users": []}
+
+    async def step(action: str) -> None:
+        engine = create_async_engine(test_db_url)
+        try:
+            if action == "seed":
+                async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+                    owner = await create_user(
+                        db,
+                        "project_admin",
+                        f"{_EMAIL_SENTINEL}-pre-{uuid.uuid4()}@test.local",
+                        f"{_NAME_SENTINEL}-pre",
+                    )
+                    state["users"].append(owner.id)
+                    project = await create_project(db, owner_id=owner.id)
+                    state["project"] = project.id
+                    db.add(
+                        ProjectMember(
+                            project_id=project.id,
+                            user_id=owner.id,
+                            role="viewer",
+                            assigned_by=owner.id,
+                        )
+                    )
+                    task = await create_task(db, project_id=project.id, status="review")
+                    task.review_round_id = uuid.uuid4()
+                    future = datetime.now(timezone.utc) + timedelta(days=3)
+                    legacy_invitation = UserInvitation(
+                        email=f"{_EMAIL_SENTINEL}-pre-inv-{uuid.uuid4()}@test.local",
+                        role="annotator",
+                        project_id=project.id,
+                        project_role=None,
+                        token=f"{_TOKEN_SENTINEL}-{uuid.uuid4().hex}",
+                        expires_at=future,
+                        invited_by=owner.id,
+                    )
+                    account_invitation = UserInvitation(
+                        email=f"{_EMAIL_SENTINEL}-pre-account-{uuid.uuid4()}@test.local",
+                        role="viewer",
+                        project_id=None,
+                        project_role="annotator",
+                        token=f"{_TOKEN_SENTINEL}-{uuid.uuid4().hex}",
+                        expires_at=future,
+                        invited_by=owner.id,
+                    )
+                    db.add_all([legacy_invitation, account_invitation])
+                    await db.flush()
+                    state["legacy_project_invitation"] = legacy_invitation.id
+                    await db.commit()
+            elif action == "audit":
+                async with read_only_audit_session(engine) as db:
+                    state["report"] = await collect_report(db, run_id="pre-0173")
+            else:  # cleanup exact seeded records
+                async with async_sessionmaker(engine, expire_on_commit=False)() as db:
+                    if "project" in state:
+                        await db.execute(
+                            text("DELETE FROM tasks WHERE project_id = :p"),
+                            {"p": state["project"]},
+                        )
+                        await db.execute(
+                            text("DELETE FROM project_members WHERE project_id = :p"),
+                            {"p": state["project"]},
+                        )
+                        await db.execute(
+                            text("DELETE FROM projects WHERE id = :p"),
+                            {"p": state["project"]},
+                        )
+                    if state["users"]:
+                        await db.execute(
+                            text(
+                                "DELETE FROM user_invitations "
+                                "WHERE invited_by = ANY(:u)"
+                            ),
+                            {"u": state["users"]},
+                        )
+                        await db.execute(
+                            text("DELETE FROM users WHERE id = ANY(:u)"),
+                            {"u": state["users"]},
+                        )
+                    await db.commit()
+        finally:
+            await engine.dispose()
+
     try:
+        asyncio.run(step("seed"))
         command.downgrade(config, "0172")
-        report = await _readonly_report(test_engine, run_id="pre-0173")
+        asyncio.run(step("audit"))
     finally:
         command.upgrade(config, "head")
-        await _cleanup(test_engine, ctx)
+        asyncio.run(step("cleanup"))
 
+    report = state["report"]
     assert report["baseline"]["schema_in_sync"] is False
     assert not any(report["baseline"]["schema_capabilities"].values())
     assert report["findings"]["review_evidence"]["complete"]["total"] == 0
@@ -477,58 +625,38 @@ async def test_audit_runs_before_0173_migration(
         str(item["id"]): item
         for item in report["findings"]["invitations"]["pending"]["items"]
     }
-    assert pending[str(ids["legacy_project_invitation"])]["project_role"] is None
-    json.dumps(report, default=_json_default)
+    assert pending[str(state["legacy_project_invitation"])]["project_role"] is None
+    rendered = json.dumps(report, default=_json_default)
+    assert _EMAIL_SENTINEL not in rendered
+    assert _TOKEN_SENTINEL not in rendered
     _assert_no_sensitive_keys(report)
 
 
-async def _seed_minimal(engine) -> dict:
-    users: list[uuid.UUID] = []
-    projects: list[uuid.UUID] = []
-    async with async_sessionmaker(engine, expire_on_commit=False)() as db:
-        owner = await create_user(
-            db, "project_admin", f"audit-pre-{uuid.uuid4()}@test.local", "PreOwner"
-        )
-        users.append(owner.id)
-        project = await create_project(db, owner_id=owner.id)
-        projects.append(project.id)
-        db.add(
-            ProjectMember(
-                project_id=project.id,
-                user_id=owner.id,
-                role="viewer",
-                assigned_by=owner.id,
-            )
-        )
-        task = await create_task(db, project_id=project.id, status="review")
-        task.review_round_id = uuid.uuid4()
-        future = datetime.now(timezone.utc) + timedelta(days=3)
-        legacy_invitation = UserInvitation(
-            email=f"audit-pre-inv-{uuid.uuid4()}@test.local",
-            role="annotator",
-            project_id=project.id,
-            project_role=None,
-            token=uuid.uuid4().hex,
-            expires_at=future,
-            invited_by=owner.id,
-        )
-        account_invitation = UserInvitation(
-            email=f"audit-pre-account-{uuid.uuid4()}@test.local",
-            role="viewer",
-            project_id=None,
-            project_role="annotator",
-            token=uuid.uuid4().hex,
-            expires_at=future,
-            invited_by=owner.id,
-        )
-        db.add_all([legacy_invitation, account_invitation])
-        await db.flush()
-        ids = {
-            "legacy_project_invitation": legacy_invitation.id,
-            "task": task.id,
-        }
-        await db.commit()
-    return {"ids": ids, "users": users, "projects": projects}
+def test_cli_smoke_against_isolated_database(test_db_url, apply_migrations) -> None:
+    """Run the documented CLI against the isolated DB without a DSN argument."""
+    env = os.environ.copy()
+    # The CLI reads settings.database_url; provide the isolated test URL through
+    # the environment, never on the command line or in output.
+    env["DATABASE_URL"] = test_db_url
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(_API_ROOT / "scripts" / "audit_project_roles.py"),
+            "--max-rows",
+            "1",
+        ],
+        cwd=_API_ROOT,
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=180,
+    )
+    assert result.returncode == 0, result.stderr
+    report = json.loads(result.stdout)
+    assert report["report_version"] == AUDIT_REPORT_VERSION
+    assert report["read_only"] is True
+    assert test_db_url not in result.stdout
+    assert test_db_url not in result.stderr
 
 
 def _assert_no_sensitive_keys(value, path: str = "") -> None:

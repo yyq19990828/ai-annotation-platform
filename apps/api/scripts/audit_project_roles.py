@@ -64,6 +64,14 @@ from sqlalchemy.ext.asyncio import (
     create_async_engine,
 )
 
+# Keep the script runnable directly as `python scripts/audit_project_roles.py`
+# from apps/api: sys.path[0] is the scripts directory, so add the API root
+# before any `app.*` import (matching dump-openapi.py / cleanup scripts).
+_API_ROOT = Path(__file__).resolve().parent.parent
+if str(_API_ROOT) not in sys.path:
+    sys.path.insert(0, str(_API_ROOT))
+
+
 AUDIT_REPORT_VERSION = "project-role-audit/2"
 DEFAULT_MAX_ROWS = 1000
 
@@ -187,15 +195,39 @@ def project_role_backfill_filter(capabilities: dict[str, bool]) -> str:
     return ""
 
 
+# Canonical UUID text, case-insensitive; used to reject non-string or malformed
+# contributor elements without echoing the raw array.
+_UUID_TEXT_REGEX = "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+
+
+def _uuid_array_valid(expression: str) -> str:
+    """True only for a JSON array whose every element is a UUID string.
+
+    The element extraction is guarded by a CASE so a non-array JSON value
+    (object/scalar) never reaches ``jsonb_array_elements_text`` and raises.
+    """
+    guarded = (
+        f"(CASE WHEN jsonb_typeof({expression}) = 'array' "
+        f"THEN {expression} ELSE '[]'::jsonb END)"
+    )
+    return (
+        f"COALESCE(jsonb_typeof({expression}) = 'array', false) "
+        f"AND NOT EXISTS ("
+        f"SELECT 1 FROM jsonb_array_elements_text({guarded}) AS element(value) "
+        f"WHERE element.value IS NULL OR element.value !~* '{_UUID_TEXT_REGEX}')"
+    )
+
+
 def review_evidence_predicates(capabilities: dict[str, bool]) -> dict[str, str]:
     """Build mutually exclusive review-evidence predicates.
 
-    Complete evidence requires a round, a submitter, a JSON array of frozen
-    reviewers and a known (non-NULL, array) annotation accumulator.  A
+    Complete evidence requires a valid round, submitter, a frozen review array
+    and an annotation accumulator that are both JSON arrays of UUID strings,
+    the frozen set containing every accumulator ID and the submitter.  A
     non-NULL frozen array alone is not enough: a missing round/submitter,
-    malformed array or sticky-unknown accumulator stays incomplete.  Before
-    0173 every missing column is projected as NULL, so all review activity is
-    classified incomplete.
+    malformed or non-UUID array, sticky-unknown accumulator or a frozen set
+    missing contributors stays incomplete.  Before 0173 every missing column is
+    projected as NULL, so all review activity is classified incomplete.
     """
     submitter = (
         "review_submitter_id"
@@ -213,23 +245,31 @@ def review_evidence_predicates(capabilities: dict[str, bool]) -> dict[str, str]:
         else "NULL::jsonb"
     )
     activity = f"({_REVIEW_ACTIVITY_SQL})"
-    missing_round = f"{activity} AND review_round_id IS NULL"
-    missing_submitter = (
-        f"{activity} AND review_round_id IS NOT NULL AND ({submitter}) IS NULL"
-    )
-    malformed_review_array = (
-        f"{activity} AND review_round_id IS NOT NULL AND ({submitter}) IS NOT NULL "
-        f"AND jsonb_typeof({review_array}) IS DISTINCT FROM 'array'"
-    )
-    unknown_accumulator = (
-        f"{activity} AND review_round_id IS NOT NULL AND ({submitter}) IS NOT NULL "
-        f"AND jsonb_typeof({review_array}) = 'array' "
-        f"AND jsonb_typeof({accumulator}) IS DISTINCT FROM 'array'"
+    has_round = "review_round_id IS NOT NULL"
+    has_submitter = f"({submitter}) IS NOT NULL"
+    # Valid = a JSON array whose every element is a non-NULL UUID string.
+    review_valid = _uuid_array_valid(review_array)
+    accumulator_valid = _uuid_array_valid(accumulator)
+    contains_all = (
+        f"({review_array}) @> to_jsonb(({submitter})::text) "
+        f"AND ({review_array}) @> ({accumulator})"
     )
     complete = (
-        f"{activity} AND review_round_id IS NOT NULL AND ({submitter}) IS NOT NULL "
-        f"AND jsonb_typeof({review_array}) = 'array' "
-        f"AND jsonb_typeof({accumulator}) = 'array'"
+        f"{activity} AND {has_round} AND {has_submitter} "
+        f"AND ({review_valid}) AND ({accumulator_valid}) AND ({contains_all})"
+    )
+    missing_round = f"{activity} AND NOT ({has_round})"
+    missing_submitter = f"{activity} AND {has_round} AND NOT ({has_submitter})"
+    malformed_review_array = (
+        f"{activity} AND {has_round} AND {has_submitter} AND NOT ({review_valid})"
+    )
+    unknown_accumulator = (
+        f"{activity} AND {has_round} AND {has_submitter} "
+        f"AND ({review_valid}) AND NOT ({accumulator_valid})"
+    )
+    missing_contributors = (
+        f"{activity} AND {has_round} AND {has_submitter} "
+        f"AND ({review_valid}) AND ({accumulator_valid}) AND NOT ({contains_all})"
     )
     return {
         "complete": complete,
@@ -237,6 +277,7 @@ def review_evidence_predicates(capabilities: dict[str, bool]) -> dict[str, str]:
         "missing_submitter": missing_submitter,
         "malformed_review_array": malformed_review_array,
         "unknown_accumulator": unknown_accumulator,
+        "missing_contributors": missing_contributors,
         "incomplete": "("
         + " OR ".join(
             (
@@ -244,6 +285,7 @@ def review_evidence_predicates(capabilities: dict[str, bool]) -> dict[str, str]:
                 missing_submitter,
                 malformed_review_array,
                 unknown_accumulator,
+                missing_contributors,
             )
         )
         + ")",
@@ -251,22 +293,27 @@ def review_evidence_predicates(capabilities: dict[str, bool]) -> dict[str, str]:
 
 
 def review_evidence_columns(capabilities: dict[str, bool]) -> dict[str, str]:
-    """Return aliased NULL-safe select expressions for evidence detail rows."""
+    """Return safe aliased evidence detail columns.
+
+    The raw contributor arrays are deliberately never echoed: malformed
+    payloads could contain arbitrary values, so only presence and JSON kind are
+    reported.
+    """
     return {
-        "review_submitter_id": (
-            "review_submitter_id"
+        "has_submitter": (
+            "(review_submitter_id IS NOT NULL) AS has_submitter"
             if capabilities.get("tasks.review_submitter_id")
-            else "NULL::uuid AS review_submitter_id"
+            else "false AS has_submitter"
         ),
-        "review_contributor_ids": (
-            "review_contributor_ids"
+        "review_contributor_kind": (
+            "jsonb_typeof(review_contributor_ids) AS review_contributor_kind"
             if capabilities.get("tasks.review_contributor_ids")
-            else "NULL::jsonb AS review_contributor_ids"
+            else "NULL::text AS review_contributor_kind"
         ),
-        "annotation_contributor_ids": (
-            "annotation_contributor_ids"
+        "annotation_contributor_kind": (
+            "jsonb_typeof(annotation_contributor_ids) AS annotation_contributor_kind"
             if capabilities.get("tasks.annotation_contributor_ids")
-            else "NULL::jsonb AS annotation_contributor_ids"
+            else "NULL::text AS annotation_contributor_kind"
         ),
     }
 
@@ -691,9 +738,9 @@ async def audit_review_evidence(
     columns = review_evidence_columns(capabilities)
     detail = (
         "SELECT id AS task_id, project_id, review_round_id, "
-        f"{columns['review_submitter_id']}, "
-        f"{columns['review_contributor_ids']}, "
-        f"{columns['annotation_contributor_ids']} FROM tasks "
+        f"{columns['has_submitter']}, "
+        f"{columns['review_contributor_kind']}, "
+        f"{columns['annotation_contributor_kind']} FROM tasks "
     )
 
     async def category(name: str) -> dict:
@@ -720,6 +767,7 @@ async def audit_review_evidence(
             "missing_submitter",
             "malformed_review_array",
             "unknown_accumulator",
+            "missing_contributors",
         )
     }
     # A task without review activity has no evidence to freeze yet; NULL there
@@ -728,21 +776,11 @@ async def audit_review_evidence(
         db,
         "SELECT count(*) FROM tasks WHERE NOT (" + _REVIEW_ACTIVITY_SQL + ")",
     )
-    if capabilities.get("tasks.annotation_contributor_ids"):
-        accumulator_known = await _scalar(
-            db,
-            "SELECT count(*) FROM tasks WHERE ("
-            + _REVIEW_ACTIVITY_SQL
-            + ") AND annotation_contributor_ids IS NOT NULL",
-        )
-    else:
-        accumulator_known = 0
     return {
         "complete": complete,
         "incomplete": incomplete,
         "incomplete_reasons": incomplete_reasons,
         "no_review_activity": {"total": no_review_activity},
-        "accumulator_known": {"total": accumulator_known},
     }
 
 
