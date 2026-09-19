@@ -50,7 +50,7 @@ async def test_patch_assignment_broadcasts_batch_event(
     """PATCH 改派后广播 batch.assignment_changed, 让可预标列表实时收敛。"""
     user, token = super_admin
     proj = await create_project(db_session, owner_id=user.id)
-    anno = await create_user(db_session, "annotator", "bcast-anno@e.test", "Anno")
+    anno = await create_user(db_session, "employee", "bcast-anno@e.test", "Anno")
     db_session.add(
         ProjectMember(
             project_id=proj.id,
