@@ -10,10 +10,13 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from sqlalchemy import delete, text
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import delete, select
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
+from app.db.models.task import Task
+from app.db.models.user import User
 from app.services.video_tracking.runner import (
     TrackerJobStateConflict,
     _assert_tracker_actor_authority,
@@ -160,26 +163,46 @@ async def test_decide_runner_authorizes_before_selector_checks(
     assert exc.value.detail["reason"] == "permission_changed"
 
 
-async def test_tracker_task_lock_is_bounded_nowait(
-    db_session: AsyncSession, test_engine, super_admin
-):
-    """An independently held Task lock yields a retryable conflict, not a wait."""
+async def test_tracker_task_lock_is_bounded_nowait(test_engine):
+    """An independently committed Task lock yields a retryable conflict.
 
-    owner, _ = super_admin
-    project = await create_project(db_session, owner_id=owner.id, name="Guard Busy")
-    task = await create_task(db_session, project_id=project.id, status="pending")
-    await db_session.commit()
+    The dataset is committed in its own session so two independent connections
+    (the lock holder and the guard) actually observe the same row.
+    """
 
-    async with test_engine.connect() as conn:
-        trans = await conn.begin()
-        await conn.execute(
-            text("SELECT id FROM tasks WHERE id = :id FOR UPDATE"),
-            {"id": str(task.id)},
+    maker = async_sessionmaker(test_engine, expire_on_commit=False)
+    ids: dict = {}
+    async with maker() as setup:
+        owner = await create_user(
+            setup,
+            "super_admin",
+            f"busy-owner-{uuid.uuid4()}@test.local",
+            "Owner",
         )
-        with pytest.raises(TrackerJobStateConflict) as exc:
-            await _lock_task_bounded(db_session, task.id)
-        assert exc.value.detail["reason"] == "task_locked"
-        await trans.rollback()
+        project = await create_project(setup, owner_id=owner.id, name="Guard Busy")
+        task = await create_task(setup, project_id=project.id, status="pending")
+        task.assignee_id = owner.id
+        await setup.commit()
+        ids = {"project": project.id, "task": task.id, "owner": owner.id}
+
+    try:
+        async with maker() as writer:
+            locked = await writer.scalar(
+                select(Task.id).where(Task.id == ids["task"]).with_for_update()
+            )
+            assert locked == ids["task"]
+            async with maker() as guard:
+                with pytest.raises(TrackerJobStateConflict) as exc:
+                    await _lock_task_bounded(guard, ids["task"])
+                assert exc.value.detail["reason"] == "task_locked"
+                await guard.rollback()
+            await writer.rollback()
+    finally:
+        async with maker() as cleanup:
+            await cleanup.execute(delete(Task).where(Task.id == ids["task"]))
+            await cleanup.execute(delete(Project).where(Project.id == ids["project"]))
+            await cleanup.execute(delete(User).where(User.id == ids["owner"]))
+            await cleanup.commit()
 
 
 async def test_runner_guard_denies_self_review_evidence(

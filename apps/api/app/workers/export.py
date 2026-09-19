@@ -73,10 +73,13 @@ async def _complete_from_cache(
     export_bucket: str,
     download_name: str,
     cache_key: str,
+    task_ids: list[uuid.UUID] | None,
 ) -> None:
     # Final result/URL boundary: reauthorize current account + membership and
-    # the stored selected-task scope immediately before the cache-hit URL.
-    await _reauthorize_export_final_write(db, job_uuid)
+    # the canonical selected-task scope immediately before the cache-hit URL.
+    # ``_assert_export_task_scope`` inside the guard compares these same worker
+    # arguments against the stored job scope and fails closed on mismatch.
+    await _reauthorize_export_final_write(db, job_uuid, task_ids)
     download_url = storage_service.generate_download_url(
         hit.object_key,
         expires_in=PRESIGN_EXPIRES_SECONDS,
@@ -538,29 +541,8 @@ async def _assert_export_task_scope(
         raise ValueError("export task scope is no longer visible")
 
 
-def _stored_task_ids(job: AsyncJob | None) -> list[uuid.UUID] | None:
-    """Parse the stored selected-task scope from a job payload."""
-
-    if job is None:
-        return None
-    payload = job.payload or {}
-    scope = payload.get("scope") or {}
-    raw = scope.get("task_ids")
-    if raw is None:
-        raw = payload.get("task_ids")
-    if not raw:
-        return None
-    out: list[uuid.UUID] = []
-    for value in raw:
-        try:
-            out.append(uuid.UUID(str(value)))
-        except (TypeError, ValueError):
-            return None
-    return out
-
-
 async def _reauthorize_export_final_write(
-    db: AsyncSession, job_uuid: uuid.UUID, task_ids: list[uuid.UUID] | None = None
+    db: AsyncSession, job_uuid: uuid.UUID, task_ids: list[uuid.UUID] | None
 ) -> None:
     """Recheck account + membership + canonical task scope before a URL.
 
@@ -583,8 +565,6 @@ async def _reauthorize_export_final_write(
     actor = await db.get(User, job.user_id)
     if actor is None or not actor.is_active:
         raise ValueError("export scope owner is unavailable")
-    if task_ids is None:
-        task_ids = _stored_task_ids(job)
     try:
         await lock_actor_scope(db, actor.id, job.project_id)
     except HTTPException as exc:
@@ -767,6 +747,7 @@ async def _run_export(
                         export_bucket=export_bucket,
                         download_name=download_name,
                         cache_key=cache_key,
+                        task_ids=selected_task_ids,
                     )
                     return
 
