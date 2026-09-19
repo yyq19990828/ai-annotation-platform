@@ -13,7 +13,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.config import settings
-from app.db.enums import UserRole
+from app.db.enums import ProjectRole
 from app.db.models.annotation import Annotation
 from app.db.models.async_job import AsyncJob, AsyncJobStatus
 from app.db.models.task import Task
@@ -26,11 +26,26 @@ from app.workers.celery_app import celery_app
 
 
 log = logging.getLogger(__name__)
-_REVIEW_EDIT_ROLES = {
-    UserRole.SUPER_ADMIN.value,
-    UserRole.PROJECT_ADMIN.value,
-    UserRole.REVIEWER.value,
-}
+
+
+async def _can_edit_review_task(db: AsyncSession, task: Task, actor: User) -> bool:
+    """Project-scoped review edit authority for a task in ``review`` status.
+
+    Only the *current* project manager or reviewer may write review-state work;
+    a legacy global account role is never a fallback.
+    """
+
+    from app.db.models.project import Project
+    from app.services.project_access import resolve_project_access
+
+    project = await db.get(Project, task.project_id)
+    if project is None:
+        return False
+    try:
+        access = await resolve_project_access(db, user=actor, project=project)
+    except HTTPException:
+        return False
+    return bool(access.is_manager or access.project_role == ProjectRole.REVIEWER.value)
 
 
 @celery_app.task(bind=True, name="app.workers.cross_frame_job.run_cross_frame_job")
@@ -246,12 +261,13 @@ async def execute_cross_frame_job(
                 await _assert_task_visible(db, target_task, actor)
             except HTTPException as exc:
                 raise RuntimeError("permission_changed") from exc
+            can_edit_review = await _can_edit_review_task(db, source_task, actor)
             if source_task.status == "completed" or (
-                source_task.status == "review" and actor.role not in _REVIEW_EDIT_ROLES
+                source_task.status == "review" and not can_edit_review
             ):
                 raise RuntimeError("source_task_locked")
             if target_task.status == "completed" or (
-                target_task.status == "review" and actor.role not in _REVIEW_EDIT_ROLES
+                target_task.status == "review" and not can_edit_review
             ):
                 raise RuntimeError("target_task_locked")
 

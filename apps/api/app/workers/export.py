@@ -32,7 +32,6 @@ from app.db.models.async_job import AsyncJob
 from app.db.models.export_artifact import ExportArtifact
 from app.db.models.dataset import DatasetItem, Scene, SensorCalibrationRevision
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.scene_pose import SceneFramePose
 from app.db.models.task import Task
 from app.db.models.task_dataset_item_link import TaskDatasetItemLink
@@ -48,7 +47,6 @@ from app.services.mask_formats import registry as mask_format_registry
 from app.services.mask_formats.contracts import canonical_digest
 from app.schemas.export import LidarExportOptions
 from app.services.notification import NotificationService
-from app.services.scheduler import is_privileged_for_project
 from app.services.data_management.task_filters import visible_tasks_stmt
 from app.services.storage import storage_service
 from app.workers.celery_app import celery_app
@@ -493,15 +491,17 @@ async def _assert_export_task_scope(
     actor = await db.get(User, job.user_id) if job.user_id is not None else None
     if actor is None or not actor.is_active:
         raise ValueError("export scope owner is unavailable")
-    if not is_privileged_for_project(actor, project):
-        member_id = await db.scalar(
-            select(ProjectMember.id).where(
-                ProjectMember.project_id == project_id,
-                ProjectMember.user_id == actor.id,
-            )
-        )
-        if member_id is None:
-            raise ValueError("export project access is no longer valid")
+    # Export is a fixed project capability: reviewer or legitimate manager.
+    # Reauthorize against current membership so a revoked queued export fails
+    # safely before any cache lookup, build or signed-URL issuance.
+    from app.services.project_access import ProjectCapability, resolve_project_access
+
+    try:
+        access = await resolve_project_access(db, user=actor, project=project)
+    except Exception as exc:  # noqa: BLE001 - fail the durable job, not the request
+        raise ValueError("export project access is no longer valid") from exc
+    if ProjectCapability.EXPORT_ANNOTATIONS.value not in access.capabilities:
+        raise ValueError("export capability is no longer valid")
 
     if task_ids is None:
         return
@@ -518,7 +518,7 @@ async def _assert_export_task_scope(
     if stored_task_ids != set(task_ids):
         raise ValueError("export job task scope does not match worker arguments")
 
-    if is_privileged_for_project(actor, project):
+    if access.is_manager:
         query = select(Task.id).where(
             Task.project_id == project_id,
             Task.id.in_(task_ids),

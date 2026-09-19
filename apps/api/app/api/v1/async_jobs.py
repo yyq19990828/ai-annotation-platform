@@ -13,19 +13,19 @@ from datetime import datetime, timezone
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import exists, func, or_, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.enums import UserRole
+from app.db.enums import PlatformRole, ProjectRole
 from app.db.models.async_job import AsyncJob, AsyncJobStatus
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.mask_qc import MaskQCRun
 from app.db.models.point_cloud_quality import PointCloudQualityRun
 from app.db.models.mask_repair_batch import MaskRepairBatch
 from app.db.models.mask_format_import import MaskFormatImport
 from app.db.models.user import User
 from app.deps import get_current_user, get_db
+from app.services.project_aggregates import project_scope_clause
 from app.schemas.async_job import (
     AsyncJobListResponse,
     AsyncJobOut,
@@ -63,22 +63,17 @@ def _build_async_job_query(
     """Build the one scoped async-job relation used by page and count queries."""
     query = select(AsyncJob)
 
-    if current_user.role != UserRole.SUPER_ADMIN.value:
-        current_member = exists().where(
-            ProjectMember.project_id == AsyncJob.project_id,
-            ProjectMember.user_id == current_user.id,
-        )
-        current_owner = exists().where(
-            Project.id == AsyncJob.project_id,
-            Project.owner_id == current_user.id,
+    if current_user.role != PlatformRole.SUPER_ADMIN.value:
+        # Restrict to the caller's own jobs *and* a project they may currently
+        # access.  Membership/ownership is resolved in SQL (one correlated
+        # subquery, no per-job lookup) and a non-administrative owner gets only
+        # the membership arm.
+        project_scope = project_scope_clause(
+            current_user, AsyncJob.project_id, project_roles=()
         )
         query = query.where(
             AsyncJob.user_id == current_user.id,
-            or_(
-                AsyncJob.project_id.is_(None),
-                current_member,
-                current_owner,
-            ),
+            or_(AsyncJob.project_id.is_(None), project_scope),
         )
     if status:
         query = query.where(AsyncJob.status.in_(status))
@@ -104,30 +99,32 @@ def _build_async_job_query(
 
 
 async def _can_access_job(db: AsyncSession, *, job: AsyncJob, user: User) -> bool:
-    if user.role == UserRole.SUPER_ADMIN.value:
+    """Reauthorize a job result against current project access.
+
+    Original job ownership is not sufficient on its own: the account must still
+    be able to see the job's project, and the reviewer scope-expansion paths use
+    the *current* project role rather than a stale global account role.
+    """
+    if user.role == PlatformRole.SUPER_ADMIN.value:
         return True
     if job.project_id is None:
         return job.user_id == user.id
     project = await db.get(Project, job.project_id)
     if project is None:
         return False
-    from app.services.scheduler import is_privileged_for_project
+    from app.services.project_access import resolve_project_access
 
-    if is_privileged_for_project(user, project):
-        return True
-    member_id = await db.scalar(
-        select(ProjectMember.id).where(
-            ProjectMember.project_id == project.id,
-            ProjectMember.user_id == user.id,
-        )
-    )
-    if member_id is None:
+    try:
+        access = await resolve_project_access(db, user=user, project=project)
+    except HTTPException:
         return False
+    if access.is_manager:
+        return True
     if job.user_id == user.id:
         return True
     if job.kind not in {"mask_qc", "point_cloud_quality"}:
         return False
-    if user.role != UserRole.REVIEWER.value:
+    if access.project_role != ProjectRole.REVIEWER.value:
         return False
     raw_task_ids = ((job.payload or {}).get("scope") or {}).get("task_ids") or []
     try:
@@ -446,17 +443,27 @@ async def retry_failed_async_job_items(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ) -> AsyncJobRetryFailedResponse:
-    if current_user.role not in {
-        UserRole.SUPER_ADMIN.value,
-        UserRole.PROJECT_ADMIN.value,
-    }:
-        raise HTTPException(status_code=403, detail="requires project admin")
-
     job = await db.get(AsyncJob, job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="async_job not found")
-    if (
-        current_user.role != UserRole.SUPER_ADMIN.value
+    # Retrying re-enters project work, so require current management capability
+    # (owner / super-admin) rather than a platform role or job ownership alone.
+    if job.project_id is not None:
+        project = await db.get(Project, job.project_id)
+        if project is None:
+            raise HTTPException(status_code=404, detail="async_job not found")
+        from app.services.project_access import resolve_project_access
+
+        try:
+            access = await resolve_project_access(
+                db, user=current_user, project=project
+            )
+        except HTTPException:
+            raise HTTPException(status_code=403, detail="not your job")
+        if not access.is_manager:
+            raise HTTPException(status_code=403, detail="requires project admin")
+    elif (
+        current_user.role != PlatformRole.SUPER_ADMIN.value
         and job.user_id != current_user.id
     ):
         raise HTTPException(status_code=403, detail="not your job")

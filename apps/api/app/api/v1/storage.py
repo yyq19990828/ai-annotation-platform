@@ -8,7 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import get_current_user, get_db, require_roles
-from app.db.enums import UserRole
+from app.db.enums import PlatformRole
 from app.db.models.dataset import DatasetItem, VideoChunk, VideoFrameCache
 from app.db.models.project import Project
 from app.db.models.task import Task
@@ -18,7 +18,10 @@ from app.schemas.storage import BucketSummary, BucketsResponse
 
 router = APIRouter()
 
-_MEDIA_MANAGERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN)
+#: Global media/asset maintenance is a platform-administrator surface.  These
+#: endpoints are not project-path scoped; project authority is enforced on the
+#: project-scoped storage callers instead (exports, task media, attachments).
+_MEDIA_MANAGERS = (PlatformRole.SUPER_ADMIN, PlatformRole.PROJECT_ADMIN)
 VideoAssetKind = Literal["probe", "poster", "frame_timetable", "chunk", "frame"]
 
 

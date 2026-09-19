@@ -8,10 +8,42 @@ from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect, status
 
 from app.config import settings
 from app.core.security import decode_access_token
+from app.db.enums import PlatformRole
 from app.services.notification import channel_for
 
 router = APIRouter()
 log = logging.getLogger(__name__)
+
+#: Administrative socket channels are limited to these *current* platform roles.
+_ADMIN_SOCKET_ROLES = (
+    PlatformRole.SUPER_ADMIN.value,
+    PlatformRole.PROJECT_ADMIN.value,
+)
+
+
+async def _load_active_user(user_id: str | None):
+    """Resolve the current database account for a socket handshake.
+
+    Socket tokens are long-lived: a JWT ``role`` claim can outlive a role
+    change or account disable.  Restricted subscriptions must therefore
+    re-resolve the account from the database instead of trusting the claim.
+    Returns ``None`` when the account is missing or inactive.
+    """
+
+    if not user_id:
+        return None
+    from app.db.base import async_session
+    from app.db.models.user import User
+
+    try:
+        user_uuid = uuid.UUID(str(user_id))
+    except (TypeError, ValueError):
+        return None
+    async with async_session() as db:
+        user = await db.get(User, user_uuid)
+        if user is None or not user.is_active:
+            return None
+        return user
 
 
 # v0.7.0：模块级共享连接池，避免每次 WS 连接都新建 Redis socket。
@@ -196,11 +228,10 @@ async def prediction_jobs_socket(
     try:
         payload = decode_access_token(token)
         user_id = payload.get("sub")
-        role = payload.get("role")
         if not user_id:
             raise ValueError("missing sub")
-        uuid.UUID(user_id)
-        if role not in ("super_admin", "project_admin"):
+        user = await _load_active_user(user_id)
+        if user is None or user.role not in _ADMIN_SOCKET_ROLES:
             raise PermissionError("not admin")
     except Exception:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -290,11 +321,13 @@ async def ml_backend_stats_socket(
     鉴权: super_admin / project_admin 才能看 (运维向, 标注员不需要).
     v0.15.12 · 除 JWT 外也接受 ak_ api_key (SDK/TUI 用), role 校验不变.
     """
+    user_id: str | None = None
+    actor = None
     try:
         from app.services import api_key_service
 
         if api_key_service.is_api_key_token(token):
-            # ak_ 路径: 解析 api_key → 取关联 user 的 role
+            # ak_ 路径: 解析 api_key → 以当前数据库账号状态/角色为准
             from app.db.base import async_session
 
             async with async_session() as db:
@@ -303,16 +336,15 @@ async def ml_backend_stats_socket(
                     raise PermissionError("invalid api key")
                 _key, user = resolved
                 user_id = str(user.id)
-                role = user.role
+                actor = user if user.is_active else None
                 await db.commit()  # 持久化 last_used_at
         else:
             payload = decode_access_token(token)
             user_id = payload.get("sub")
-            role = payload.get("role")
             if not user_id:
                 raise ValueError("missing sub")
-            uuid.UUID(user_id)
-        if role not in ("super_admin", "project_admin"):
+            actor = await _load_active_user(user_id)
+        if actor is None or actor.role not in _ADMIN_SOCKET_ROLES:
             raise PermissionError("not admin")
     except Exception:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -364,7 +396,10 @@ async def notifications_socket(
         user_id = payload.get("sub")
         if not user_id:
             raise ValueError("missing sub")
-        uuid.UUID(user_id)  # validate
+        # Re-resolve the account: a disabled account with an unexpired token must
+        # not keep receiving restricted per-user deliveries.
+        if await _load_active_user(user_id) is None:
+            raise PermissionError("inactive account")
     except Exception:
         await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
         return
