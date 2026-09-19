@@ -20,6 +20,7 @@ from app.core.security import create_access_token
 from app.db.models.async_job import AsyncJob
 from app.db.models.project_member import ProjectMember
 from app.db.models.user import User
+from app.services.notification import NotificationService
 from app.workers.export import _assert_export_task_scope
 from tests.factory import create_project, create_task, create_user
 
@@ -233,6 +234,65 @@ async def test_export_job_result_denied_to_annotator_membership(
     )
     assert allowed.status_code == 200
     assert allowed.json()["result"]["download_url"].endswith("export.zip")
+
+
+async def test_project_notification_delivery_rechecks_membership(
+    db_session: AsyncSession, super_admin, monkeypatch
+):
+    """Revoking project access suppresses future restricted deliveries."""
+
+    admin, _ = super_admin
+    project = await create_project(db_session, owner_id=admin.id, name="Agg Notify")
+    employee = await _employee(db_session, "notify-rev")
+    await _add_member(
+        db_session,
+        project_id=project.id,
+        user=employee,
+        role="reviewer",
+        assigned_by=admin.id,
+    )
+    await db_session.commit()
+
+    published: list[uuid.UUID] = []
+
+    async def fake_publish(*, user_id, message):
+        published.append(user_id)
+
+    monkeypatch.setattr("app.services.notification._publish", fake_publish)
+    svc = NotificationService(db_session)
+
+    allowed = await svc.notify(
+        user_id=employee.id,
+        type="task.mentioned",
+        target_type="task",
+        target_id=uuid.uuid4(),
+        payload={"project_id": str(project.id)},
+        defer_publish=True,
+    )
+    await db_session.commit()
+    await svc.publish_committed([allowed])
+    assert published == [employee.id]
+
+    await db_session.execute(
+        delete(ProjectMember).where(
+            ProjectMember.project_id == project.id,
+            ProjectMember.user_id == employee.id,
+        )
+    )
+    await db_session.commit()
+    await db_session.refresh(employee)
+
+    suppressed = await svc.notify(
+        user_id=employee.id,
+        type="task.mentioned",
+        target_type="task",
+        target_id=uuid.uuid4(),
+        payload={"project_id": str(project.id)},
+        defer_publish=True,
+    )
+    await db_session.commit()
+    await svc.publish_committed([suppressed])
+    assert published == [employee.id]
 
 
 async def test_export_worker_requires_export_capability(
