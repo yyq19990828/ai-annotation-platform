@@ -17,6 +17,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_lock import TaskLock
 from app.services.task_lock import TaskLockService
@@ -35,6 +36,17 @@ async def _seed_project_and_task(db: AsyncSession, owner_id: uuid.UUID) -> Task:
     )
     db.add(project)
     await db.flush()
+
+    # The owner identity is a literal employee; its annotation authority comes
+    # from this explicit membership, not from the account role.
+    db.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=owner_id,
+            role="annotator",
+            assigned_by=owner_id,
+        )
+    )
 
     task = Task(
         id=uuid.uuid4(),

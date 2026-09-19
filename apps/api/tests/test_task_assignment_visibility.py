@@ -110,7 +110,7 @@ async def test_task_assignment_scopes_batch_query_get_and_next(
     batch_assignee, batch_assignee_token = annotator
     target = await create_user(
         db_session,
-        "annotator",
+        "employee",
         f"task-scope-target-{uuid.uuid4().hex[:8]}@test.local",
         "Task Scope Target",
     )
@@ -250,7 +250,7 @@ async def test_explicitly_assigned_unbatched_task_is_visible_and_claimable(
     old_assignee, old_assignee_token = annotator
     target = await create_user(
         db_session,
-        "annotator",
+        "employee",
         f"unbatched-target-{uuid.uuid4().hex[:8]}@test.local",
         "Unbatched Target",
     )
@@ -535,7 +535,7 @@ async def test_reviewer_assignment_reserves_review_claim_and_can_be_cleared(
     first_reviewer, _ = reviewer
     reserved_reviewer = await create_user(
         db_session,
-        "reviewer",
+        "employee",
         f"reserved-reviewer-{uuid.uuid4().hex[:8]}@test.local",
         "Reserved Reviewer",
     )
@@ -663,7 +663,7 @@ async def test_unbatched_reviewer_assignment_is_visible_and_claimable(
     other_reviewer, other_token = reviewer
     assigned_reviewer = await create_user(
         db_session,
-        "reviewer",
+        "employee",
         f"unbatched-reviewer-{uuid.uuid4().hex[:8]}@test.local",
         "Unbatched Reviewer",
     )

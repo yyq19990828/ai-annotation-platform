@@ -33,30 +33,31 @@ async def test_selected_assignments_survive_batch_reassignment(
     old_reviewer, _ = reviewer
     project = await create_project(db_session, owner_id=owner.id)
     selected_annotator = await create_user(
-        db_session, "annotator", "selected-annotator@test.local", "Selected annotator"
+        db_session, "employee", "selected-annotator@test.local", "Selected annotator"
     )
     selected_reviewer = await create_user(
-        db_session, "reviewer", "selected-reviewer@test.local", "Selected reviewer"
+        db_session, "employee", "selected-reviewer@test.local", "Selected reviewer"
     )
     new_annotator = await create_user(
-        db_session, "annotator", "new-annotator@test.local", "New annotator"
+        db_session, "employee", "new-annotator@test.local", "New annotator"
     )
     new_reviewer = await create_user(
-        db_session, "reviewer", "new-reviewer@test.local", "New reviewer"
+        db_session, "employee", "new-reviewer@test.local", "New reviewer"
     )
-    for member in (
-        old_annotator,
-        old_reviewer,
-        selected_annotator,
-        selected_reviewer,
-        new_annotator,
-        new_reviewer,
+    # Project roles are explicit; never inferred from the literal employee account.
+    for member, role in (
+        (old_annotator, "annotator"),
+        (old_reviewer, "reviewer"),
+        (selected_annotator, "annotator"),
+        (selected_reviewer, "reviewer"),
+        (new_annotator, "annotator"),
+        (new_reviewer, "reviewer"),
     ):
         db_session.add(
             ProjectMember(
                 project_id=project.id,
                 user_id=member.id,
-                role=member.role,
+                role=role,
                 assigned_by=owner.id,
             )
         )
@@ -160,14 +161,18 @@ async def test_new_review_round_releases_previous_reviewer_override(
     default_reviewer, reviewer_token = reviewer
     project = await create_project(db_session, owner_id=owner.id)
     pinned_reviewer = await create_user(
-        db_session, "reviewer", "previous-reviewer@test.local", "Previous reviewer"
+        db_session, "employee", "previous-reviewer@test.local", "Previous reviewer"
     )
-    for member in (actor, default_reviewer, pinned_reviewer):
+    for member, role in (
+        (actor, "annotator"),
+        (default_reviewer, "reviewer"),
+        (pinned_reviewer, "reviewer"),
+    ):
         db_session.add(
             ProjectMember(
                 project_id=project.id,
                 user_id=member.id,
-                role=member.role,
+                role=role,
                 assigned_by=owner.id,
             )
         )

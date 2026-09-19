@@ -54,7 +54,7 @@ async def _seed_project_with_two_batches(
         email=f"other-{uuid.uuid4().hex[:6]}@test.local",
         name="OtherAnnotator",
         password_hash=hash_password("Test1234"),
-        role="annotator",
+        role="employee",
         is_active=True,
     )
     db.add(other_user)
