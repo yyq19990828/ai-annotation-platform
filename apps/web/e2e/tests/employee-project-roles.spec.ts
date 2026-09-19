@@ -193,15 +193,19 @@ test.describe("project-scoped employee roles", () => {
     expect(approved.status(), await approved.text()).toBe(200);
 
     // Server truth for both projects.
-    const token = await seed.accessToken(data.employee_email);
-    const aTask = await request.get(`${API_BASE}/api/v1/tasks/${data.annotation_task_id}`, {
-      headers: auth(token),
+    // Read final state through the legitimate project managers: an annotator
+    // loses batch visibility for a task that left the annotation phase, so the
+    // employee's own GET can legitimately 404 even though the submit succeeded.
+    const aOwnerTask = await request.get(`${API_BASE}/api/v1/tasks/${data.annotation_task_id}`, {
+      headers: auth(await seed.accessToken(data.owner_email_a)),
     });
-    expect((await aTask.json()).status).toBe("review");
-    const bTask = await request.get(`${API_BASE}/api/v1/tasks/${data.review_task_id}`, {
-      headers: auth(token),
+    expect(aOwnerTask.status(), await aOwnerTask.text()).toBe(200);
+    expect((await aOwnerTask.json()).status).toBe("review");
+    const bOwnerTask = await request.get(`${API_BASE}/api/v1/tasks/${data.review_task_id}`, {
+      headers: auth(await seed.accessToken(data.owner_email_b)),
     });
-    expect((await bTask.json()).status).toBe("completed");
+    expect(bOwnerTask.status(), await bOwnerTask.text()).toBe(200);
+    expect((await bOwnerTask.json()).status).toBe("completed");
 
     await reviewTab.close();
   });
@@ -346,7 +350,7 @@ test.describe("project-scoped employee roles", () => {
     expect(replay.status(), await replay.text()).toBe(409);
   });
 
-  test("revoking the current project rejects the queued draft and leaves another project usable", async ({
+  test("revoking the current project denies the queued draft while the authorized project works", async ({
     page,
     context,
     request,
@@ -358,7 +362,7 @@ test.describe("project-scoped employee roles", () => {
 
     await seed.injectToken(page, data.employee_email);
     await page.setViewportSize({ width: 1440, height: 900 });
-    const annotatePath = `/api/v1/tasks/${data.open_pool_task_id}/annotations`;
+    const dAccessPath = `/api/v1/projects/${data.projects.d.project_id}/access`;
 
     // Load D's open-pool workbench while online, then go offline so the save
     // fails as a real network error and becomes a durable local draft.  Staying
@@ -376,17 +380,14 @@ test.describe("project-scoped employee roles", () => {
       .poll(async () => (await readOfflineQueue(page)).length, { timeout: 15_000 })
       .toBeGreaterThan(0);
 
-    // Leave the workbench and release its task lock so the membership is idle.
+    // Release the task lock so the membership is idle, then revoke through the
+    // real API. D is an open pool, so no handoff blocker applies.
     const token = await seed.accessToken(data.employee_email);
-    await page.goto("about:blank");
     const released = await request.delete(
       `${API_BASE}/api/v1/tasks/${data.open_pool_task_id}/lock`,
       { headers: auth(token) },
     );
     expect(released.status(), await released.text()).toBe(204);
-
-    // Revoke the membership through the real API. D is an open pool, so the
-    // employee owns no assignment and the removal is not blocked by handoff.
     const ownerToken = await seed.accessToken(data.owner_email_a);
     const ownerHeaders = auth(ownerToken);
     const membersResponse = await request.get(
@@ -402,26 +403,21 @@ test.describe("project-scoped employee roles", () => {
       { headers: ownerHeaders },
     );
     expect(removed.status(), await removed.text()).toBe(204);
-
-    const revokedAccess = await request.get(
-      `${API_BASE}/api/v1/projects/${data.projects.d.project_id}/access`,
-      { headers: auth(token) },
-    );
+    const revokedAccess = await request.get(dAccessPath, { headers: auth(token) });
     expect([403, 404]).toContain(revokedAccess.status());
 
-    // Back online in an unrelated authorized project: the queued D save now
-    // reaches the real API and is rejected on authority (403), not merely by a
-    // network abort, while its draft stays queued and project B still works.
-    const rejectedDraft = page.waitForResponse(
+    // Going back online drains the account queue.  The B4 drain re-checks each
+    // operation's project authority first: with D revoked it must observe an
+    // HTTP 403/404 access denial and retain the op, not perform a forbidden
+    // annotation write.
+    const drainAccessCheck = page.waitForResponse(
       (response) =>
-        new URL(response.url()).pathname === annotatePath && response.request().method() === "POST",
+        new URL(response.url()).pathname === dAccessPath && response.request().method() === "GET",
       { timeout: 20_000 },
     );
     await context.setOffline(false);
-    await page.goto(`/projects/${data.projects.b.project_id}/review?task=${data.review_task_id}`);
-    const rejected = await rejectedDraft;
-    expect(rejected.status(), await rejected.text()).toBe(403);
-    await expect(page.getByTestId("review-approve")).toBeVisible({ timeout: 20_000 });
+    const drainAccess = await drainAccessCheck;
+    expect([403, 404]).toContain(drainAccess.status());
     await expect
       .poll(
         async () =>
@@ -430,6 +426,17 @@ test.describe("project-scoped employee roles", () => {
       )
       .toBe(true);
 
+    // No D write was persisted; the draft only exists locally.
+    const dAnnotations = await request.get(
+      `${API_BASE}/api/v1/tasks/${data.open_pool_task_id}/annotations`,
+      { headers: ownerHeaders },
+    );
+    expect(dAnnotations.status(), await dAnnotations.text()).toBe(200);
+    expect(await dAnnotations.json()).toEqual([]);
+
+    // The unrelated authorized project B still works end to end.
+    await page.goto(`/projects/${data.projects.b.project_id}/review?task=${data.review_task_id}`);
+    await expect(page.getByTestId("review-approve")).toBeVisible({ timeout: 20_000 });
     const [approved] = await Promise.all([
       page.waitForResponse(
         (response) =>
