@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { Thumbnail } from "@/components/Thumbnail";
 import { useProject } from "@/hooks/useProjects";
+import { useProjectAccess } from "@/hooks/useProjectAccess";
 import { useTask } from "@/hooks/useTasks";
 import type { ProjectResponse } from "@/api/projects";
 import {
@@ -805,6 +806,13 @@ function TaskDataManagerPage({
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const canManageProject =
     role === "super_admin" || Boolean(project && user?.id === project.owner_id);
+  const projectAccess = useProjectAccess(id);
+  // Data Manager reads stay project.read; management actions need project.manage
+  // and selected-task export needs export.annotations (reviewer, not annotator).
+  const canManageProjectTasks = canManageProject || projectAccess.hasCapability("project.manage");
+  const canExportProjectTasks =
+    canManageProject || projectAccess.hasCapability("export.annotations");
+  const showProjectTaskActions = canManageProjectTasks || canExportProjectTasks;
   const canEditSelected = Boolean(
     selectedView?.id &&
     (selectedView.visibility === "private"
@@ -1536,12 +1544,14 @@ function TaskDataManagerPage({
                   {!filterReady && (
                     <span className="text-status-danger">完成筛选条件后才能执行批量操作</span>
                   )}
-                  {canManageProject && (
+                  {showProjectTaskActions && (
                     <div className="basis-full">
                       <DataManagerTaskActions
                         key={`${id}:${user?.id ?? "anonymous"}`}
                         projectId={id}
                         taskIds={filterReady ? effectiveSelectedTaskIds : []}
+                        canManage={canManageProjectTasks}
+                        canExport={canExportProjectTasks}
                         onCompleted={() => {
                           setSelectedTaskIds([]);
                           void tasksQ.refetch();

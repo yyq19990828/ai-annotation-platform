@@ -579,3 +579,36 @@ describe("offlineQueue account ownership", () => {
     expect((await getAll()).map((op) => op.id)).toEqual(["legacy", "bob-op"]);
   });
 });
+
+describe("offlineQueue.drain · per-operation authorization", () => {
+  it("retains a denied project's op and continues with an authorized project", async () => {
+    await enqueueDurably({ ...deleteOp("a"), projectId: "A" });
+    await enqueueDurably({ ...deleteOp("b"), projectId: "B" });
+    const processed: string[] = [];
+    const result = await drain(
+      async (op) => {
+        processed.push(op.id);
+      },
+      undefined,
+      { shouldProcess: async (op) => op.projectId !== "A" },
+    );
+    expect(result).toEqual({ ok: 1, failed: 0, denied: 1 });
+    expect(processed).toEqual(["b"]);
+    const all = await getAll();
+    expect(all.map((op) => op.id)).toEqual(["a"]);
+    expect(all[0].retry_count).toBeUndefined();
+  });
+
+  it("treats an authorizer error as denied without processing the op", async () => {
+    await enqueueDurably({ ...deleteOp("a"), projectId: "A" });
+    const handler = vi.fn(async () => {});
+    const result = await drain(handler, undefined, {
+      shouldProcess: () => {
+        throw new Error("boom");
+      },
+    });
+    expect(result).toEqual({ ok: 0, failed: 0, denied: 1 });
+    expect(handler).not.toHaveBeenCalled();
+    expect((await getAll()).map((op) => op.id)).toEqual(["a"]);
+  });
+});

@@ -249,9 +249,12 @@ import {
 import {
   getAll as offlineQueueGetAll,
   removeById as offlineQueueRemoveById,
+  type OfflineOp,
   type OfflineQueueScope,
 } from "./offlineQueue";
 import { useWorkbenchOfflineQueue } from "./useWorkbenchOfflineQueue";
+import { projectAccessQueryKey } from "@/hooks/useProjectAccess";
+import { projectsApi } from "@/api/projects";
 import { useImageAnnotationActions } from "../stages/image/useImageAnnotationActions";
 import { confirmDialog } from "@/components/ui/decisionDialog";
 import {
@@ -3030,13 +3033,37 @@ export function useWorkbenchShellModel({
     return tasks.filter((t) => t.status !== "completed" && t.id !== taskId).length;
   }, [tasks, taskId]);
 
+  const currentProjectCanWrite =
+    projectAccess.hasCapability("annotation.write") || projectAccess.hasCapability("review.write");
+  // Authorize each queued op against its own project so a revoked A retains its
+  // drafts without blocking an unrelated authorized B in the same account queue.
+  const authorizeOfflineFlush = useCallback(
+    async (op: OfflineOp) => {
+      const opProjectId = op.projectId ?? projectId;
+      if (!opProjectId || !meUserId) return false;
+      if (opProjectId === projectId) return currentProjectCanWrite;
+      try {
+        const data = await queryClient.fetchQuery({
+          queryKey: projectAccessQueryKey(opProjectId, meUserId),
+          queryFn: ({ signal }) => projectsApi.getAccess(opProjectId, { signal }),
+          staleTime: 30_000,
+        });
+        const capabilities = new Set(data.capabilities ?? []);
+        return capabilities.has("annotation.write") || capabilities.has("review.write");
+      } catch {
+        return false;
+      }
+    },
+    [currentProjectCanWrite, meUserId, projectId, queryClient],
+  );
+
   const offlineQ = useWorkbenchOfflineQueue({
     history,
     queryClient,
     pushToast,
     userId: meUserId,
     taskId,
-    canFlush: !projectWriteBlocked,
+    authorizeFlush: authorizeOfflineFlush,
   });
   const {
     online,

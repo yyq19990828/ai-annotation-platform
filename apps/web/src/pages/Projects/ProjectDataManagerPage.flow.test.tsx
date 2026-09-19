@@ -76,6 +76,22 @@ vi.mock("@/hooks/useProjects", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useProjectAccess", () => ({
+  useProjectAccess: () => ({
+    hasCapability: () => false,
+    capabilities: new Set<string>(),
+    access: undefined,
+    projectRole: null,
+    membershipVersion: null,
+    isManager: false,
+    isPending: false,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
 vi.mock("@/hooks/useTasks", () => ({
   useTask: (id: string) => ({
     data: state.taskLookups.get(id) ?? state.taskLookup,

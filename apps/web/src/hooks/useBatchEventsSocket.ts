@@ -23,6 +23,7 @@ import { useCallback } from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { useReconnectingWebSocket } from "@/hooks/useReconnectingWebSocket";
+import { useAuthStore } from "@/stores/authStore";
 import { buildWsUrl } from "@/lib/wsHost";
 
 /** 会让 ["batches", projectId] 缓存失效的 batch 事件类型。 */
@@ -30,7 +31,11 @@ const BATCH_INVALIDATING_EVENTS = new Set(["batch.status_changed", "batch.assign
 
 export function useBatchEventsSocket(projectId: string | undefined): void {
   const qc = useQueryClient();
-  const url = projectId ? buildWsUrl(`/ws/batches/project/${projectId}`) : null;
+  const token = useAuthStore((s) => s.token);
+  // Root WS URL carries the current account token.  Wait for auth hydration and
+  // never fall back to an unauthenticated connection; a token/account switch
+  // changes the URL and the reconnecting hook tears the old socket down.
+  const url = projectId && token ? buildWsUrl(`/ws/batches/project/${projectId}`, { token }) : null;
 
   const onMessage = useCallback(
     (e: MessageEvent) => {
@@ -50,5 +55,5 @@ export function useBatchEventsSocket(projectId: string | undefined): void {
     [qc, projectId],
   );
 
-  useReconnectingWebSocket(url, { onMessage, enabled: !!projectId });
+  useReconnectingWebSocket(url, { onMessage, enabled: !!url });
 }

@@ -86,6 +86,10 @@ export interface DataManagerTaskActionsProps {
   preannotation?: Omit<TriggerPreannotationPayload, "task_ids" | "batch_id"> | null;
   /** Existing export preferences; the action opens a format selector before dispatch. */
   exportOptions?: DataManagerTaskExportOptions;
+  /** Project `project.manage` capability: gates assignment and preannotation. */
+  canManage?: boolean;
+  /** Project `export.annotations` capability: gates selected-task export. */
+  canExport?: boolean;
 }
 
 function toExportPayload(
@@ -233,6 +237,8 @@ export function DataManagerTaskActions({
   onCompleted,
   preannotation,
   exportOptions = { targets: ["coco"] },
+  canManage = true,
+  canExport = true,
 }: DataManagerTaskActionsProps) {
   const ids = useMemo(() => [...new Set(taskIds)], [taskIds]);
   const projectQ = useProject(projectId);
@@ -525,7 +531,8 @@ export function DataManagerTaskActions({
           <Button
             data-testid="data-manager-assign"
             size="sm"
-            disabled={!hasSelection || busy !== null}
+            disabled={!hasSelection || busy !== null || !canManage}
+            title={canManage ? undefined : "需要项目成员管理权限"}
             onClick={openAssignment}
           >
             分派
@@ -533,7 +540,8 @@ export function DataManagerTaskActions({
           <Button
             data-testid="data-manager-export"
             size="sm"
-            disabled={!hasSelection || busy !== null}
+            disabled={!hasSelection || busy !== null || !canExport}
+            title={canExport ? undefined : "需要项目导出权限"}
             onClick={openExport}
           >
             导出
@@ -542,7 +550,8 @@ export function DataManagerTaskActions({
             data-testid="data-manager-preannotate"
             size="sm"
             variant="ai"
-            disabled={!hasSelection || busy !== null}
+            disabled={!hasSelection || busy !== null || !canManage}
+            title={canManage ? undefined : "需要项目成员管理权限"}
             onClick={openPreannotate}
           >
             {busy === "preannotate" ? "创建预标…" : "运行预标"}

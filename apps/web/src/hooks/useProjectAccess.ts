@@ -3,17 +3,13 @@ import { projectsApi, type ProjectAccessResponse, type ProjectCapability } from 
 import { useAuthStore } from "@/stores/authStore";
 
 /**
- * Cache key for one account's access on one actual project.  Binding both the
- * account and the project means an account switch or a project switch can never
- * reuse another context's access; `bindAuthQueryCache` still cancels in-flight
- * old-account responses when credentials change.
+ * Cache key for one account's access on one actual project.  It binds the
+ * account and project ids only — never the raw bearer token — so a token refresh
+ * does not fork the cache.  `bindAuthQueryCache` still clears every query when
+ * credentials or the account change, cancelling in-flight responses.
  */
-export function projectAccessQueryKey(
-  projectId: string | undefined,
-  userId: string | null,
-  token: string | null,
-) {
-  return ["project-access", projectId ?? null, userId, token] as const;
+export function projectAccessQueryKey(projectId: string | undefined, userId: string | null) {
+  return ["project-access", projectId ?? null, userId] as const;
 }
 
 export interface ProjectAccessState {
@@ -30,28 +26,37 @@ export interface ProjectAccessState {
   error: unknown;
 }
 
+const NO_CAPABILITIES: ReadonlySet<ProjectCapability> = new Set<ProjectCapability>();
+
 /**
  * Resolve the current account's project-scoped access (capabilities + project
- * role) for a project id.  This is a presentation guard: the server remains the
- * authorization source and may still reject a request.
+ * role) for a project id.  Fail closed: retained query data is exposed only
+ * when the latest query for this account+project succeeded and its ids still
+ * match the requested context, so a refetch 403, a disabled query or a stale
+ * account/project response can never authorize an action.
  */
 export function useProjectAccess(
   projectId: string | undefined,
   options?: { enabled?: boolean },
 ): ProjectAccessState & Pick<UseQueryResult<ProjectAccessResponse>, "refetch"> {
   const userId = useAuthStore((state) => state.user?.id ?? null);
-  const token = useAuthStore((state) => state.token);
   const enabled = (options?.enabled ?? true) && Boolean(projectId) && Boolean(userId);
 
   const query = useQuery({
-    queryKey: projectAccessQueryKey(projectId, userId, token),
+    queryKey: projectAccessQueryKey(projectId, userId),
     queryFn: ({ signal }) => projectsApi.getAccess(projectId!, { signal }),
     enabled,
     staleTime: 30_000,
   });
 
-  const access = query.data;
-  const capabilities = new Set<ProjectCapability>(access?.capabilities ?? []);
+  const candidate = query.isSuccess && !query.isError ? query.data : undefined;
+  const access =
+    enabled && candidate && candidate.project_id === projectId && candidate.user_id === userId
+      ? candidate
+      : undefined;
+  const capabilities: ReadonlySet<ProjectCapability> = access?.capabilities
+    ? new Set(access.capabilities)
+    : NO_CAPABILITIES;
 
   return {
     access,

@@ -47,10 +47,38 @@ it("keeps a failed operation without a render-driven retry loop and retries on r
   client.clear();
 });
 
-it("blocks replay and keeps ops recoverable when project write access is revoked", async () => {
+it("authorizes each queued op by its project and retains denied drafts", async () => {
   const client = new QueryClient();
   state.online = true;
   state.drain.mockReset();
+  const authorize = vi.fn(async (op: { projectId?: string }) => op.projectId !== "A");
+  state.drain.mockImplementationOnce(
+    async (
+      _handler: unknown,
+      _scope: unknown,
+      options: { shouldProcess: (op: unknown) => Promise<boolean> },
+    ) => {
+      const opA = {
+        kind: "delete",
+        id: "a",
+        taskId: "taskA",
+        projectId: "A",
+        annotationId: "x",
+        ts: 1,
+      };
+      const opB = {
+        kind: "delete",
+        id: "b",
+        taskId: "taskB",
+        projectId: "B",
+        annotationId: "y",
+        ts: 2,
+      };
+      await options.shouldProcess(opA);
+      await options.shouldProcess(opB);
+      return { ok: 1, failed: 0, denied: 1 };
+    },
+  );
   const { result } = renderHook(() =>
     useWorkbenchOfflineQueue({
       userId: "alice",
@@ -58,11 +86,13 @@ it("blocks replay and keeps ops recoverable when project write access is revoked
       queryClient: client,
       pushToast: vi.fn(),
       history: { replaceAnnotationId: vi.fn() },
-      canFlush: false,
+      authorizeFlush: authorize,
     }),
   );
+  await waitFor(() => expect(state.drain).toHaveBeenCalled());
   await waitFor(() => expect(result.current.syncError).toContain("项目权限已变更"));
-  expect(state.drain).not.toHaveBeenCalled();
+  expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ projectId: "A" }));
+  expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ projectId: "B" }));
   client.clear();
 });
 

@@ -44,11 +44,11 @@ export interface UseWorkbenchOfflineQueueArgs {
   /** Current task owner for history/UI writebacks; queue syncing may include other tasks. */
   taskId?: string;
   /**
-   * False when the current project access no longer authorizes writes.  Blocks
-   * both the automatic drain and manual retries so a revoked session cannot
-   * replay queued mutations; the local ops stay recoverable.
+   * Authorize one queued operation by its actual task/project.  Returning false
+   * retains the op (draft preserved) while unrelated authorized projects keep
+   * syncing.  Omit to allow everything (tests/legacy callers).
    */
-  canFlush?: boolean;
+  authorizeFlush?: (op: OfflineOp) => boolean | Promise<boolean>;
 }
 
 export interface UseWorkbenchOfflineQueueReturn {
@@ -74,7 +74,7 @@ export function useWorkbenchOfflineQueue({
   pushToast,
   userId,
   taskId,
-  canFlush = true,
+  authorizeFlush,
 }: UseWorkbenchOfflineQueueArgs): UseWorkbenchOfflineQueueReturn {
   const queueScope = useMemo<OfflineQueueScope | undefined>(() => {
     return {
@@ -87,10 +87,10 @@ export function useWorkbenchOfflineQueue({
   const [syncError, setSyncError] = useState<string | null>(null);
   const currentTaskRef = useRef<string | undefined>(taskId);
   currentTaskRef.current = taskId;
-  // Read through a ref inside async drains so a revocation flips the gate without
-  // restarting the queue.
-  const canFlushRef = useRef(canFlush);
-  canFlushRef.current = canFlush;
+  // Read through a ref inside async drains so an authorization change flips the
+  // gate without restarting the queue.
+  const authorizeFlushRef = useRef(authorizeFlush);
+  authorizeFlushRef.current = authorizeFlush;
 
   useEffect(() => {
     setSyncError(null);
@@ -98,12 +98,6 @@ export function useWorkbenchOfflineQueue({
   useEffect(() => {
     if (queueCount === 0) setSyncError(null);
   }, [queueCount]);
-  // Surface a recoverable error as soon as write authority is lost, even though
-  // the automatic drain is gated off below.  Local ops are never discarded.
-  useEffect(() => {
-    if (canFlush || queueCount === 0) return;
-    if (userId && isCurrentAuthOwner(userId)) setSyncError(OFFLINE_REVOKED_MESSAGE);
-  }, [canFlush, queueCount, userId]);
 
   const assertCurrentOwner = useCallback(() => {
     if (!queueScope || !isCurrentAuthOwner(queueScope.userId)) {
@@ -135,11 +129,6 @@ export function useWorkbenchOfflineQueue({
 
   const flushOne = useCallback(
     async (op: OfflineOp) => {
-      if (!canFlushRef.current) {
-        const message = OFFLINE_REVOKED_MESSAGE;
-        if (userId && isCurrentAuthOwner(userId)) setSyncError(message);
-        throw new Error(message);
-      }
       try {
         assertCurrentOwner();
         if (!op.userId || op.userId !== userId) {
@@ -190,11 +179,22 @@ export function useWorkbenchOfflineQueue({
 
   const flushAll = useCallback(async () => {
     if (!queueScope) return;
-    if (!canFlushRef.current) {
-      if (userId && isCurrentAuthOwner(userId)) setSyncError(OFFLINE_REVOKED_MESSAGE);
-      return;
-    }
-    const result = await drain(flushOne, queueScope);
+    const authorize = authorizeFlushRef.current;
+    const result = await drain(
+      flushOne,
+      queueScope,
+      authorize
+        ? {
+            shouldProcess: async (op) => {
+              try {
+                return await authorize(op);
+              } catch {
+                return false;
+              }
+            },
+          }
+        : undefined,
+    );
     if (!queueScope.isCurrent?.()) return;
     if (result.ok > 0) {
       setSyncError(null);
@@ -202,18 +202,20 @@ export function useWorkbenchOfflineQueue({
       queryClient.invalidateQueries({ queryKey: ["tasks"] });
       pushToast({ msg: `已同步 ${result.ok} 条离线操作`, kind: "success" });
     }
-    if (result.failed > 0) {
+    if ((result.denied ?? 0) > 0) {
+      setSyncError(OFFLINE_REVOKED_MESSAGE);
+    } else if (result.failed > 0) {
       setSyncError("部分离线操作同步失败");
       pushToast({ msg: "部分操作仍未能同步", sub: "请检查网络后重试", kind: "warning" });
     }
-  }, [flushOne, pushToast, queryClient, queueScope, userId]);
+  }, [flushOne, pushToast, queryClient, queueScope]);
 
   const flushAllRef = useRef(flushAll);
   flushAllRef.current = flushAll;
-  // Retry on connection/queue changes, not on every history or error render.
+  // Retry on connection/queue/authorization changes, not on every render.
   useEffect(() => {
-    if (online && queueReady && queueCount > 0 && canFlush) void flushAllRef.current();
-  }, [online, queueCount, queueReady, userId, canFlush]);
+    if (online && queueReady && queueCount > 0) void flushAllRef.current();
+  }, [online, queueCount, queueReady, userId, authorizeFlush]);
 
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);

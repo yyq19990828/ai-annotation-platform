@@ -6,22 +6,25 @@
  */
 import { createElement, type ReactNode } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, renderHook } from "@testing-library/react";
+import { act, cleanup, renderHook } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 let capturedOnMessage: ((e: MessageEvent) => void) | null = null;
+let capturedUrl: string | null = null;
 
 vi.mock("@/hooks/useReconnectingWebSocket", () => ({
   useReconnectingWebSocket: (
-    _url: string | null,
+    url: string | null,
     opts: { onMessage?: (e: MessageEvent) => void },
   ) => {
+    capturedUrl = url;
     capturedOnMessage = opts.onMessage ?? null;
     return { state: "open", retries: 0 };
   },
 }));
 
 import { useBatchEventsSocket } from "./useBatchEventsSocket";
+import { useAuthStore } from "@/stores/authStore";
 
 function makeWrapper(client: QueryClient) {
   return ({ children }: { children: ReactNode }) =>
@@ -34,6 +37,7 @@ function message(data: unknown): MessageEvent {
 
 afterEach(() => {
   capturedOnMessage = null;
+  capturedUrl = null;
   cleanup();
 });
 
@@ -62,5 +66,18 @@ describe("useBatchEventsSocket", () => {
     capturedOnMessage?.({ data: "not-json" } as MessageEvent);
 
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("waits for auth hydration before connecting (no unauth fallback)", () => {
+    act(() => useAuthStore.setState({ token: null, user: null }));
+    renderHook(() => useBatchEventsSocket("p1"), { wrapper: makeWrapper(new QueryClient()) });
+    expect(capturedUrl).toBeNull();
+  });
+
+  it("carries the account token in the root WS URL", () => {
+    act(() => useAuthStore.setState({ token: "tok-1", user: { id: "u1" } as never }));
+    renderHook(() => useBatchEventsSocket("p1"), { wrapper: makeWrapper(new QueryClient()) });
+    expect(capturedUrl).toContain("/ws/batches/project/p1");
+    expect(capturedUrl).toContain("token=tok-1");
   });
 });

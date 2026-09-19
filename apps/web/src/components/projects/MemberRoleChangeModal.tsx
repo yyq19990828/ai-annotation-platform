@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
@@ -6,7 +6,11 @@ import { useToastStore } from "@/components/ui/Toast";
 import { ApiError } from "@/api/client";
 import { PROJECT_ROLE_LABELS, PROJECT_ROLES } from "@/constants/roles";
 import { usePreviewProjectMemberRole, useChangeProjectMemberRole } from "@/hooks/useProjects";
-import type { ProjectMemberResponse, ProjectRole } from "@/api/projects";
+import type {
+  ProjectMemberResponse,
+  ProjectMemberRolePreviewResponse,
+  ProjectRole,
+} from "@/api/projects";
 
 interface Props {
   open: boolean;
@@ -24,18 +28,33 @@ const INPUT_CLASS =
  * resource-snapshot token; the write echoes `expected_version` + `preview_token`
  * so a stale preview (new assignments, receiver role change) is rejected with a
  * 409 instead of silently overwriting concurrent work.
+ *
+ * The preview is bound to the exact member/target/receiver inputs. Changing any
+ * input invalidates the previous preview, late responses from an older request
+ * are discarded, and Save stays disabled until a preview matching the current
+ * inputs succeeds.
  */
 export function MemberRoleChangeModal({ open, projectId, member, members, onClose }: Props) {
   const pushToast = useToastStore((s) => s.push);
-  const preview = usePreviewProjectMemberRole(projectId);
+  const previewMutation = usePreviewProjectMemberRole(projectId);
   const change = useChangeProjectMemberRole(projectId);
   const [targetRole, setTargetRole] = useState<ProjectRole>(member?.role ?? "annotator");
   const [reason, setReason] = useState("");
   const [replacementAnnotatorId, setReplacementAnnotatorId] = useState("");
   const [replacementReviewerId, setReplacementReviewerId] = useState("");
+  const [preview, setPreview] = useState<ProjectMemberRolePreviewResponse | null>(null);
+  const [previewKey, setPreviewKey] = useState<string | null>(null);
+  const [previewPending, setPreviewPending] = useState(false);
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const [stale, setStale] = useState(false);
+  const requestRef = useRef(0);
+  const memberIdRef = useRef<string | null>(member?.id ?? null);
+  memberIdRef.current = member?.id ?? null;
 
-  const previewData = preview.data;
+  const inputKey = member
+    ? `${member.id}|${targetRole}|${replacementAnnotatorId}|${replacementReviewerId}`
+    : "";
+
   const annotatorOptions = useMemo(
     () => members.filter((m) => m.role === "annotator" && m.user_id !== member?.user_id),
     [members, member?.user_id],
@@ -45,25 +64,36 @@ export function MemberRoleChangeModal({ open, projectId, member, members, onClos
     [members, member?.user_id],
   );
 
-  const runPreview = () => {
+  const runPreview = useCallback(async () => {
     if (!member) return;
+    const key = `${member.id}|${targetRole}|${replacementAnnotatorId}|${replacementReviewerId}`;
+    const request = ++requestRef.current;
+    setPreviewPending(true);
+    setPreview(null);
+    setPreviewKey(null);
+    setPreviewError(null);
     setStale(false);
-    preview.mutate(
-      {
+    change.reset();
+    try {
+      const data = await previewMutation.mutateAsync({
         memberId: member.id,
         payload: {
           project_role: targetRole,
           ...(replacementAnnotatorId ? { replacement_annotator_id: replacementAnnotatorId } : {}),
           ...(replacementReviewerId ? { replacement_reviewer_id: replacementReviewerId } : {}),
         },
-      },
-      {
-        onError: (error) => {
-          if (error instanceof ApiError && error.status === 409) setStale(true);
-        },
-      },
-    );
-  };
+      });
+      if (request !== requestRef.current) return;
+      setPreview(data);
+      setPreviewKey(key);
+    } catch (error) {
+      if (request !== requestRef.current) return;
+      if (error instanceof ApiError && error.status === 409) setStale(true);
+      else setPreviewError(error instanceof Error ? error.message : String(error));
+    } finally {
+      if (request === requestRef.current) setPreviewPending(false);
+    }
+  }, [member, targetRole, replacementAnnotatorId, replacementReviewerId, previewMutation, change]);
 
   useEffect(() => {
     if (!open || !member) return;
@@ -71,35 +101,42 @@ export function MemberRoleChangeModal({ open, projectId, member, members, onClos
     setReason("");
     setReplacementAnnotatorId("");
     setReplacementReviewerId("");
+    requestRef.current += 1;
+    setPreview(null);
+    setPreviewKey(null);
     setStale(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, member?.id]);
 
   useEffect(() => {
-    if (open && member) runPreview();
+    if (open && member) void runPreview();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [open, member?.id, targetRole]);
+  }, [open, member?.id, targetRole, replacementAnnotatorId, replacementReviewerId]);
 
   if (!member) return null;
 
-  const blockers = previewData?.blockers ?? [];
-  const requiresHandoff = previewData?.requires_handoff ?? false;
+  const blockers = preview?.blockers ?? [];
+  const requiresHandoff = preview?.requires_handoff ?? false;
+  // Only a preview produced for exactly these inputs may authorize the write.
+  const previewMatches = !!preview && previewKey === inputKey && !previewPending;
   const canSubmit =
-    !!previewData &&
+    previewMatches &&
+    !previewError &&
     !stale &&
     blockers.length === 0 &&
     reason.trim().length > 0 &&
     !change.isPending;
 
   const submit = () => {
-    if (!previewData || !canSubmit) return;
+    if (!canSubmit || !preview) return;
+    const submittingMemberId = member.id;
     change.mutate(
       {
-        memberId: member.id,
+        memberId: submittingMemberId,
         payload: {
           project_role: targetRole,
-          expected_version: previewData.current_version,
-          preview_token: previewData.preview_token,
+          expected_version: preview.current_version,
+          preview_token: preview.preview_token,
           reason: reason.trim(),
           ...(replacementAnnotatorId ? { replacement_annotator_id: replacementAnnotatorId } : {}),
           ...(replacementReviewerId ? { replacement_reviewer_id: replacementReviewerId } : {}),
@@ -107,6 +144,8 @@ export function MemberRoleChangeModal({ open, projectId, member, members, onClos
       },
       {
         onSuccess: () => {
+          // Ignore a late response if the dialog moved to another member.
+          if (memberIdRef.current !== submittingMemberId) return;
           pushToast({
             msg: `已将 ${member.user_name} 的职责改为${PROJECT_ROLE_LABELS[targetRole]}`,
             kind: "success",
@@ -114,6 +153,7 @@ export function MemberRoleChangeModal({ open, projectId, member, members, onClos
           onClose();
         },
         onError: (error) => {
+          if (memberIdRef.current !== submittingMemberId) return;
           if (error instanceof ApiError && error.status === 409) {
             setStale(true);
             pushToast({ msg: "预览已过期，请重新预览后再保存", kind: "warning" });
@@ -185,15 +225,16 @@ export function MemberRoleChangeModal({ open, projectId, member, members, onClos
         <div className="rounded-md border border-border bg-muted/40 p-3 text-xs">
           <div className="flex items-center justify-between">
             <span className="font-medium">变更影响预览</span>
-            <Button type="button" size="sm" onClick={runPreview} disabled={preview.isPending}>
-              {preview.isPending ? "读取中…" : "重新预览"}
+            <Button
+              type="button"
+              size="sm"
+              onClick={() => void runPreview()}
+              disabled={previewPending}
+            >
+              {previewPending ? "读取中…" : "重新预览"}
             </Button>
           </div>
-          {preview.isError && !stale && (
-            <div className="mt-1 text-status-danger">
-              {(preview.error as Error)?.message ?? "预览失败"}
-            </div>
-          )}
+          {previewError && <div className="mt-1 text-status-danger">{previewError}</div>}
           {stale && (
             <div className="mt-1 text-status-caution" role="alert">
               预览已过期：请重新预览，确认最新任务与锁状态后再保存。
@@ -202,10 +243,10 @@ export function MemberRoleChangeModal({ open, projectId, member, members, onClos
           {blockers.length > 0 && (
             <div className="mt-1 text-status-danger">存在阻塞项：{blockers.join("；")}</div>
           )}
-          {previewData && blockers.length === 0 && !stale && (
+          {previewMatches && blockers.length === 0 && !stale && (
             <div className="mt-1 text-muted-foreground">
-              当前职责 {PROJECT_ROLE_LABELS[previewData.current_role]} → 目标职责{" "}
-              {PROJECT_ROLE_LABELS[previewData.target_role]}（版本 {previewData.current_version}）。
+              当前职责 {PROJECT_ROLE_LABELS[preview.current_role]} → 目标职责{" "}
+              {PROJECT_ROLE_LABELS[preview.target_role]}（版本 {preview.current_version}）。
             </div>
           )}
         </div>

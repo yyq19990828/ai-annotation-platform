@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, waitFor } from "@testing-library/react";
+import { act, renderHook, waitFor } from "@testing-library/react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
 
@@ -44,13 +44,9 @@ describe("useProjectAccess", () => {
     expect(result.current.hasCapability("annotation.write", "review.write")).toBe(false);
     expect(result.current.projectRole).toBe("annotator");
     expect(result.current.membershipVersion).toBe(3);
-    expect(getAccess).toHaveBeenCalledWith(
-      "p1",
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
   });
 
-  it("账号或项目缺失时不发起请求", async () => {
+  it("账号或项目缺失时不发起请求且无能力", async () => {
     getAccess.mockResolvedValue(ACCESS);
     const { result } = renderHook(() => useProjectAccess(undefined), { wrapper: makeWrapper() });
     await new Promise((r) => setTimeout(r, 20));
@@ -63,10 +59,32 @@ describe("useProjectAccess", () => {
     const { result } = renderHook(() => useProjectAccess("p1"), { wrapper: makeWrapper() });
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.hasCapability("task.read")).toBe(false);
+    expect(result.current.access).toBeUndefined();
   });
 
-  it("cache key 绑定账号与项目", () => {
-    expect(projectAccessQueryKey("p1", "u1", "t1")).toEqual(["project-access", "p1", "u1", "t1"]);
-    expect(projectAccessQueryKey(undefined, "u1", "t1")[1]).toBeNull();
+  it("保留的旧数据在重新请求 403 后失效（fail closed）", async () => {
+    getAccess.mockResolvedValueOnce(ACCESS).mockRejectedValueOnce(new Error("403"));
+    const { result } = renderHook(() => useProjectAccess("p1"), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.hasCapability("annotation.write")).toBe(true));
+    await act(async () => {
+      await result.current.refetch().catch(() => undefined);
+    });
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.hasCapability("annotation.write")).toBe(false);
+    expect(result.current.access).toBeUndefined();
+  });
+
+  it("返回数据的账号或项目与请求不一致时不授权", async () => {
+    getAccess.mockResolvedValue(ACCESS);
+    const { result } = renderHook(() => useProjectAccess("p-other"), { wrapper: makeWrapper() });
+    await waitFor(() => expect(getAccess).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(result.current.access).toBeUndefined();
+    expect(result.current.hasCapability("annotation.write")).toBe(false);
+  });
+
+  it("cache key 仅绑定账号与项目，不含 bearer token", () => {
+    expect(projectAccessQueryKey("p1", "u1")).toEqual(["project-access", "p1", "u1"]);
+    expect(projectAccessQueryKey(undefined, "u1")[1]).toBeNull();
   });
 });

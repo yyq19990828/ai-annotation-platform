@@ -314,32 +314,47 @@ export async function replaceAnnotationId(
 }
 
 /**
- * 顺序消费队列。handler 抛错时停止 drain（保留剩余项），返回成功条数。
+ * 顺序消费队列。默认 handler 抛错时停止 drain（保留剩余项），返回成功条数。
+ * 提供 `shouldProcess` 时，返回 false 的 op 会被跳过并保留（不计失败），
+ * 让同一队列中其它已授权账号/项目的操作继续同步。
  */
+export interface DrainOptions {
+  shouldProcess?: (op: OfflineOp) => boolean | Promise<boolean>;
+}
+
 export function drain(
   handler: (op: OfflineOp) => Promise<void>,
   scope?: QueueScopeInput,
-): Promise<{ ok: number; failed: number }> {
+  options?: DrainOptions,
+): Promise<{ ok: number; failed: number; denied?: number }> {
   const key = scopeKey(scope);
   const existing = activeDrains.get(key);
   if (existing) return existing;
-  const running = withDrainLock(() => runDrain(handler, scope)).finally(() => {
+  const running = withDrainLock(() => runDrain(handler, scope, options)).finally(() => {
     if (activeDrains.get(key) === running) activeDrains.delete(key);
   });
   activeDrains.set(key, running);
   return running;
 }
 
-async function runDrain(handler: (op: OfflineOp) => Promise<void>, scope?: QueueScopeInput) {
+async function runDrain(
+  handler: (op: OfflineOp) => Promise<void>,
+  scope?: QueueScopeInput,
+  options?: DrainOptions,
+) {
   let ok = 0;
   let failed = 0;
+  let denied = 0;
+  // Denied ops are retained and skipped for the rest of this drain pass so a
+  // revoked project cannot block an unrelated authorized project's operations.
+  const skipped = new Set<string>();
   while (true) {
     const normalizedScope = normalizeScope(scope);
     if (normalizedScope?.isCurrent && !normalizedScope.isCurrent()) break;
     let op: OfflineOp | undefined;
     try {
       const queue = await readStored();
-      op = queue.find((item) => isOwnedBy(item, scope));
+      op = queue.find((item) => isOwnedBy(item, scope) && !skipped.has(item.id));
     } catch {
       failed++;
       break;
@@ -348,6 +363,19 @@ async function runDrain(handler: (op: OfflineOp) => Promise<void>, scope?: Queue
     // IndexedDB access yields: logout may have switched credentials while the
     // stored operation was being read. Check again before starting the request.
     if (normalizedScope?.isCurrent && !normalizedScope.isCurrent()) break;
+    if (options?.shouldProcess) {
+      let allowed = false;
+      try {
+        allowed = await options.shouldProcess(structuredClone(op));
+      } catch {
+        allowed = false;
+      }
+      if (!allowed) {
+        denied++;
+        skipped.add(op.id);
+        continue;
+      }
+    }
     try {
       // The network handler may enqueue or replace IDs: never hold accessTail here.
       await handler(structuredClone(op));
@@ -376,7 +404,7 @@ async function runDrain(handler: (op: OfflineOp) => Promise<void>, scope?: Queue
       break;
     }
   }
-  return { ok, failed };
+  return options?.shouldProcess ? { ok, failed, denied } : { ok, failed };
 }
 
 /** 清空队列（仅用于测试 / 手动 reset）。 */
