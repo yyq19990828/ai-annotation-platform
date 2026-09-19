@@ -66,6 +66,8 @@ async def _make_video_task(
         file_path="videos/clip.mp4",
         file_type="video",
         status="pending",
+        # Unbatched task visibility requires the effective annotator to match.
+        assignee_id=owner_id,
     )
     db.add(task)
     await db.flush()

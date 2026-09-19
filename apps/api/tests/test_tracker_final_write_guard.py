@@ -183,4 +183,4 @@ async def test_runner_guard_denies_self_review_evidence(
 
     with pytest.raises(TrackerJobStateConflict) as exc:
         await _assert_tracker_actor_authority(db_session, task, employee.id)
-    assert exc.value.detail["reason"] == "permission_changed"
+    assert exc.value.detail["reason"] == "self_review_denied"

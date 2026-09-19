@@ -1229,9 +1229,11 @@ async def _assert_tracker_actor_authority(
     try:
         await assert_phase_write_allowed(db, task, actor, action="tracker_write")
     except HTTPException as exc:
+        detail = exc.detail
+        reason = detail.get("reason") if isinstance(detail, dict) else None
         raise TrackerJobStateConflict(
             "project authority changed before tracker write",
-            reason="permission_changed",
+            reason=reason or "permission_changed",
         ) from exc
 
 
