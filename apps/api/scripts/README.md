@@ -183,3 +183,33 @@ production 环境始终拒绝运行。
 production 始终不挂载。catalog 按固定逻辑键解析用户、项目、任务、批次和运行时
 UUID，并硬校验 ML Backend 主绑定、项目启用关联、connected 状态及场景级能力；
 数据不完整时返回 `409 screenshot_seed_not_ready`，不会退回“最新项目”。
+
+## audit_project_roles（项目级员工角色 · 增量 A 准备，只读）
+
+项目级员工角色改造的准备工具（计划见
+`docs/plans/1789807315_project-scoped-employee-roles.md`）。它只读数据库：开启
+`READ ONLY` 事务，绝不写入角色、成员或分派；用于员工身份转换前的差异盘点与对账，
+不改变任何现有行为。
+
+```bash
+cd apps/api
+uv run python scripts/audit_project_roles.py --pretty
+uv run python scripts/audit_project_roles.py --output /tmp/project-role-audit.json
+```
+
+输出为带版本的 JSON（`report_version: project-role-audit/1`），包含 run ID、Alembic
+仓储/库基线、各清单总数与实体 ID/角色，不包含口令哈希、邀请 token、签名 URL 或自由文本
+原因。`--max-rows` 只截断明细（总数仍精确），`--database-url` 可覆盖默认连接。
+
+报告内容：
+
+- 全局/成员角色不匹配、未知或 NULL 角色、非法项目 owner、管理员成员关系，并把
+  「合法的跨项目混合角色」与真实不一致分开列出。
+- 生效任务分派与继承批次分派缺少有效成员关系、错误成员角色，以及停用账号仍持有未完成工作。
+- 待处理邀请按账号级/项目级、角色、过期与目标项目已删除分类，并标出需要回填
+  `project_role` 的历史项目邀请。
+- 有审核活动的任务其贡献者证据为完整 / 未知（NULL）；历史未知保持 NULL，审核写入应在
+  修复前保持阻断。
+- 用户、成员、活跃分派、锁、审核认领、任务状态、标注量与历史审核总量的对账计数。
+
+该命令属于增量 A 的附加准备（schema 附加列 + 只读审计），不代表员工角色功能已上线或已部署。

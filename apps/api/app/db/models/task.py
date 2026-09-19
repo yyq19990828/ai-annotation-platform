@@ -127,6 +127,18 @@ class Task(Base):
     first_review_contributor_ids: Mapped[list | None] = mapped_column(
         JSONB, nullable=True
     )
+    # 项目级员工角色 · 增量 A：可空贡献者证据（只加列，不由本增量写入）。
+    # NULL = 未知/legacy；没有任何默认值把历史行标记为完整。annotation 累积与
+    # review 冻结的写入逻辑属于后续增量。
+    annotation_contributor_ids: Mapped[list | None] = mapped_column(
+        JSONB, nullable=True
+    )
+    review_contributor_ids: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    review_submitter_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+    )
     reviewed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
