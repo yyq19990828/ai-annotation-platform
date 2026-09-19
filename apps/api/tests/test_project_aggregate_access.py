@@ -116,7 +116,9 @@ async def test_reviewer_dashboard_accepts_employee_and_filters_role(
         role="annotator",
         assigned_by=admin.id,
     )
-    await create_task(db_session, project_id=project.id, status="review")
+    review_task = await create_task(db_session, project_id=project.id, status="review")
+    # Unbatched review work is actionable only when assigned to the reviewer.
+    review_task.reviewer_id = reviewer.id
     await db_session.commit()
 
     reviewer_resp = await httpx_client.get(

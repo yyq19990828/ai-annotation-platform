@@ -1109,13 +1109,13 @@ async def _lock_actor_membership(
 ) -> None:
     from fastapi import HTTPException
 
-    from app.services.project_write_guard import lock_actor_project_share
+    from app.services.project_write_guard import lock_actor_scope
 
     project_id = await _job_project_id(db, job_id)
     if project_id is None:
         return
     try:
-        await lock_actor_project_share(db, actor_id, project_id)
+        await lock_actor_scope(db, actor_id, project_id)
     except HTTPException as exc:
         raise TrackerJobStateConflict(
             "project membership is busy", reason="tracker_job_busy"

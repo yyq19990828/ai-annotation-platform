@@ -74,8 +74,8 @@ async def _complete_from_cache(
     download_name: str,
     cache_key: str,
 ) -> None:
-    # Final result/URL boundary: reauthorize current account + membership
-    # immediately before issuing the cache-hit download URL.
+    # Final result/URL boundary: reauthorize current account + membership and
+    # the stored selected-task scope immediately before the cache-hit URL.
     await _reauthorize_export_final_write(db, job_uuid)
     download_url = storage_service.generate_download_url(
         hit.object_key,
@@ -538,40 +538,63 @@ async def _assert_export_task_scope(
         raise ValueError("export task scope is no longer visible")
 
 
+def _stored_task_ids(job: AsyncJob | None) -> list[uuid.UUID] | None:
+    """Parse the stored selected-task scope from a job payload."""
+
+    if job is None:
+        return None
+    payload = job.payload or {}
+    scope = payload.get("scope") or {}
+    raw = scope.get("task_ids")
+    if raw is None:
+        raw = payload.get("task_ids")
+    if not raw:
+        return None
+    out: list[uuid.UUID] = []
+    for value in raw:
+        try:
+            out.append(uuid.UUID(str(value)))
+        except (TypeError, ValueError):
+            return None
+    return out
+
+
 async def _reauthorize_export_final_write(
-    db: AsyncSession, job_uuid: uuid.UUID
+    db: AsyncSession, job_uuid: uuid.UUID, task_ids: list[uuid.UUID] | None = None
 ) -> None:
-    """Recheck account + membership under account-first ordering before a URL.
+    """Recheck account + membership + canonical task scope before a URL.
 
     The initial scope check runs before the (potentially long) build; a
-    revocation during that window must prevent final result creation and
-    signed-URL issuance.  Account is locked/refreshed before the membership
-    share lock, matching the lifecycle ordering.
+    revocation or batch/visibility change during that window must prevent final
+    result creation and signed-URL issuance.  Account is locked before the
+    membership share lock (account-first), then the canonical
+    ``_assert_export_task_scope`` re-runs under those locks instead of a
+    duplicate policy.
     """
 
     from fastapi import HTTPException
 
     from app.db.models.user import User
-    from app.services.project_access import ProjectCapability, resolve_project_access
     from app.services.project_write_guard import lock_actor_scope
 
     job = await db.get(AsyncJob, job_uuid)
     if job is None or job.project_id is None or job.user_id is None:
         raise ValueError("export scope is no longer valid")
     actor = await db.get(User, job.user_id)
-    project = await db.get(Project, job.project_id)
-    if actor is None or not actor.is_active or project is None:
+    if actor is None or not actor.is_active:
         raise ValueError("export scope owner is unavailable")
+    if task_ids is None:
+        task_ids = _stored_task_ids(job)
     try:
-        await lock_actor_scope(db, actor.id, project.id)
+        await lock_actor_scope(db, actor.id, job.project_id)
     except HTTPException as exc:
         raise ValueError("export scope is busy") from exc
-    try:
-        access = await resolve_project_access(db, user=actor, project=project)
-    except HTTPException as exc:
-        raise ValueError("export project access is no longer valid") from exc
-    if ProjectCapability.EXPORT_ANNOTATIONS.value not in access.capabilities:
-        raise ValueError("export capability is no longer valid")
+    await _assert_export_task_scope(
+        db,
+        project_id=job.project_id,
+        task_ids=task_ids,
+        job_uuid=job_uuid,
+    )
 
 
 async def _run_export(
@@ -804,8 +827,9 @@ async def _run_export(
                 await db.commit()
 
                 # Final result/URL boundary after the long build: reauthorize
-                # the initiating account and membership before issuing the URL.
-                await _reauthorize_export_final_write(db, job_uuid)
+                # the initiating account/membership and canonical selected-task
+                # scope before issuing the URL.
+                await _reauthorize_export_final_write(db, job_uuid, selected_task_ids)
                 download_url = storage_service.generate_download_url(
                     object_key,
                     expires_in=PRESIGN_EXPIRES_SECONDS,

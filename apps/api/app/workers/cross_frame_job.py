@@ -202,6 +202,9 @@ async def execute_cross_frame_job(
         )
 
     source_stale = False
+    # Stable actor id: a per-frame rollback expires the ORM instance, so the
+    # bounded account lock must use a captured id rather than actor.id.
+    actor_user_id = actor.id
     for target_index, target in enumerate(targets):
         frame_index = int(target["frame_index"])
         if frame_index in completed_by_frame:
@@ -249,11 +252,11 @@ async def execute_cross_frame_job(
             # item via the outer handler instead of a wait cycle.
             from app.services.project_write_guard import (
                 lock_actor_account,
-                lock_actor_project_share,
+                lock_actor_scope,
             )
 
             try:
-                await lock_actor_account(db, actor.id)
+                await lock_actor_account(db, actor_user_id)
             except HTTPException as exc:
                 raise RuntimeError("permission_changed") from exc
             await db.refresh(actor)
@@ -272,7 +275,7 @@ async def execute_cross_frame_job(
                 ).scalars()
             )
             for member_project_id in member_project_ids:
-                await lock_actor_project_share(db, actor.id, member_project_id)
+                await lock_actor_scope(db, actor.id, member_project_id)
             locked_tasks = list(
                 (
                     await db.execute(

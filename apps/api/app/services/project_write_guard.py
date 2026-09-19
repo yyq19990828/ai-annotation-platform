@@ -89,14 +89,6 @@ async def lock_actor_scope(
         raise
 
 
-async def lock_actor_project_share(
-    db: AsyncSession, actor_id, project_id, *, nowait: bool = True
-) -> None:
-    """Backwards-compatible alias for :func:`lock_actor_scope`."""
-
-    await lock_actor_scope(db, actor_id, project_id, nowait=nowait)
-
-
 async def assert_phase_write_allowed(
     db: AsyncSession,
     task: Task,
