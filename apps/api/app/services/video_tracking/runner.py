@@ -1082,6 +1082,69 @@ def _geometry_sha256(geometry: dict) -> str:
     return f"sha256:{hashlib.sha256(raw).hexdigest()}"
 
 
+_BUSY_SQLSTATES = {"55P03", "40001", "40P01"}
+
+
+def _busy_lock_error(exc: BaseException) -> bool:
+    orig = getattr(exc, "orig", None)
+    sqlstate = getattr(orig, "sqlstate", None) or getattr(orig, "pgcode", None)
+    return sqlstate in _BUSY_SQLSTATES
+
+
+async def _lock_actor_share(db: AsyncSession, actor_id: uuid.UUID | None):
+    """Account-first bounded share lock for a tracker final write."""
+
+    from sqlalchemy.exc import DBAPIError
+
+    from app.db.models.user import User
+
+    if actor_id is None:
+        raise TrackerJobStateConflict(
+            "an explicit actor is required for tracker final writes",
+            reason="permission_changed",
+        )
+    try:
+        actor = (
+            await db.execute(
+                select(User)
+                .where(User.id == actor_id)
+                .with_for_update(read=True, nowait=True)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+    except DBAPIError as exc:
+        if _busy_lock_error(exc):
+            raise TrackerJobStateConflict(
+                "tracker actor is busy", reason="tracker_job_busy"
+            ) from exc
+        raise
+    if actor is None or not actor.is_active:
+        raise TrackerJobStateConflict(
+            "tracker actor is unavailable", reason="permission_changed"
+        )
+    return actor
+
+
+async def _lock_task_bounded(db: AsyncSession, task_id: uuid.UUID):
+    """Bounded NOWAIT task lock for the mixed route-Task/runner-Job order."""
+
+    from sqlalchemy.exc import DBAPIError
+
+    try:
+        return (
+            await db.execute(
+                select(Task)
+                .where(Task.id == task_id)
+                .with_for_update(nowait=True)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+    except DBAPIError as exc:
+        if _busy_lock_error(exc):
+            raise TrackerJobStateConflict("task is busy", reason="task_locked") from exc
+        raise
+
+
 async def _assert_tracker_actor_authority(
     db: AsyncSession,
     task: Task,
@@ -1127,14 +1190,7 @@ async def _lock_tracker_review_context(
     privileged: bool,
     source_ids: set[uuid.UUID],
 ) -> tuple[Task, dict[uuid.UUID, Annotation]]:
-    task = (
-        await db.execute(
-            select(Task)
-            .where(Task.id == job.task_id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
-    ).scalar_one_or_none()
+    task = await _lock_task_bounded(db, job.task_id)
     if task is None:
         raise TrackerJobStateConflict("task no longer exists", reason="task_changed")
     effective_actor = actor_id or job.created_by
@@ -1712,6 +1768,8 @@ async def decide_tracker_job(
 ) -> VideoTrackerJob | None:
     """Atomically accept/reject one explicit instance/window candidate slice."""
 
+    # Account-first bounded lock order: actor (share) -> job -> task.
+    await _lock_actor_share(db, actor_id)
     job = await _load_job_for_update(db, job_id)
     if job is None:
         return None
@@ -2117,6 +2175,8 @@ async def accept_tracker_job(
 ) -> VideoTrackerJob | None:
     """接受候选: 把 job.staged_result 应用到 annotation (主实例回填源 + 每个新 instance 各建
     一条 track), status=ACCEPTED。幂等 (已 ACCEPTED 直接返回)。状态不符 / 无 staged → 原样返回。"""
+    # Account-first bounded lock order: actor (share) -> job -> task.
+    await _lock_actor_share(db, actor_id)
     job = await _load_job_for_update(db, job_id)
     if job is None:
         return None
@@ -2138,14 +2198,7 @@ async def accept_tracker_job(
     # v0.22.1 · B · 源轨迹可选 (无源检测 → 全新建); v0.22.2 · M · 多选批量: prompt.seeds
     # 每条可带 source_annotation_id (obj_id ↔ 源轨迹), 各实例回填各自源。
     results = _deserialize_results(rows)
-    task = (
-        await db.execute(
-            select(Task)
-            .where(Task.id == job.task_id)
-            .with_for_update()
-            .execution_options(populate_existing=True)
-        )
-    ).scalar_one_or_none()
+    task = await _lock_task_bounded(db, job.task_id)
     if task is None:
         raise ValueError("Task not found")
     effective_actor = actor_id or job.created_by
@@ -2306,13 +2359,23 @@ async def discard_tracker_job(
 async def _load_job_for_update(
     db: AsyncSession, job_id: uuid.UUID
 ) -> VideoTrackerJob | None:
-    return (
-        await db.execute(
-            select(VideoTrackerJob)
-            .where(VideoTrackerJob.id == job_id)
-            .with_for_update()
-        )
-    ).scalar_one_or_none()
+    from sqlalchemy.exc import DBAPIError
+
+    try:
+        return (
+            await db.execute(
+                select(VideoTrackerJob)
+                .where(VideoTrackerJob.id == job_id)
+                .with_for_update(nowait=True)
+                .execution_options(populate_existing=True)
+            )
+        ).scalar_one_or_none()
+    except DBAPIError as exc:
+        if _busy_lock_error(exc):
+            raise TrackerJobStateConflict(
+                "tracker job is busy", reason="tracker_job_busy"
+            ) from exc
+        raise
 
 
 async def _mark_failed(
