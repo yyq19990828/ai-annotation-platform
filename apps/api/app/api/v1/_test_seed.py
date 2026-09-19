@@ -557,6 +557,10 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
         t.dataset_item_id = item.id
         t.file_name = item.file_name
         t.file_path = item.file_path
+        # Known-empty accumulator: the base fixture is created by the recording
+        # binary, so review specs can create+submit through the real APIs and
+        # freeze complete evidence instead of leaving every round unknown.
+        t.annotation_contributor_ids = []
         tasks.append(t)
     await db.flush()
     batch.total_tasks = len(tasks)
