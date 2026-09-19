@@ -457,7 +457,17 @@ async def _load_single_task_for_ids(
             detail="bulk operation requires all annotations belong to a single task",
         )
     task_id = next(iter(task_ids))
-    task = await db.get(Task, task_id)
+    # Lock the task row before any capability/evidence check so the decision is
+    # made on the current row and concurrent writers are serialized (the bulk
+    # UPDATE itself also takes this lock later).
+    task = (
+        await db.execute(
+            select(Task)
+            .where(Task.id == task_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+    ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail=f"task {task_id} not found")
     return task

@@ -1232,6 +1232,7 @@ class MaskMutationService:
             _assert_task_editable,
             _assert_task_visible,
             _resolve_task_access,
+            assert_annotation_write_allowed,
         )
 
         if access is None:
@@ -1239,6 +1240,7 @@ class MaskMutationService:
                 self.db, task, actor, lock_membership=True
             )
         await _assert_task_visible(self.db, task, actor, access=access)
+        assert_annotation_write_allowed(task, access)
         # The FastAPI dependency precheck is not authoritative: re-read the
         # freshly locked task and revalidate the round's frozen non-self
         # evidence before an idempotent replay or any mutation.

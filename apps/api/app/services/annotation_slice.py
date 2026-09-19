@@ -82,6 +82,7 @@ class AnnotationSliceService:
             _assert_review_adjustment_evidence,
             _assert_task_visible,
             _resolve_task_access,
+            assert_annotation_write_allowed,
         )
 
         task = await self.db.scalar(
@@ -97,6 +98,7 @@ class AnnotationSliceService:
                 self.db, task, actor, lock_membership=True
             )
         await _assert_task_visible(self.db, task, actor, access=access)
+        assert_annotation_write_allowed(task, access)
         await _assert_review_adjustment_evidence(self.db, task, actor, access)
         return task
 

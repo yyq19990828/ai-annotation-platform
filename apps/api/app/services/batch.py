@@ -1043,22 +1043,65 @@ class BatchService:
     ) -> None:
         """Reject a batch decision the actor must not make.
 
-        Each affected review task is checked against its frozen contributor
-        evidence under the current round.  Unknown legacy evidence (409) or a
+        Account-first: the actor row (``assert_task_user_active``) and the
+        project membership (``FOR SHARE``) are locked before the affected Task
+        rows, which are acquired in stable id order with bounded ``NOWAIT``.  A
+        busy row rolls back as a retryable 409 instead of forming a wait cycle.
+        Each affected review task is then checked against its frozen contributor
+        evidence under the current round; unknown legacy evidence (409) or a
         contributor/submitter/effective-annotator actor (403) blocks the
-        decision; the caller keeps its per-batch result shape or rolls back.
+        decision.  ``actor_id=None`` fails closed; it is never a bypass.
         """
 
-        if actor_id is None:
-            return
-        from app.services.annotation_evidence import assert_review_evidence_current
+        from app.db.models.project import Project
+        from app.db.models.user import User
+        from app.services.annotation_evidence import (
+            assert_review_evidence_current,
+            lock_tasks_for_evidence,
+        )
+        from app.services.project_access import (
+            ProjectCapability,
+            resolve_project_access,
+        )
+        from app.services.task_lock import assert_task_user_active
 
+        if actor_id is None:
+            raise HTTPException(
+                status_code=403,
+                detail={"reason": "review_evidence_actor_required"},
+            )
+        if not await assert_task_user_active(self.db, actor_id):
+            raise HTTPException(status_code=401, detail="账号已停用")
+        actor = await self.db.get(User, actor_id, populate_existing=True)
+        project = await self.db.get(Project, batch.project_id, populate_existing=True)
+        if actor is None or project is None:
+            raise HTTPException(status_code=404, detail="Batch not found")
+        access = await resolve_project_access(
+            self.db, user=actor, project=project, lock_membership=True
+        )
+        if not (access.is_manager or access.has(ProjectCapability.REVIEW_WRITE.value)):
+            raise HTTPException(
+                status_code=403,
+                detail={"reason": "review_capability_required"},
+            )
+
+        task_ids = list(
+            (
+                await self.db.execute(
+                    select(Task.id).where(
+                        Task.batch_id == batch_id,
+                        Task.status.in_(list(statuses)),
+                    )
+                )
+            ).scalars()
+        )
+        await lock_tasks_for_evidence(self.db, task_ids, nowait=True)
         rows = (
             await self.db.execute(
-                select(Task).where(
-                    Task.batch_id == batch_id,
-                    Task.status.in_(list(statuses)),
-                )
+                select(Task)
+                .where(Task.id.in_(task_ids))
+                .order_by(Task.id)
+                .execution_options(populate_existing=True)
             )
         ).scalars()
         for task in rows:
@@ -1636,12 +1679,15 @@ class BatchService:
                 )
             except HTTPException as exc:
                 detail = exc.detail if isinstance(exc.detail, dict) else {}
-                failed.append(
-                    {
-                        "batch_id": bid,
-                        "reason": detail.get("reason") or "review_evidence_invalid",
-                    }
-                )
+                reason = detail.get("reason")
+                if reason not in {
+                    "review_contributors_unknown",
+                    "self_review_denied",
+                }:
+                    # Lock/capability failures are request-level and may have
+                    # rolled the transaction back; do not continue a bulk.
+                    raise
+                failed.append({"batch_id": bid, "reason": reason})
                 continue
             batch.status = BatchStatus.APPROVED
             succeeded.append(bid)
@@ -1680,12 +1726,15 @@ class BatchService:
                 )
             except HTTPException as exc:
                 detail = exc.detail if isinstance(exc.detail, dict) else {}
-                failed.append(
-                    {
-                        "batch_id": bid,
-                        "reason": detail.get("reason") or "review_evidence_invalid",
-                    }
-                )
+                reason = detail.get("reason")
+                if reason not in {
+                    "review_contributors_unknown",
+                    "self_review_denied",
+                }:
+                    # Lock/capability failures are request-level and may have
+                    # rolled the transaction back; do not continue a bulk.
+                    raise
+                failed.append({"batch_id": bid, "reason": reason})
                 continue
             # soft reset: review/completed tasks → pending
             await self.db.execute(
