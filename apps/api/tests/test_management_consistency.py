@@ -20,7 +20,7 @@ async def test_distribution_counts_real_tasks_and_applies_identical_tied_order(
     headers = {"Authorization": f"Bearer {token}"}
     project = await create_project(db_session, owner_id=admin.id)
     users = [
-        await create_user(db_session, "annotator", f"load-{i}@e.test", f"Worker {i}")
+        await create_user(db_session, "employee", f"load-{i}@e.test", f"Worker {i}")
         for i in range(2)
     ]
     for user in users:
@@ -86,7 +86,7 @@ async def test_distribution_rejects_stale_preview_without_changing_assignment(
     admin, token = super_admin
     headers = {"Authorization": f"Bearer {token}"}
     project = await create_project(db_session, owner_id=admin.id)
-    user = await create_user(db_session, "annotator", "stale-plan@e.test", "Worker")
+    user = await create_user(db_session, "employee", "stale-plan@e.test", "Worker")
     db_session.add(
         ProjectMember(
             project_id=project.id,
@@ -129,11 +129,11 @@ async def test_bulk_invite_failed_middle_item_does_not_break_following_or_leave_
     _, token = super_admin
     headers = {"Authorization": f"Bearer {token}"}
     existing = await create_user(
-        db_session, "annotator", "bulk-exists@e.test", "Existing"
+        db_session, "employee", "bulk-exists@e.test", "Existing"
     )
     body = {
         "items": [
-            {"email": email, "role": "annotator"}
+            {"email": email, "role": "employee"}
             for email in ("bulk-first@e.test", existing.email, "bulk-last@e.test")
         ]
     }

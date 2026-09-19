@@ -202,7 +202,7 @@ async def test_bulk_invite_preview_rolls_back_and_apply_keeps_failed_rows(
 ):
     payload = {
         "items": [
-            {"email": "bulk-good@e.test", "role": "annotator"},
+            {"email": "bulk-good@e.test", "role": "employee"},
             {"email": "bulk-bad@e.test", "role": "not-a-role"},
         ]
     }
@@ -297,8 +297,8 @@ async def test_batch_distribution_preview_is_read_only_and_apply_respects_defaul
 ):
     admin, _ = super_admin
     project = await create_project(db_session, owner_id=admin.id, name="Batch Plan")
-    annotator = await create_user(db_session, "annotator", "batch-a@e.test", "Batch A")
-    reviewer = await create_user(db_session, "reviewer", "batch-r@e.test", "Batch R")
+    annotator = await create_user(db_session, "employee", "batch-a@e.test", "Batch A")
+    reviewer = await create_user(db_session, "employee", "batch-r@e.test", "Batch R")
     db_session.add_all(
         [
             ProjectMember(

@@ -298,12 +298,14 @@ def _assert_effective_task_assignee(
     effective_assignee_id: uuid.UUID | None,
     *,
     action: str,
+    project_id: uuid.UUID,
     allow_open_pool: bool = False,
-    project_id: uuid.UUID | None = None,
     access: ProjectAccess | None = None,
 ) -> None:
     """Only the effective annotator may act.
 
+    ``project_id`` is the actual resource project and is required: the binding
+    is checked explicitly instead of comparing the access with itself.
     ``access`` is the verified project access (B2 routes pass it).  Only
     ``access.is_manager`` is management; a foreign-project administrator
     membership cannot act as the effective assignee.  A non-manager without a
@@ -311,9 +313,7 @@ def _assert_effective_task_assignee(
     """
 
     if access is not None:
-        _assert_access_binding(
-            access, user=user, project_id=project_id or access.project_id
-        )
+        _assert_access_binding(access, user=user, project_id=project_id)
         if access.is_manager:
             return
         if access.project_role == ProjectRole.ANNOTATOR.value and (

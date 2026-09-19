@@ -305,9 +305,18 @@ def current_review_evidence(task: Task) -> tuple[list[str], str] | None:
 
     if task.review_round_id is None:
         return None
+    # An unknown or malformed annotation accumulator means completeness cannot
+    # be established, even when the frozen set is non-empty.
+    accumulated = known_annotation_contributor_ids(task)
+    if accumulated is None:
+        return None
     contributors = canonical_actor_set(task.review_contributor_ids)
     submitter = canonical_actor_id(task.review_submitter_id)
     if not contributors or submitter is None:
+        return None
+    # The submitter must be part of the frozen set, and the frozen set must
+    # cover every accumulated annotation contributor (frozen superset).
+    if submitter not in contributors or not accumulated.issubset(contributors):
         return None
     return sorted(contributors), submitter
 
@@ -327,21 +336,16 @@ def assert_review_evidence_current(
     ``_review_round_contributor_snapshot``; this guard only authorizes.
     """
 
-    actor = canonical_actor_id(actor_id)
     evidence = current_review_evidence(task)
     if evidence is None:
+        # Missing, non-canonical or incomplete evidence is unavailable work.
         raise HTTPException(
             status_code=409,
             detail={"reason": "review_contributors_unknown"},
         )
     contributors, submitter = evidence
     contributor_set = set(contributors)
-    known = known_annotation_contributor_ids(task)
-    if known is not None and not known.issubset(contributor_set):
-        raise HTTPException(
-            status_code=409,
-            detail={"reason": "review_contributors_incomplete"},
-        )
+    actor = canonical_actor_id(actor_id)
     effective_annotator = canonical_actor_id(effective_annotator_id)
     if (
         actor is None

@@ -13,6 +13,7 @@ from inside a running event loop would nest ``asyncio.run``.
 from __future__ import annotations
 
 import asyncio
+import importlib.util
 import json
 import os
 import subprocess
@@ -21,8 +22,8 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from alembic import command
-from alembic.config import Config
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -38,6 +39,9 @@ from scripts.audit_project_roles import (
 from tests.factory import create_project, create_task, create_user
 
 _API_ROOT = Path(__file__).resolve().parents[1]
+_MIGRATION_0173_PATH = (
+    _API_ROOT / "alembic" / "versions" / "0173_project_role_preparation.py"
+)
 
 _SENSITIVE_KEYS = {"password_hash", "token", "email", "invite_url", "signed_url"}
 # Unique text embedded in seeded emails/tokens/names: none of it may appear in
@@ -45,6 +49,39 @@ _SENSITIVE_KEYS = {"password_hash", "token", "email", "invite_url", "signed_url"
 _EMAIL_SENTINEL = "email-sentinel-probe"
 _TOKEN_SENTINEL = "token-sentinel-probe"
 _NAME_SENTINEL = "NameSentinelProbe"
+
+
+def _load_migration_0173():
+    spec = importlib.util.spec_from_file_location(
+        "migration_0173", _MIGRATION_0173_PATH
+    )
+    module = importlib.util.module_from_spec(spec)
+    assert spec.loader is not None
+    spec.loader.exec_module(module)
+    return module
+
+
+def _replay_migration(sync_conn, migration, direction: str) -> None:
+    context = MigrationContext.configure(sync_conn)
+    with Operations.context(context):
+        getattr(migration, direction)()
+
+
+def _set_alembic_version(sync_conn, version: str) -> None:
+    sync_conn.execute(
+        text("UPDATE alembic_version SET version_num = :v"), {"v": version}
+    )
+
+
+def _has_preparation_column(sync_conn) -> bool:
+    return bool(
+        sync_conn.execute(
+            text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'project_members' AND column_name = 'version'"
+            )
+        ).scalar()
+    )
 
 
 def _item_ids(section: dict) -> set[str]:
@@ -512,8 +549,7 @@ async def test_audit_flags_expected_discrepancies(
 
 def test_audit_runs_before_0173_migration(test_db_url, apply_migrations) -> None:
     """Synchronous migration test: Alembic must run outside the event loop."""
-    config = Config("alembic.ini")
-    config.set_main_option("sqlalchemy.url", test_db_url)
+    migration = _load_migration_0173()
     state: dict = {"users": []}
 
     async def step(action: str) -> None:
@@ -563,6 +599,18 @@ def test_audit_runs_before_0173_migration(test_db_url, apply_migrations) -> None
                     await db.flush()
                     state["legacy_project_invitation"] = legacy_invitation.id
                     await db.commit()
+            elif action == "simulate_pre_0173":
+                # Replay only the 0173 schema Operations and align the version
+                # pointer; never invoke the production 0174 downgrade.
+                async with engine.begin() as conn:
+                    if await conn.run_sync(_has_preparation_column):
+                        await conn.run_sync(_replay_migration, migration, "downgrade")
+                    await conn.run_sync(_set_alembic_version, "0172")
+            elif action == "restore_head":
+                async with engine.begin() as conn:
+                    if not await conn.run_sync(_has_preparation_column):
+                        await conn.run_sync(_replay_migration, migration, "upgrade")
+                    await conn.run_sync(_set_alembic_version, "0174")
             elif action == "audit":
                 async with read_only_audit_session(engine) as db:
                     state["report"] = await collect_report(db, run_id="pre-0173")
@@ -599,10 +647,10 @@ def test_audit_runs_before_0173_migration(test_db_url, apply_migrations) -> None
 
     try:
         asyncio.run(step("seed"))
-        command.downgrade(config, "0172")
+        asyncio.run(step("simulate_pre_0173"))
         asyncio.run(step("audit"))
     finally:
-        command.upgrade(config, "head")
+        asyncio.run(step("restore_head"))
         asyncio.run(step("cleanup"))
 
     report = state["report"]
