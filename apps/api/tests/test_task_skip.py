@@ -140,10 +140,21 @@ async def test_skip_task_assigns_to_caller_when_unassigned(
     user, token = annotator
     project, task = await _seed_project_task(db_session, user.id, status="pending")
     assert task.assignee_id is None
-    # Literal employee: explicit annotator membership grants the write authority.
+    # Literal employee: explicit annotator membership grants the write authority,
+    # and an active open-pool batch makes the unassigned task visible/claimable.
     db_session.add(
         ProjectMember(project_id=project.id, user_id=user.id, role="annotator")
     )
+    batch = TaskBatch(
+        project_id=project.id,
+        display_id=f"B-SK-OPEN-{uuid.uuid4().hex[:6]}",
+        name="open pool",
+        status="active",
+        assigned_user_ids=[],
+    )
+    db_session.add(batch)
+    await db_session.flush()
+    task.batch_id = batch.id
     await db_session.commit()
 
     resp = await httpx_client_bound.post(

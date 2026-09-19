@@ -354,19 +354,38 @@ async def test_removed_member_cannot_reuse_assigned_task_url_or_write(
         await httpx_client_bound.get(f"/api/v1/tasks/{task.id}", headers=member_headers)
     ).status_code == 200
 
-    # Member removal is blocked while unfinished work remains; completing the
-    # task lets the owner remove the membership without an explicit handoff
-    # while the historical assignment link stays on the task.
-    task.status = "completed"
-    task.is_labeled = True
+    # Member removal is blocked while unfinished work remains, so hand the task
+    # off to a second annotator first; the removed account must still lose read
+    # and write access to its former URL.
+    receiver = await create_user(
+        db_session,
+        "employee",
+        f"removed-receiver-{uuid.uuid4().hex[:8]}@test.local",
+        "Removed Receiver",
+    )
+    db_session.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=receiver.id,
+            role="annotator",
+            assigned_by=owner.id,
+        )
+    )
     await db_session.flush()
+    await _apply_annotator_assignment(
+        httpx_client_bound,
+        project_id=project.id,
+        owner_token=owner_token,
+        task_ids=[task.id],
+        annotator_id=receiver.id,
+    )
     removed = await httpx_client_bound.delete(
         f"/api/v1/projects/{project.id}/members/{membership.id}",
         headers=_bearer(owner_token),
     )
     assert removed.status_code == 204, removed.text
     await db_session.refresh(task)
-    assert task.assignee_id == member.id
+    assert task.assignee_id == receiver.id
 
     assert (
         await httpx_client_bound.get(f"/api/v1/tasks/{task.id}", headers=member_headers)
@@ -597,6 +616,13 @@ async def test_reviewer_assignment_reserves_review_claim_and_can_be_cleared(
         display_id=f"T-REVIEW-PENDING-{uuid.uuid4().hex[:8]}",
         batch_id=batch.id,
     )
+    # Frozen round evidence names a distinct submitter so the reviewer claims
+    # reach the assignment/reservation checks instead of failing closed unknown.
+    for review_task in (task, pool_task):
+        review_task.annotation_contributor_ids = [str(owner.id)]
+        review_task.review_contributor_ids = [str(owner.id)]
+        review_task.review_submitter_id = owner.id
+        review_task.review_round_id = uuid.uuid4()
     await db_session.commit()
 
     reserved = await _apply_reviewer_assignment(
@@ -699,6 +725,11 @@ async def test_unbatched_reviewer_assignment_is_visible_and_claimable(
         display_id=f"T-UNBATCHED-REVIEW-{uuid.uuid4().hex[:8]}",
     )
     task.status = "review"
+    # Frozen round evidence from a distinct submitter so the claim is authorized.
+    task.annotation_contributor_ids = [str(owner.id)]
+    task.review_contributor_ids = [str(owner.id)]
+    task.review_submitter_id = owner.id
+    task.review_round_id = uuid.uuid4()
     await db_session.commit()
 
     assigned = await _apply_reviewer_assignment(

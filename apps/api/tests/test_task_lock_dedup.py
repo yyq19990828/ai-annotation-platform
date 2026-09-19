@@ -19,6 +19,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
+from app.db.models.task_batch import TaskBatch
 from app.db.models.task_lock import TaskLock
 from app.services.task_lock import TaskLockService
 
@@ -254,6 +255,18 @@ class TestTaskLockMultiRowResilience:
         ann_user, ann_token = annotator
         rev_user, _ = reviewer
         task = await _seed_project_and_task(db_session, owner_id=ann_user.id)
+        # The caller is not the assignee but can see the task through an active
+        # open-pool batch, so the request reaches the lock-conflict response.
+        open_batch = TaskBatch(
+            project_id=task.project_id,
+            display_id=f"B-LD-OPEN-{uuid.uuid4().hex[:6]}",
+            name="open pool",
+            status="active",
+            assigned_user_ids=[],
+        )
+        db_session.add(open_batch)
+        await db_session.flush()
+        task.batch_id = open_batch.id
         task.assignee_id = rev_user.id
         db_session.add(_stale_lock(task.id, rev_user.id, ttl_s=280))
         await db_session.flush()
