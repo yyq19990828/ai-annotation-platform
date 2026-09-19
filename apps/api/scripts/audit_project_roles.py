@@ -137,6 +137,7 @@ LEFT JOIN users ua ON ua.id = e.effective_assignee_id
 LEFT JOIN project_members mr
        ON mr.project_id = e.project_id AND mr.user_id = e.effective_reviewer_id
 LEFT JOIN users ur ON ur.id = e.effective_reviewer_id
+LEFT JOIN projects p ON p.id = e.project_id
 """
 _EFFECTIVE_ASSIGNMENT_SELECT = (
     "SELECT e.task_id, e.project_id, e.status, "
@@ -146,6 +147,31 @@ _EFFECTIVE_ASSIGNMENT_SELECT = (
     "ur.is_active AS reviewer_active "
     "FROM effective e " + _EFFECTIVE_ASSIGNMENT_JOINS
 )
+
+
+def active_manager_predicate(user_alias: str) -> str:
+    """SQL form of the live active-manager rule for one joined user alias.
+
+    Mirrors :func:`app.services.scheduler.is_privileged_for_project`: only an
+    active account may be a manager, a super administrator manages every
+    project, and an administrative (``project_admin``) platform role manages the
+    project it owns.  Managers derive authority from the account/ownership, not
+    from ``project_members``, so they are valid effective assignees/reviewers
+    without a membership row.
+
+    Every branch is forced to a non-NULL boolean (``COALESCE`` /
+    ``IS NOT DISTINCT FROM``) so a missing user, a NULL role or a missing
+    project stays fail-closed instead of letting SQL three-valued logic
+    silently drop the gap.  The ``projects p`` alias comes from
+    ``_EFFECTIVE_ASSIGNMENT_JOINS``.
+    """
+
+    return (
+        f"{user_alias}.is_active IS TRUE AND ("
+        f"COALESCE({user_alias}.role = 'super_admin', false) "
+        f"OR (COALESCE({user_alias}.role IN {_ADMIN_PLATFORM_ROLES_SQL}, false) "
+        f"AND p.owner_id IS NOT DISTINCT FROM {user_alias}.id))"
+    )
 
 
 class AuditError(RuntimeError):
@@ -569,17 +595,24 @@ async def audit_assignment_gaps(db: AsyncSession, *, max_rows: int) -> dict:
             max_rows=max_rows,
         )
 
+    assignee_manager = active_manager_predicate("ua")
+    reviewer_manager = active_manager_predicate("ur")
+
     assignee_missing = await category(
-        "e.effective_assignee_id IS NOT NULL AND ma.id IS NULL"
+        "e.effective_assignee_id IS NOT NULL AND ma.id IS NULL "
+        f"AND NOT ({assignee_manager})"
     )
     assignee_wrong = await category(
-        "ma.id IS NOT NULL AND ma.role IS DISTINCT FROM 'annotator'"
+        "ma.id IS NOT NULL AND ma.role IS DISTINCT FROM 'annotator' "
+        f"AND NOT ({assignee_manager})"
     )
     reviewer_missing = await category(
-        "e.effective_reviewer_id IS NOT NULL AND mr.id IS NULL"
+        "e.effective_reviewer_id IS NOT NULL AND mr.id IS NULL "
+        f"AND NOT ({reviewer_manager})"
     )
     reviewer_wrong = await category(
-        "mr.id IS NOT NULL AND mr.role IS DISTINCT FROM 'reviewer'"
+        "mr.id IS NOT NULL AND mr.role IS DISTINCT FROM 'reviewer' "
+        f"AND NOT ({reviewer_manager})"
     )
     inactive_assignments = await category(
         "(e.effective_assignee_id IS NOT NULL AND ua.is_active IS NOT TRUE) "
