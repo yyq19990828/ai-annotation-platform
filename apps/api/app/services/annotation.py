@@ -1248,9 +1248,11 @@ class AnnotationService:
         if from_task.project_id != to_task.project_id:
             raise HTTPException(status_code=422, detail="跨 project 插值不被允许")
 
-        # A2 · lock both endpoint tasks before any endpoint/mid annotation write.
+        # A2 · interpolation also writes to middle-frame tasks discovered later,
+        # so use the nonblocking task lock: a busy endpoint task rolls back to a
+        # retryable 409 rather than forming a wait cycle.
         await record_annotation_actors_for_tasks(
-            self.db, [from_task.id, to_task.id], user_id
+            self.db, [from_task.id, to_task.id], user_id, nowait=True
         )
 
         async def _scene_frame(task: Task) -> tuple[uuid.UUID | None, int | None]:
@@ -1360,8 +1362,8 @@ class AnnotationService:
                 skipped_frames.append(f)
                 continue
 
-            # A2 · lock this mid task before writing its interpolated annotation.
-            await record_annotation_actor(self.db, mid_task, user_id)
+            # A2 · lock this mid task (NOWAIT) before writing its interpolation.
+            await record_annotation_actor(self.db, mid_task, user_id, nowait=True)
             t = (f - from_frame) / (to_frame - from_frame)
             psr, compensated = interpolate_psr(
                 psr_a,

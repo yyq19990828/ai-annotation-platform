@@ -785,7 +785,10 @@ async def _run_batch(
         if predict_mode == "overwrite" and tasks:
             from app.services.batch import BatchService
 
-            await BatchService(db).clean_task_predictions([t.id for t in tasks])
+            overwrite_actor_id = uuid.UUID(user_id) if user_id else None
+            await BatchService(db).clean_task_predictions(
+                [t.id for t in tasks], actor_id=overwrite_actor_id
+            )
             await db.flush()
 
         # v0.10.49 · async_jobs 单一真值：建 batch_predict 行 (status=running)。

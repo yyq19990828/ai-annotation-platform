@@ -2202,11 +2202,13 @@ async def accept_tracker_job(
     except ValueError:
         await db.rollback()
         raise
-    # A2 · the accepting actor authored the tracker writes on every touched task.
+    # A2 · accept holds source/Annotation locks, so the task rows are acquired
+    # with NOWAIT: a busy task rolls back to a retryable 409 instead of a cycle.
     await record_annotation_actors_for_tasks(
         db,
         {task.id, *(source.task_id for source in source_map.values())},
         effective_actor,
+        nowait=True,
     )
     # v0.22.2 · M · 记录本 job 触及的轨迹 id (回填源 + 新建) 供前端刷新/审计。落 job.prompt JSONB
     # (免 DB 迁移); accept 后 job 终态, prompt 不再被 runner 读, 写此键安全。JSONB 须重赋新 dict

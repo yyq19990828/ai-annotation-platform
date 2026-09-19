@@ -23,30 +23,57 @@ missing history would be silently treated as complete.  Malformed evidence
 (any non-list value, or a list containing a non-canonical user id) is treated
 as unknown too, never silently dropped.
 
-Task-first locking
-------------------
+Locking policy
+--------------
 
-Every function that mutates a task row here takes that row lock.  Producers
-must call :func:`record_annotation_actor` (or
+Producers must call :func:`record_annotation_actor` (or
 :func:`record_annotation_actors_for_tasks`) **before** they take an Annotation
 or SceneTrack row lock, because the existing writers already order
-``Task -> Annotation``.  Recording first keeps the acquisition order uniform;
-a failed transaction rolls the evidence update back with the mutation that
-failed.  Where a producer instead records after the mutation, the task must
-already be locked first (for example the single-task PATCH/DELETE endpoints).
-:func:`lock_tasks_for_evidence` exists for paths that take resource locks in
-preparation and need the task rows locked first.
+``Task -> Annotation``; a failed transaction rolls the evidence update back with
+the mutation that failed.  Where a producer instead records after the mutation,
+the task must already be locked first (for example the single-task
+PATCH/DELETE endpoints).
+
+Some producers are inherently mixed-order — an AAP import envelope, an
+interpolation range, a resume, or a tracker accept cannot lock every task before
+the resource rows without a repository-wide rewrite.  Those boundaries pass
+``nowait=True``: the task row is acquired with ``FOR UPDATE NOWAIT`` and a busy
+lock rolls the transaction back and surfaces a retryable 409 instead of
+introducing a blocking wait cycle.  See
+``app/services/user_lifecycle.py`` for the same nonblocking conflict pattern.
 """
 
 from __future__ import annotations
 
 import uuid
 from collections.abc import Iterable
+from typing import NoReturn
 
+from fastapi import HTTPException
 from sqlalchemy import select
+from sqlalchemy.exc import DBAPIError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.task import Task
+
+# Retryable PostgreSQL lock/transaction conflicts: lock_not_available (NOWAIT),
+# deadlock_detected, serialization_failure.
+_BUSY_SQLSTATES = {"55P03", "40P01", "40001"}
+
+
+def _raise_busy(exc: DBAPIError) -> NoReturn:
+    """Translate a retryable lock conflict into a 409 (caller rolled back)."""
+    raise HTTPException(
+        status_code=409,
+        detail={
+            "reason": "task_evidence_busy",
+            "message": "task is being updated by another operation; refresh and retry",
+        },
+    ) from exc
+
+
+def _is_busy(exc: DBAPIError) -> bool:
+    return getattr(exc.orig, "sqlstate", None) in _BUSY_SQLSTATES
 
 
 def canonical_actor_id(value: object) -> str | None:
@@ -65,13 +92,12 @@ def canonical_actor_id(value: object) -> str | None:
         return None
 
 
-def known_annotation_contributor_ids(task: Task) -> set[str] | None:
-    """Return the accumulated actor set, or ``None`` when completeness is unknown.
+def canonical_actor_set(values: object) -> set[str] | None:
+    """Canonicalize a stored accumulator, or ``None`` when it is malformed.
 
-    A malformed list (non-array, ``null``/empty element, or an element that is
-    not a UUID) is unknown: evidence is never silently narrowed.
+    A non-array, a ``null``/empty element, or an element that is not a UUID makes
+    the whole set unknown.  Evidence is never silently narrowed.
     """
-    values = task.annotation_contributor_ids
     if not isinstance(values, list):
         return None
     canonical: set[str] = set()
@@ -83,31 +109,57 @@ def known_annotation_contributor_ids(task: Task) -> set[str] | None:
     return canonical
 
 
+def known_annotation_contributor_ids(task: Task) -> set[str] | None:
+    """Return the accumulated actor set, or ``None`` when completeness is unknown."""
+    return canonical_actor_set(task.annotation_contributor_ids)
+
+
 async def lock_tasks_for_evidence(
-    db: AsyncSession, task_ids: Iterable[uuid.UUID | None]
+    db: AsyncSession,
+    task_ids: Iterable[uuid.UUID | None],
+    *,
+    nowait: bool = False,
 ) -> None:
     """Acquire task row locks in stable id order before resource locks.
 
-    Call this from producers that take Annotation/SceneTrack locks while
-    preparing a mutation; it keeps the global ``Task -> Annotation`` order even
-    when the affected task set is only known after preparation.
+    Use ``nowait=True`` at mixed-order boundaries: a busy lock is rolled back and
+    reported as a retryable 409 instead of forming a blocking wait cycle.
     """
     ids = sorted({task_id for task_id in task_ids if task_id is not None}, key=str)
     if not ids:
         return
-    await db.execute(
-        select(Task.id).where(Task.id.in_(ids)).order_by(Task.id).with_for_update()
-    )
+    stmt = select(Task.id).where(Task.id.in_(ids)).order_by(Task.id)
+    stmt = stmt.with_for_update(nowait=True) if nowait else stmt.with_for_update()
+    try:
+        await db.execute(stmt)
+    except DBAPIError as exc:
+        if nowait and _is_busy(exc):
+            await db.rollback()
+            _raise_busy(exc)
+        raise
 
 
-async def refresh_task_evidence(db: AsyncSession, task: Task) -> None:
+async def refresh_task_evidence(
+    db: AsyncSession, task: Task, *, nowait: bool = False
+) -> None:
     """Lock the task row and refresh the evidence-relevant attributes.
 
     Callers that must freeze/clear evidence under the same task lock as a
     workflow transition use this to avoid trusting a stale in-memory row.
     Pending session changes are flushed first: ``Session.refresh`` expires the
     target attributes before its autoflush and would otherwise discard them.
+
+    ``nowait=True`` uses a locking column read instead of ``refresh`` (which has
+    no NOWAIT form) and reports a busy lock as a retryable 409.
     """
+    if nowait:
+        row = await _execute_locked_evidence_read(db, task.id, nowait=True)
+        if row is None:
+            return
+        values, phase = row
+        task.annotation_contributor_ids = values
+        task.status = phase
+        return
     await db.flush()
     await db.refresh(
         task,
@@ -116,23 +168,54 @@ async def refresh_task_evidence(db: AsyncSession, task: Task) -> None:
     )
 
 
+async def _execute_locked_evidence_read(
+    db: AsyncSession, task_id: uuid.UUID, *, nowait: bool
+) -> tuple[object, str] | None:
+    stmt = (
+        select(Task.annotation_contributor_ids, Task.status)
+        .where(Task.id == task_id)
+        .with_for_update(nowait=nowait)
+    )
+    try:
+        return (await db.execute(stmt)).one_or_none()
+    except DBAPIError as exc:
+        if nowait and _is_busy(exc):
+            await db.rollback()
+            _raise_busy(exc)
+        raise
+
+
+async def _read_evidence_nowait(
+    db: AsyncSession, task: Task
+) -> tuple[set[str] | None, str | None]:
+    """Lock the task with NOWAIT and return (canonical accumulator, phase)."""
+    row = await _execute_locked_evidence_read(db, task.id, nowait=True)
+    if row is None:
+        return None, None
+    values, phase = row
+    return canonical_actor_set(values), phase
+
+
 async def record_annotation_actor(
     db: AsyncSession,
     task: Task,
     actor_id: uuid.UUID | None,
     *,
     lock: bool = True,
+    nowait: bool = False,
 ) -> bool:
     """Accumulate one annotation-phase actor on ``task``.
 
     Returns ``True`` when the stored accumulator changed.  ``actor_id`` is the
     acting user, not the original ``Annotation.user_id`` of a mutated row.
 
-    When ``lock`` is true the task row is locked and both the accumulator and
-    the workflow phase are re-read under that lock.  Pending session changes are
-    flushed first because ``Session.refresh`` expires the target attributes
-    before its autoflush and would otherwise discard an earlier accumulator
-    addition from the same transaction.
+    With ``lock`` the task row is locked and both the accumulator and the
+    workflow phase are re-read under that lock.  The default blocking path
+    flushes pending changes before the refresh because ``Session.refresh``
+    expires the target attributes before its autoflush and would otherwise
+    discard an earlier accumulator addition from the same transaction.
+    ``nowait=True`` is for mixed-order boundaries and reports a busy lock as a
+    retryable 409.
 
     No-op for a ``None``/malformed actor, a ``NULL`` (unknown) or malformed
     accumulator: unknown evidence stays unknown.
@@ -145,11 +228,15 @@ async def record_annotation_actor(
     actor = canonical_actor_id(actor_id)
     if actor is None:
         return False
-    if lock:
-        await refresh_task_evidence(db, task)
-    if task.status == "review":
+    if lock and nowait:
+        current, phase = await _read_evidence_nowait(db, task)
+    else:
+        if lock:
+            await refresh_task_evidence(db, task)
+        phase = task.status
+        current = known_annotation_contributor_ids(task)
+    if phase == "review":
         return False
-    current = known_annotation_contributor_ids(task)
     if current is None:
         return False
     if actor in current:
@@ -163,6 +250,8 @@ async def record_annotation_actor_for_task(
     db: AsyncSession,
     task_id: uuid.UUID,
     actor_id: uuid.UUID | None,
+    *,
+    nowait: bool = False,
 ) -> bool:
     """Accumulate ``actor_id`` on a task addressed by id, locking it first."""
     if canonical_actor_id(actor_id) is None:
@@ -170,23 +259,25 @@ async def record_annotation_actor_for_task(
     task = await db.get(Task, task_id)
     if task is None:
         return False
-    return await record_annotation_actor(db, task, actor_id, lock=True)
+    return await record_annotation_actor(db, task, actor_id, lock=True, nowait=nowait)
 
 
 async def record_annotation_actors_for_tasks(
     db: AsyncSession,
     task_ids: Iterable[uuid.UUID],
     actor_id: uuid.UUID | None,
+    *,
+    nowait: bool = False,
 ) -> set[uuid.UUID]:
     """Accumulate one actor across distinct tasks in stable id order.
 
-    Sorting keeps the per-task row-lock acquisition order deterministic, so two
-    multi-task producers cannot deadlock against each other merely by ordering.
-    Returns the distinct task ids that were touched.
+    Sorting keeps the per-task lock acquisition order deterministic.  Use
+    ``nowait=True`` at mixed-order boundaries; a busy task is reported as a
+    retryable 409 with the transaction rolled back.
     """
     touched: set[uuid.UUID] = set()
     for task_id in sorted(set(task_ids), key=str):
-        await record_annotation_actor_for_task(db, task_id, actor_id)
+        await record_annotation_actor_for_task(db, task_id, actor_id, nowait=nowait)
         touched.add(task_id)
     return touched
 

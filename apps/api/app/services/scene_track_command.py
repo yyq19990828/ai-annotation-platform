@@ -356,7 +356,7 @@ async def prepare_scene_track_command(
             .scalars()
             .all()
         )
-        await lock_tasks_for_evidence(db, member_task_ids)
+        await lock_tasks_for_evidence(db, member_task_ids, nowait=True)
     primary = await _load_track(
         db,
         context=context,
@@ -950,7 +950,9 @@ async def apply_scene_track_command(
         }
     if resume_task_id is not None:
         scene_affected_tasks.add(resume_task_id)
-    await record_annotation_actors_for_tasks(db, scene_affected_tasks, actor_id)
+    await record_annotation_actors_for_tasks(
+        db, scene_affected_tasks, actor_id, nowait=True
+    )
     result_revisions: dict[str, int] = {}
     tracks_for_result = [primary_track]
     if prepared.secondary is not None:
@@ -1087,7 +1089,7 @@ async def revert_scene_track_operation(
                     revert_task_ids.add(uuid.UUID(str(raw)))
                 except (ValueError, AttributeError, TypeError):
                     continue
-    await lock_tasks_for_evidence(db, revert_task_ids)
+    await lock_tasks_for_evidence(db, revert_task_ids, nowait=True)
     all_track_ids = set(before_tracks) | set(after_tracks)
     current_tracks = list(
         (
@@ -1288,7 +1290,7 @@ async def revert_scene_track_operation(
     revert.after_state = after_state
     revert.response_json = response
     await record_annotation_actors_for_tasks(
-        db, {row.task_id for row in all_rows}, actor_id
+        db, {row.task_id for row in all_rows}, actor_id, nowait=True
     )
     await db.flush()
     return revert, response

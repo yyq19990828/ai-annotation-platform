@@ -430,7 +430,13 @@ class BatchService:
         ).one()
         return int(row.non_pending), int(row.predicted), int(row.affected)
 
-    async def delete(self, batch_id: uuid.UUID, *, force: bool = False) -> bool:
+    async def delete(
+        self,
+        batch_id: uuid.UUID,
+        *,
+        force: bool = False,
+        actor_id: uuid.UUID | None = None,
+    ) -> bool:
         batch = await self.db.get(TaskBatch, batch_id)
         if not batch:
             raise HTTPException(status_code=404, detail="Batch not found")
@@ -463,7 +469,7 @@ class BatchService:
         # v0.11.23：解绑前先重置非 pending task 为 pending、清 AI 预标（保留人工标注），
         # 否则 review/completed task 解绑后成孤儿、AI 预标残留会在重分包再预标时叠加重复标注。
         # 必须在改写 batch_id 之前调用（清理靠 Task.batch_id==batch_id 子查询定位）。
-        await self._reset_and_clean_batch_tasks(batch_id)
+        await self._reset_and_clean_batch_tasks(batch_id, actor_id=actor_id)
 
         # v0.6.8 B-14：老项目仍走「回收到 B-DEFAULT」路径；新项目无 B-DEFAULT 时把任务回退为
         # batch_id=NULL（成为「未归类任务」），由 split 流程兜底，避免删完所有批次后死锁。
@@ -1083,7 +1089,7 @@ class BatchService:
     # ── Reset to draft (v0.7.6) ────────────────────────────────────────────
 
     async def reset_to_draft(
-        self, batch_id: uuid.UUID
+        self, batch_id: uuid.UUID, *, actor_id: uuid.UUID | None = None
     ) -> tuple[TaskBatch, int, dict[str, int]]:
         """v0.7.6 · 终极重置：任意状态 → draft.
 
@@ -1107,7 +1113,7 @@ class BatchService:
         if not batch:
             raise HTTPException(status_code=404, detail="Batch not found")
 
-        counts = await self._reset_and_clean_batch_tasks(batch_id)
+        counts = await self._reset_and_clean_batch_tasks(batch_id, actor_id=actor_id)
         affected = counts.pop("tasks_reset")
 
         batch.status = BatchStatus.DRAFT
@@ -1119,7 +1125,9 @@ class BatchService:
         await self.recalculate_counters(batch_id)
         return batch, affected, counts
 
-    async def _reset_and_clean_batch_tasks(self, batch_id: uuid.UUID) -> dict[str, int]:
+    async def _reset_and_clean_batch_tasks(
+        self, batch_id: uuid.UUID, *, actor_id: uuid.UUID | None = None
+    ) -> dict[str, int]:
         """把批次内所有非 pending task 重置为 pending, 并清理 AI 预标产物, 保留人工标注.
 
         供 reset_to_draft (v0.7.6) 与 delete / bulk_delete (v0.11.23) 复用. 删除批次若
@@ -1169,7 +1177,7 @@ class BatchService:
                 await self.db.execute(select(Task.id).where(Task.batch_id == batch_id))
             ).all()
         ]
-        pred_counts = await self.clean_task_predictions(task_ids)
+        pred_counts = await self.clean_task_predictions(task_ids, actor_id=actor_id)
 
         return {
             "tasks_reset": tasks_reset,
@@ -1177,7 +1185,12 @@ class BatchService:
             **pred_counts,
         }
 
-    async def clean_task_predictions(self, task_ids: list[uuid.UUID]) -> dict[str, int]:
+    async def clean_task_predictions(
+        self,
+        task_ids: list[uuid.UUID],
+        *,
+        actor_id: uuid.UUID | None = None,
+    ) -> dict[str, int]:
         """按 task_id 清理 AI 预标产物 (不动 task 状态 / 锁 / job): 软删 prediction_based
         annotation (保留 source='manual')、NULL parent_prediction_id、删 prediction_metas
         / predictions / failed_predictions、total_predictions 归 0 并按存活人工标注重算
@@ -1185,6 +1198,11 @@ class BatchService:
 
         供 _reset_and_clean_batch_tasks (删批次/重置) 与 batch_predict overwrite 模式
         (v0.11.24) 复用. task_ids 为空时 no-op.
+
+        A2 · 软删 AI 标注是内容删除, 需要证据: 用户触发的调用传入 ``actor_id`` 并记为该
+        actor 的贡献; 系统触发且无 actor 时, 已记录的贡献会漏掉删除者, 因此把这些 task 的
+        累积集合置回 NULL(未知), 不冒充 owner。``parent_prediction_id`` 清理只是元数据,
+        不算人工编辑, 不记贡献。
 
         Returns: {"predictions": N, "failed_predictions": N, "ai_annotations_deactivated": N}
         """
@@ -1194,6 +1212,9 @@ class BatchService:
             PredictionMeta,
         )
         from app.db.models.annotation import Annotation
+        from app.services.annotation_evidence import (
+            record_annotation_actors_for_tasks,
+        )
         from sqlalchemy import text, bindparam
 
         if not task_ids:
@@ -1202,6 +1223,34 @@ class BatchService:
                 "failed_predictions": 0,
                 "ai_annotations_deactivated": 0,
             }
+
+        # A2 · capture which tasks actually lose accepted AI content, and record
+        # the deletion actor before the soft-delete. A system cleanup without an
+        # attributable actor conservatively drops known evidence to unknown.
+        ai_affected_task_ids = list(
+            (
+                await self.db.execute(
+                    select(Annotation.task_id)
+                    .where(
+                        Annotation.task_id.in_(task_ids),
+                        Annotation.source == "prediction_based",
+                        Annotation.is_active.is_(True),
+                    )
+                    .distinct()
+                )
+            ).scalars()
+        )
+        if ai_affected_task_ids:
+            if actor_id is not None:
+                await record_annotation_actors_for_tasks(
+                    self.db, ai_affected_task_ids, actor_id
+                )
+            else:
+                await self.db.execute(
+                    update(Task)
+                    .where(Task.id.in_(ai_affected_task_ids))
+                    .values(annotation_contributor_ids=None)
+                )
 
         # B-33 · 软删 AI 采纳的 annotation. 保留 source='manual' 的人工标注 (不丢工作量).
         ai_anno_result = await self.db.execute(
@@ -1331,6 +1380,7 @@ class BatchService:
         batch_ids: list[uuid.UUID],
         *,
         force: bool = False,
+        actor_id: uuid.UUID | None = None,
     ) -> dict[str, list[dict]]:
         loaded = await self._list_batches_in_project(project_id, batch_ids)
         succeeded: list[uuid.UUID] = []
@@ -1364,7 +1414,7 @@ class BatchService:
                     )
                     continue
             # v0.11.23：与单删一致——解绑前先重置非 pending task + 清 AI 预标（保留人工标注）
-            await self._reset_and_clean_batch_tasks(bid)
+            await self._reset_and_clean_batch_tasks(bid, actor_id=actor_id)
             # 复用单个删除路径里的 task 接管逻辑（按 default 是否存在二选一）
             if default is not None:
                 await self.db.execute(

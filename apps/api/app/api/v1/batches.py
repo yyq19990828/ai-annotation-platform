@@ -273,7 +273,7 @@ async def delete_batch(
         raise HTTPException(status_code=404, detail="Batch not found")
     affected = batch.total_tasks
     # v0.11.25：含进行中成果/已预标时 svc.delete 会抛 409 requires_force；force=true 走强制清理删除
-    await svc.delete(batch_id, force=force)
+    await svc.delete(batch_id, force=force, actor_id=current_user.id)
     await AuditService.log(
         db,
         actor=current_user,
@@ -766,7 +766,9 @@ async def reset_batch_to_draft(
         raise HTTPException(status_code=404, detail="Batch not found")
 
     from_status = batch.status
-    batch, affected, cascade = await svc.reset_to_draft(batch_id)
+    batch, affected, cascade = await svc.reset_to_draft(
+        batch_id, actor_id=current_user.id
+    )
 
     await AuditService.log(
         db,
@@ -958,7 +960,9 @@ async def bulk_delete_batches(
 ):
     svc = BatchService(db)
     # v0.11.25：force=false 时含进行中成果/已预标的批次进 failed(reason=requires_force)
-    summary = await svc.bulk_delete(project_id, data.batch_ids, force=force)
+    summary = await svc.bulk_delete(
+        project_id, data.batch_ids, force=force, actor_id=current_user.id
+    )
     await AuditService.log(
         db,
         actor=current_user,

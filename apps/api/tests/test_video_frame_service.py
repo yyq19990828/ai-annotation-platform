@@ -281,6 +281,15 @@ async def test_video_submit_does_not_credit_shared_item_segment_assignees(
     assert str(owner.id) in audit.detail_json["contributor_ids"]
     assert str(foreign_user.id) not in audit.detail_json["contributor_ids"]
 
+    # A2 · the last segment submitter is recorded as a contributor and frozen
+    # with the round; the shared dataset-item segment assignee is not credited.
+    await db_session.refresh(task)
+    assert task.status == "review"
+    assert task.review_submitter_id == owner.id
+    assert str(owner.id) in (task.review_contributor_ids or [])
+    assert str(foreign_user.id) not in (task.review_contributor_ids or [])
+    assert str(owner.id) in (task.annotation_contributor_ids or [])
+
 
 async def test_video_collaboration_derives_overlap_work_ranges(
     db_session, httpx_client_bound, super_admin, monkeypatch

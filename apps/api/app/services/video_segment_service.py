@@ -339,6 +339,13 @@ async def submit_segment(
                 status_code=409,
                 detail={"reason": "video_segment_lease_required"},
             )
+    if ctx.task is not None:
+        # A2 · every successful segment submitter is a contributor even when the
+        # segment kept no surviving annotation. This uses the actual actor, not
+        # the shared dataset-item segment assignee.
+        from app.services.annotation_evidence import record_annotation_actor
+
+        await record_annotation_actor(db, ctx.task, user.id)
     row.status = "completed"
     row.locked_by = None
     row.locked_at = None

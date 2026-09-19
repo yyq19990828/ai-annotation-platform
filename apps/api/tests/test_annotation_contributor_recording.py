@@ -15,9 +15,11 @@ import asyncio
 import uuid
 
 import pytest
+from fastapi import HTTPException
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.db.models.annotation import Annotation
 from app.db.models.prediction import Prediction
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
@@ -28,6 +30,7 @@ from app.services.annotation_evidence import (
     record_annotation_actor,
 )
 from app.services.annotation_slice import AnnotationSliceService
+from app.services.batch import BatchService
 from tests.factory import create_project, create_task, create_user
 
 pytestmark = pytest.mark.asyncio
@@ -499,3 +502,183 @@ async def test_concurrent_recorders_serialize_without_lost_update(test_engine):
                 delete(User).where(User.id.in_([user_a_id, user_b_id]))
             )
             await cleanup.commit()
+
+
+async def _seed_evidence_fixture(maker, prefix: str) -> dict:
+    async with maker() as seed:
+        suffix = uuid.uuid4().hex[:8]
+        owner = await create_user(
+            seed, "super_admin", f"{prefix}-owner-{suffix}@test.local", "Owner"
+        )
+        writer = await create_user(
+            seed, "super_admin", f"{prefix}-writer-{suffix}@test.local", "Writer"
+        )
+        other = await create_user(
+            seed, "super_admin", f"{prefix}-other-{suffix}@test.local", "Other"
+        )
+        project = await create_project(seed, owner_id=owner.id)
+        task = await create_task(seed, project_id=project.id, status="in_progress")
+        task.annotation_contributor_ids = []
+        await seed.commit()
+        return {
+            "task": task.id,
+            "project": project.id,
+            "owner": owner.id,
+            "writer": writer.id,
+            "other": other.id,
+        }
+
+
+async def _drop_evidence_fixture(maker, fixture: dict) -> None:
+    async with maker() as cleanup:
+        await cleanup.execute(delete(Task).where(Task.id == fixture["task"]))
+        await cleanup.execute(delete(Project).where(Project.id == fixture["project"]))
+        await cleanup.execute(
+            delete(User).where(
+                User.id.in_([fixture["owner"], fixture["writer"], fixture["other"]])
+            )
+        )
+        await cleanup.commit()
+
+
+async def test_nowait_busy_lock_rolls_back_to_409(test_engine):
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    fixture = await _seed_evidence_fixture(maker, "busy")
+    session_a = maker()
+    session_b = maker()
+    try:
+        task_a = await session_a.get(Task, fixture["task"])
+        assert (
+            await record_annotation_actor(session_a, task_a, fixture["writer"]) is True
+        )
+
+        task_b = await session_b.get(Task, fixture["task"])
+        with pytest.raises(HTTPException) as caught:
+            await record_annotation_actor(
+                session_b, task_b, fixture["other"], nowait=True
+            )
+        assert caught.value.status_code == 409
+        assert caught.value.detail["reason"] == "task_evidence_busy"
+
+        await session_a.commit()
+        async with maker() as check:
+            fresh = await check.get(Task, fixture["task"])
+            assert fresh.annotation_contributor_ids == [str(fixture["writer"])]
+    finally:
+        await session_a.close()
+        await session_b.close()
+        await _drop_evidence_fixture(maker, fixture)
+
+
+async def test_stale_phase_and_prefreeze_writer_are_refreshed(test_engine):
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    fixture = await _seed_evidence_fixture(maker, "stale")
+    stale = maker()
+    writer_session = maker()
+    review_session = maker()
+    try:
+        # A stale annotation-phase instance is loaded while the task is editable.
+        stale_task = await stale.get(Task, fixture["task"])
+        assert stale_task.status == "in_progress"
+
+        # A pre-freeze writer records and commits.
+        writer_task = await writer_session.get(Task, fixture["task"])
+        assert (
+            await record_annotation_actor(
+                writer_session, writer_task, fixture["writer"]
+            )
+            is True
+        )
+        await writer_session.commit()
+
+        # A separate transaction transitions the task to review and freezes the
+        # round; the writer must be retained.
+        review_task = await review_session.get(Task, fixture["task"])
+        review_task.status = "review"
+        frozen = freeze_review_contributor_evidence(
+            review_task, submitter_id=fixture["writer"], contributor_ids=[]
+        )
+        await review_session.commit()
+        assert frozen == [str(fixture["writer"])]
+
+        # The stale instance still believes it is in the annotation phase; the
+        # recorder must refresh the committed review phase and refuse to credit
+        # the reviewer.
+        assert (
+            await record_annotation_actor(stale, stale_task, fixture["other"]) is False
+        )
+        assert stale_task.status == "review"
+        await stale.commit()
+
+        async with maker() as check:
+            fresh = await check.get(Task, fixture["task"])
+            assert str(fixture["writer"]) in fresh.review_contributor_ids
+            assert str(fixture["other"]) not in (fresh.annotation_contributor_ids or [])
+    finally:
+        await stale.close()
+        await writer_session.close()
+        await review_session.close()
+        await _drop_evidence_fixture(maker, fixture)
+
+
+async def test_clean_task_predictions_records_actor_and_preserves_contributors(
+    db_session, super_admin
+):
+    owner, _ = super_admin
+    editor = await create_user(
+        db_session, "super_admin", "cleanup-editor@test.local", "Cleanup Editor"
+    )
+    _project, task = await _seed_task(db_session, owner)
+    task.annotation_contributor_ids = [str(owner.id)]
+    ai_annotation = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=owner.id,
+        source="prediction_based",
+        annotation_type="bbox",
+        tool_unit_id="bbox",
+        class_name="car",
+        geometry={"type": "bbox", "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
+        is_active=True,
+    )
+    db_session.add(ai_annotation)
+    await db_session.flush()
+
+    await BatchService(db_session).clean_task_predictions([task.id], actor_id=editor.id)
+    await db_session.flush()
+    await db_session.refresh(task)
+    await db_session.refresh(ai_annotation)
+
+    assert ai_annotation.is_active is False
+    # Existing contributor is preserved and the deletion actor is added.
+    assert task.annotation_contributor_ids == sorted([str(owner.id), str(editor.id)])
+
+
+async def test_metadata_only_prediction_cleanup_keeps_contributors(
+    db_session, super_admin
+):
+    owner, _ = super_admin
+    _project, task = await _seed_task(db_session, owner)
+    task.annotation_contributor_ids = [str(owner.id)]
+    manual = Annotation(
+        task_id=task.id,
+        project_id=task.project_id,
+        user_id=owner.id,
+        source="manual",
+        annotation_type="bbox",
+        tool_unit_id="bbox",
+        class_name="car",
+        geometry={"type": "bbox", "x": 0.1, "y": 0.1, "w": 0.2, "h": 0.2},
+        is_active=True,
+    )
+    db_session.add(manual)
+    await db_session.flush()
+
+    await BatchService(db_session).clean_task_predictions([task.id])
+    await db_session.flush()
+    await db_session.refresh(task)
+    await db_session.refresh(manual)
+
+    # No accepted AI content was removed, so no deletion actor is recorded.
+    assert manual.is_active is True
+    assert task.annotation_contributor_ids == [str(owner.id)]
