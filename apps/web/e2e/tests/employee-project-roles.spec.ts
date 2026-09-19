@@ -470,9 +470,13 @@ test.describe("project-scoped employee roles", () => {
     await expect(page.getByText("E2E Project Roles B")).toHaveCount(0);
     await expect(page.getByText("E2E Project Roles C")).toHaveCount(0);
 
-    // Review pane shows B's pending review work and no annotator project.
+    // Review pane shows B's pending review work and no annotator project.  The
+    // project name also appears inside the priority/batch labels, so match the
+    // pending task's project badge exactly instead of using a substring match.
     await page.getByTestId("employee-tab-review").click();
-    await expect(page.getByText("E2E Project Roles B")).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByText("E2E Project Roles B", { exact: true })).toBeVisible({
+      timeout: 20_000,
+    });
     await expect(page.getByText("E2E Project Roles A")).toHaveCount(0);
     await expect(page.getByText("E2E Project Roles D")).toHaveCount(0);
     await expect(page.getByText("E2E Project Roles C")).toHaveCount(0);
