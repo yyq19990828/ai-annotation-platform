@@ -47,6 +47,25 @@ it("keeps a failed operation without a render-driven retry loop and retries on r
   client.clear();
 });
 
+it("blocks replay and keeps ops recoverable when project write access is revoked", async () => {
+  const client = new QueryClient();
+  state.online = true;
+  state.drain.mockReset();
+  const { result } = renderHook(() =>
+    useWorkbenchOfflineQueue({
+      userId: "alice",
+      taskId: "task",
+      queryClient: client,
+      pushToast: vi.fn(),
+      history: { replaceAnnotationId: vi.fn() },
+      canFlush: false,
+    }),
+  );
+  await waitFor(() => expect(result.current.syncError).toContain("项目权限已变更"));
+  expect(state.drain).not.toHaveBeenCalled();
+  client.clear();
+});
+
 it("replays a versioned offline update with its original precondition", async () => {
   const client = new QueryClient();
   const op = {

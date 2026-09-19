@@ -7,10 +7,10 @@ import { useAssignUserGroup, useChangeUserRole, useDeleteUser } from "@/hooks/us
 import { useGroups } from "@/hooks/useGroups";
 import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
 import { usePermissions } from "@/hooks/usePermissions";
-import { ROLE_LABELS } from "@/constants/roles";
+import { ROLE_LABELS, PROJECT_ROLE_LABELS, roleLabel } from "@/constants/roles";
 import type { UserResponse } from "@/api/users";
 import { usersApi, type RoleImpactPreview } from "@/api/users";
-import type { UserRole } from "@/types";
+import type { PlatformRole } from "@/types";
 import styles from "./EditUserModal.module.css";
 
 interface Props {
@@ -19,22 +19,21 @@ interface Props {
   onClose: () => void;
 }
 
-// 矩阵：actor.role × target.role → 允许 actor 把 target 改成的角色集
-// project_admin 仅可在 annotator ↔ reviewer 之间切换；super_admin 可任意改（除自己）
-const ASSIGNABLE_ROLES_BY_ACTOR: Record<UserRole, UserRole[]> = {
-  super_admin: ["super_admin", "project_admin", "reviewer", "annotator", "viewer"],
-  project_admin: ["reviewer", "annotator"],
-  reviewer: [],
-  annotator: [],
+// 矩阵：actor.role × target.role → 允许 actor 把 target 改成的平台角色集
+// project_admin 仅可指派员工 / 观察者；super_admin 可任意改（除自己）。
+// 项目职责（标注员/质检员）由项目成员管理，不在这里修改。
+const ASSIGNABLE_ROLES_BY_ACTOR: Record<PlatformRole, PlatformRole[]> = {
+  super_admin: ["super_admin", "project_admin", "employee", "viewer"],
+  project_admin: ["employee", "viewer"],
+  employee: [],
   viewer: [],
 };
 
 // 哪些 target.role 允许 actor 删除（不含 actor 自己 / 最后一名 super_admin）
-const DELETABLE_TARGET_ROLES_BY_ACTOR: Record<UserRole, UserRole[]> = {
-  super_admin: ["super_admin", "project_admin", "reviewer", "annotator", "viewer"],
-  project_admin: ["reviewer", "annotator"],
-  reviewer: [],
-  annotator: [],
+const DELETABLE_TARGET_ROLES_BY_ACTOR: Record<PlatformRole, PlatformRole[]> = {
+  super_admin: ["super_admin", "project_admin", "employee", "viewer"],
+  project_admin: ["employee", "viewer"],
+  employee: [],
   viewer: [],
 };
 
@@ -51,7 +50,7 @@ export function EditUserModal({ open, user, onClose }: Props) {
 
   const ownerId = useAuthStore((state) => state.user?.id);
   const [previewRevision, setPreviewRevision] = useState(0);
-  const [roleVal, setRoleVal] = useState<UserRole>("annotator");
+  const [roleVal, setRoleVal] = useState<PlatformRole>("employee");
   const [groupId, setGroupId] = useState<string>("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [rolePreview, setRolePreview] = useState<RoleImpactPreview | null>(null);
@@ -60,7 +59,7 @@ export function EditUserModal({ open, user, onClose }: Props) {
 
   useEffect(() => {
     if (open && user) {
-      setRoleVal(user.role as UserRole);
+      setRoleVal(user.role as PlatformRole);
       setGroupId(user.group_id ?? "");
       setConfirmDelete(false);
       changeRole.reset();
@@ -99,7 +98,7 @@ export function EditUserModal({ open, user, onClose }: Props) {
 
   // 不能改/删自己
   const isSelf = false; // EditUserModal 入口已经隐藏自己；保留位以避免 UI 错配
-  const targetRole = user.role as UserRole;
+  const targetRole = user.role as PlatformRole;
 
   const canEditRole = !isSelf && allowedRoles.includes(targetRole); // 当前角色必须在 actor 可改的集合内才能允许改
   const canDelete = !isSelf && deletableRoles.includes(targetRole);
@@ -165,11 +164,13 @@ export function EditUserModal({ open, user, onClose }: Props) {
   const error = changeRole.error || assignGroup.error || deleteUser.error;
 
   // 角色下拉里允许出现的选项 = 当前角色 + actor 可指派集合（去重）
-  const roleOptions: UserRole[] = Array.from(new Set<UserRole>([targetRole, ...allowedRoles]));
+  const roleOptions: PlatformRole[] = Array.from(
+    new Set<PlatformRole>([targetRole, ...allowedRoles]),
+  );
 
   const editRoleHint =
     actorRole === "project_admin"
-      ? "项目管理员仅能在审核员 / 标注员 之间切换"
+      ? "项目管理员仅能指派员工 / 观察者平台角色；项目职责在项目成员中调整"
       : !canEditRole
         ? "你无权修改该用户的角色"
         : "";
@@ -192,7 +193,7 @@ export function EditUserModal({ open, user, onClose }: Props) {
           <select
             value={roleVal}
             onChange={(e) => {
-              setRoleVal(e.target.value as UserRole);
+              setRoleVal(e.target.value as PlatformRole);
               setRolePreview(null);
               setRolePreviewError(null);
             }}
@@ -224,9 +225,7 @@ export function EditUserModal({ open, user, onClose }: Props) {
             {currentPreview && (
               <>
                 <div className="text-muted-foreground">
-                  平台角色：
-                  {ROLE_LABELS[currentPreview.current_role as UserRole] ??
-                    currentPreview.current_role}
+                  平台角色：{roleLabel(currentPreview.current_role)}
                   。项目身份与可操作范围见下方明细。
                 </div>
                 {currentPreview.other_project_count > 0 && (
@@ -257,8 +256,9 @@ export function EditUserModal({ open, user, onClose }: Props) {
                       <li key={project.project_id}>
                         {project.project_name} · 项目身份{" "}
                         {project.membership_role
-                          ? (ROLE_LABELS[project.membership_role as UserRole] ??
-                            project.membership_role)
+                          ? (PROJECT_ROLE_LABELS[
+                              project.membership_role as keyof typeof PROJECT_ROLE_LABELS
+                            ] ?? project.membership_role)
                           : "非成员"}{" "}
                         · 标注批次 {project.annotator_batch_count} · 审核批次{" "}
                         {project.reviewer_batch_count} · 待办{" "}

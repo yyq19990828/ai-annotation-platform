@@ -1,19 +1,24 @@
 // v0.10.18 · CreateProjectWizard 第 6 步: 项目成员选择 (annotator / reviewer).
 // 从 CreateProjectWizard.tsx 抽出.
+// v0.25.x · 候选人统一为平台员工，项目职责（标注员 / 质检员）在选中后单独选择。
 
 import { useMemo, useState } from "react";
 import { clsx } from "clsx";
 import { UserAvatar } from "@/components/ui/UserAvatar";
-import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { Icon } from "@/components/ui/Icon";
 import { useToastStore } from "@/components/ui/Toast";
 import { useAddProjectMember } from "@/hooks/useProjects";
 import { useUsers } from "@/hooks/useUsers";
+import { PROJECT_ROLE_LABELS } from "@/constants/roles";
 import type { UserResponse } from "@/api/users";
 import type { ProjectResponse } from "@/api/projects";
 import type { FormState } from "../CreateProjectWizard";
 import styles from "../CreateProjectWizard.module.css";
+
+type MemberRole = "annotator" | "reviewer";
+
+const SELECTABLE_PROJECT_ROLES: MemberRole[] = ["annotator", "reviewer"];
 
 export function Step6Members({
   project,
@@ -28,27 +33,32 @@ export function Step6Members({
 }) {
   const pushToast = useToastStore((s) => s.push);
   const addMember = useAddProjectMember(project.id);
-  // 与 AssignMemberModal 一致按角色取候选人：后端对 project_admin 放开
-  // role=annotator/reviewers 的全量候选（含未加入项目的人），保证成员分配
-  // 入口与「用户与权限」可见范围一致；super_admin 行为不变。
-  const annotatorsQuery = useUsers({ role: "annotator" });
-  const reviewersQuery = useUsers({ role: "reviewer" });
-  const isLoading = annotatorsQuery.isLoading || reviewersQuery.isLoading;
-  const users = useMemo(() => {
-    const byId = new Map<string, UserResponse>();
-    for (const list of [annotatorsQuery.data ?? [], reviewersQuery.data ?? []]) {
-      for (const u of list) byId.set(u.id, u);
-    }
-    return [...byId.values()].sort((a, b) => b.created_at.localeCompare(a.created_at));
-  }, [annotatorsQuery.data, reviewersQuery.data]);
+  // Assignment candidates are ordinary active employees; the project role is
+  // chosen per selected member (server rechecks compatibility on write).
+  const employeesQuery = useUsers({ role: "employee" });
+  const isLoading = employeesQuery.isLoading;
+  const users = useMemo(
+    () =>
+      [...(employeesQuery.data ?? [])].sort((a: UserResponse, b: UserResponse) =>
+        b.created_at.localeCompare(a.created_at),
+      ),
+    [employeesQuery.data],
+  );
   const [adding, setAdding] = useState(false);
 
-  const toggle = (userId: string, role: "annotator" | "reviewer") => {
+  const toggle = (userId: string, role: MemberRole) => {
     setForm((s) => {
       const exists = s.members.find((m) => m.userId === userId);
       if (exists) return { ...s, members: s.members.filter((m) => m.userId !== userId) };
       return { ...s, members: [...s.members, { userId, role }] };
     });
+  };
+
+  const setMemberRole = (userId: string, role: MemberRole) => {
+    setForm((s) => ({
+      ...s,
+      members: s.members.map((m) => (m.userId === userId ? { ...m, role } : m)),
+    }));
   };
 
   const onContinue = async () => {
@@ -78,43 +88,51 @@ export function Step6Members({
   return (
     <div className={styles.formStack}>
       <div className={styles.sectionHint}>
-        选择标注员 / 审核员（可空）。每位成员的角色由其账户角色决定。
+        选择项目成员并指定项目职责（可空）。账号平台身份与项目职责相互独立。
       </div>
 
       {isLoading && <div className={styles.inlineLoading}>加载用户…</div>}
 
       {!isLoading && users.length === 0 && (
-        <div className={styles.emptyPanel}>
-          暂无 annotator / reviewer 角色的用户，可跳过此步骤。
-        </div>
+        <div className={styles.emptyPanel}>暂无员工账号，可跳过此步骤。</div>
       )}
 
       {!isLoading && users.length > 0 && (
         <div className={styles.memberList}>
           {users.map((u) => {
-            const checked = form.members.some((m) => m.userId === u.id);
-            const role = (u.role === "reviewer" ? "reviewer" : "annotator") as
-              | "annotator"
-              | "reviewer";
+            const selected = form.members.find((m) => m.userId === u.id);
+            const checked = !!selected;
             return (
-              <button
-                key={u.id}
-                type="button"
-                onClick={() => toggle(u.id, role)}
-                className={clsx(styles.choiceButton, checked && styles.choiceButtonChecked)}
-              >
-                <span className={clsx(styles.checkMark, checked && styles.checkMarkChecked)}>
-                  {checked && <Icon name="check" size={10} />}
-                </span>
-                <UserAvatar user={u} size="sm" />
-                <span className={styles.choiceBody}>
-                  <div className={styles.choiceTitle}>{u.name || u.email}</div>
-                  <div className={styles.choiceMeta}>{u.email}</div>
-                </span>
-                <Badge variant={role === "reviewer" ? "warning" : "accent"}>
-                  {role === "reviewer" ? "审核员" : "标注员"}
-                </Badge>
-              </button>
+              <div key={u.id} className={styles.memberRow}>
+                <button
+                  type="button"
+                  onClick={() => toggle(u.id, selected?.role ?? "annotator")}
+                  className={clsx(styles.choiceButton, checked && styles.choiceButtonChecked)}
+                >
+                  <span className={clsx(styles.checkMark, checked && styles.checkMarkChecked)}>
+                    {checked && <Icon name="check" size={10} />}
+                  </span>
+                  <UserAvatar user={u} size="sm" />
+                  <span className={styles.choiceBody}>
+                    <div className={styles.choiceTitle}>{u.name || u.email}</div>
+                    <div className={styles.choiceMeta}>{u.email}</div>
+                  </span>
+                </button>
+                {checked && (
+                  <select
+                    aria-label={`项目职责 ${u.email}`}
+                    value={selected.role}
+                    onChange={(e) => setMemberRole(u.id, e.target.value as MemberRole)}
+                    className={styles.roleSelect}
+                  >
+                    {SELECTABLE_PROJECT_ROLES.map((role) => (
+                      <option key={role} value={role}>
+                        {PROJECT_ROLE_LABELS[role]}
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
             );
           })}
         </div>

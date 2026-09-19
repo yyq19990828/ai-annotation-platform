@@ -42,12 +42,11 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useUrlFilterState } from "@/hooks/useUrlFilterState";
 import { USERS_URL_DEFAULTS, USERS_URL_KEYS, usersUrlCodec } from "./usersUrlState";
 
-// actor.role × target.role → 可点"编辑"（即可改角色或可删）
+// actor.role × target.role → 可点"编辑"（即可改平台角色或可删）
 const EDITABLE_TARGET_ROLES_BY_ACTOR: Record<UserRole, UserRole[]> = {
-  super_admin: ["super_admin", "project_admin", "reviewer", "annotator", "viewer"],
-  project_admin: ["reviewer", "annotator"],
-  reviewer: [],
-  annotator: [],
+  super_admin: ["super_admin", "project_admin", "employee", "viewer"],
+  project_admin: ["employee", "viewer"],
+  employee: [],
   viewer: [],
 };
 
@@ -55,8 +54,7 @@ const ROLE_COLORS: Record<string, "accent" | "ai" | "warning" | "success" | "out
   {
     super_admin: "danger",
     project_admin: "accent",
-    reviewer: "ai",
-    annotator: "outline",
+    employee: "ai",
     viewer: "success",
   };
 
@@ -1151,9 +1149,7 @@ function UsersPageContent() {
                         (u: UserResponse) =>
                           u.id !== deleting.id &&
                           u.is_active &&
-                          (u.role === "annotator" ||
-                            u.role === "reviewer" ||
-                            u.role === "project_admin"),
+                          (u.role === "employee" || u.role === "project_admin"),
                       )
                       .map((u: UserResponse) => (
                         <option key={u.id} value={u.id}>

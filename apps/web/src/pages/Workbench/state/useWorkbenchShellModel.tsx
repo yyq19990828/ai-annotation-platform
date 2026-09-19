@@ -28,6 +28,7 @@ import {
   AlertDialogTitle,
 } from "@/components/shadcn/ui/alert-dialog";
 import { useProject, useUpdateProject } from "@/hooks/useProjects";
+import { useProjectAccess } from "@/hooks/useProjectAccess";
 import { useProjectPipelines } from "@/hooks/useProjectPipelines";
 import {
   useTaskList,
@@ -555,6 +556,15 @@ export function useWorkbenchShellModel({
 
   const { data: currentProject, isLoading: isProjectLoading } = useProject(routeId ?? "");
   const projectId = currentProject?.id;
+  const projectAccess = useProjectAccess(projectId);
+  const requiredWriteCapability = mode === "review" ? "review.write" : "annotation.write";
+  // Loading / failed project access must not mount an editable editor, and a
+  // revoked membership blocks offline replay in `useWorkbenchOfflineQueue`.
+  const projectWriteBlocked =
+    !projectId ||
+    projectAccess.isLoading ||
+    projectAccess.isError ||
+    !projectAccess.hasCapability(requiredWriteCapability);
   const projectPipelinesQ = useProjectPipelines(
     { scope: "private", project_id: projectId },
     { enabled: !!projectId },
@@ -3026,6 +3036,7 @@ export function useWorkbenchShellModel({
     pushToast,
     userId: meUserId,
     taskId,
+    canFlush: !projectWriteBlocked,
   });
   const {
     online,
@@ -3042,6 +3053,7 @@ export function useWorkbenchShellModel({
   } = offlineQ;
 
   const isLockedForActions =
+    projectWriteBlocked ||
     sceneWriteBlocked ||
     (mode === "review"
       ? task?.status === "completed" || videoCollaborationEnabled || !!lockConflict || !!lockError

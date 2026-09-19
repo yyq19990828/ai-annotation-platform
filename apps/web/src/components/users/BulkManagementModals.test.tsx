@@ -96,15 +96,15 @@ it("previews invitations on the server and preserves successes when retrying onl
   fireEvent.click(screen.getByRole("button", { name: "确认邀请 2 人" }));
   await screen.findByRole("button", { name: "仅重试失败项" });
   expect(api.bulkInvite.mock.calls[0][0]).toEqual([
-    { email: "a@test.local", role: "annotator", project_id: "p1" },
-    { email: "b@test.local", role: "annotator", project_id: "p1" },
+    { email: "a@test.local", role: "employee", project_id: "p1", project_member_role: "annotator" },
+    { email: "b@test.local", role: "employee", project_id: "p1", project_member_role: "annotator" },
   ]);
   fireEvent.click(screen.getByRole("button", { name: "仅重试失败项" }));
   await screen.findByDisplayValue("https://example.test/b");
   expect(screen.getByDisplayValue("https://example.test/a")).toBeVisible();
   expect(screen.getByText("邮箱格式不正确")).toBeVisible();
   expect(api.bulkInvite.mock.calls[1][0]).toEqual([
-    { email: "b@test.local", role: "annotator", project_id: "p1" },
+    { email: "b@test.local", role: "employee", project_id: "p1", project_member_role: "annotator" },
   ]);
   expect(screen.getByText("成功 2 条 · 失败 1 条")).toBeVisible();
 });

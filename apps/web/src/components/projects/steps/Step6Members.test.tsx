@@ -43,11 +43,11 @@ const baseForm: FormState = {
   copyAnnotationGuide: true,
 };
 
-const user = (id: string, name: string, role: string) => ({
+const user = (id: string, name: string) => ({
   id,
   name,
   email: `${id}@example.com`,
-  role,
+  role: "employee",
   is_active: true,
   status: "offline",
   group_id: null,
@@ -82,48 +82,31 @@ describe("Step6Members", () => {
     mockUseUsers.mockReset();
   });
 
-  it("按角色分两次取候选人（annotator / reviewer），与指派弹窗一致", () => {
-    mockUseUsers.mockImplementation((params?: { role?: string }) => ({
-      data:
-        params?.role === "annotator"
-          ? [user("a1", "Free Annotator", "annotator")]
-          : [user("r1", "Free Reviewer", "reviewer")],
+  it("只按平台员工取一次候选人", () => {
+    mockUseUsers.mockReturnValue({
+      data: [user("a1", "Free Employee")],
       isLoading: false,
-    }));
+    });
     render(<Harness />);
 
-    expect(mockUseUsers).toHaveBeenCalledWith({ role: "annotator" });
-    expect(mockUseUsers).toHaveBeenCalledWith({ role: "reviewer" });
-    expect(screen.getByText("Free Annotator")).toBeInTheDocument();
-    expect(screen.getByText("Free Reviewer")).toBeInTheDocument();
-  });
-
-  it("两个角色查询结果按 id 去重合并", () => {
-    const shared = user("a1", "Dual Role", "annotator");
-    mockUseUsers.mockImplementation(() => ({
-      data: [shared, user("r1", "Free Reviewer", "reviewer")],
-      isLoading: false,
-    }));
-    render(<Harness />);
-
-    expect(screen.getAllByText("Dual Role")).toHaveLength(1);
-    expect(screen.getByText("Free Reviewer")).toBeInTheDocument();
+    expect(mockUseUsers).toHaveBeenCalledWith({ role: "employee" });
+    expect(screen.getByText("Free Employee")).toBeInTheDocument();
   });
 
   it("无候选人时显示空态提示", () => {
     mockUseUsers.mockReturnValue({ data: [], isLoading: false });
     render(<Harness />);
-    expect(screen.getByText(/暂无 annotator \/ reviewer 角色的用户/)).toBeInTheDocument();
+    expect(screen.getByText(/暂无员工账号/)).toBeInTheDocument();
   });
 
-  it("点击候选人写入表单成员", () => {
-    mockUseUsers.mockImplementation((params?: { role?: string }) => ({
-      data: params?.role === "annotator" ? [user("a1", "Free Annotator", "annotator")] : [],
-      isLoading: false,
-    }));
+  it("点击候选人写入表单成员并默认标注员，可切换为质检员", () => {
+    mockUseUsers.mockReturnValue({ data: [user("a1", "Free Employee")], isLoading: false });
     render(<Harness />);
-    fireEvent.click(screen.getByText("Free Annotator"));
-    // 选中态按钮显示已选
+    fireEvent.click(screen.getByText("Free Employee"));
     expect(screen.getByText(/添加 1 位并完成/)).toBeInTheDocument();
+    const select = screen.getByLabelText("项目职责 a1@example.com") as HTMLSelectElement;
+    expect(select.value).toBe("annotator");
+    fireEvent.change(select, { target: { value: "reviewer" } });
+    expect(select.value).toBe("reviewer");
   });
 });

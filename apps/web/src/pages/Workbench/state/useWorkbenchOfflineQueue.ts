@@ -31,6 +31,10 @@ interface HistoryLike {
   replaceAnnotationId: (oldId: string, newId: string) => void;
 }
 
+/** Shown when the account no longer has project write access. */
+const OFFLINE_REVOKED_MESSAGE =
+  "项目权限已变更，已暂停离线同步；本机草稿仍保留，可切换账号或恢复权限后重试";
+
 export interface UseWorkbenchOfflineQueueArgs {
   history: HistoryLike;
   queryClient: QueryClient;
@@ -39,6 +43,12 @@ export interface UseWorkbenchOfflineQueueArgs {
   userId?: string | null;
   /** Current task owner for history/UI writebacks; queue syncing may include other tasks. */
   taskId?: string;
+  /**
+   * False when the current project access no longer authorizes writes.  Blocks
+   * both the automatic drain and manual retries so a revoked session cannot
+   * replay queued mutations; the local ops stay recoverable.
+   */
+  canFlush?: boolean;
 }
 
 export interface UseWorkbenchOfflineQueueReturn {
@@ -64,6 +74,7 @@ export function useWorkbenchOfflineQueue({
   pushToast,
   userId,
   taskId,
+  canFlush = true,
 }: UseWorkbenchOfflineQueueArgs): UseWorkbenchOfflineQueueReturn {
   const queueScope = useMemo<OfflineQueueScope | undefined>(() => {
     return {
@@ -76,6 +87,10 @@ export function useWorkbenchOfflineQueue({
   const [syncError, setSyncError] = useState<string | null>(null);
   const currentTaskRef = useRef<string | undefined>(taskId);
   currentTaskRef.current = taskId;
+  // Read through a ref inside async drains so a revocation flips the gate without
+  // restarting the queue.
+  const canFlushRef = useRef(canFlush);
+  canFlushRef.current = canFlush;
 
   useEffect(() => {
     setSyncError(null);
@@ -83,6 +98,12 @@ export function useWorkbenchOfflineQueue({
   useEffect(() => {
     if (queueCount === 0) setSyncError(null);
   }, [queueCount]);
+  // Surface a recoverable error as soon as write authority is lost, even though
+  // the automatic drain is gated off below.  Local ops are never discarded.
+  useEffect(() => {
+    if (canFlush || queueCount === 0) return;
+    if (userId && isCurrentAuthOwner(userId)) setSyncError(OFFLINE_REVOKED_MESSAGE);
+  }, [canFlush, queueCount, userId]);
 
   const assertCurrentOwner = useCallback(() => {
     if (!queueScope || !isCurrentAuthOwner(queueScope.userId)) {
@@ -114,6 +135,11 @@ export function useWorkbenchOfflineQueue({
 
   const flushOne = useCallback(
     async (op: OfflineOp) => {
+      if (!canFlushRef.current) {
+        const message = OFFLINE_REVOKED_MESSAGE;
+        if (userId && isCurrentAuthOwner(userId)) setSyncError(message);
+        throw new Error(message);
+      }
       try {
         assertCurrentOwner();
         if (!op.userId || op.userId !== userId) {
@@ -164,6 +190,10 @@ export function useWorkbenchOfflineQueue({
 
   const flushAll = useCallback(async () => {
     if (!queueScope) return;
+    if (!canFlushRef.current) {
+      if (userId && isCurrentAuthOwner(userId)) setSyncError(OFFLINE_REVOKED_MESSAGE);
+      return;
+    }
     const result = await drain(flushOne, queueScope);
     if (!queueScope.isCurrent?.()) return;
     if (result.ok > 0) {
@@ -176,14 +206,14 @@ export function useWorkbenchOfflineQueue({
       setSyncError("部分离线操作同步失败");
       pushToast({ msg: "部分操作仍未能同步", sub: "请检查网络后重试", kind: "warning" });
     }
-  }, [flushOne, pushToast, queryClient, queueScope]);
+  }, [flushOne, pushToast, queryClient, queueScope, userId]);
 
   const flushAllRef = useRef(flushAll);
   flushAllRef.current = flushAll;
   // Retry on connection/queue changes, not on every history or error render.
   useEffect(() => {
-    if (online && queueReady && queueCount > 0) void flushAllRef.current();
-  }, [online, queueCount, queueReady, userId]);
+    if (online && queueReady && queueCount > 0 && canFlush) void flushAllRef.current();
+  }, [online, queueCount, queueReady, userId, canFlush]);
 
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);

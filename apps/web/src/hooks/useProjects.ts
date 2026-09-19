@@ -5,6 +5,9 @@ import {
   type ProjectUpdatePayload,
   type ProjectListParams,
   type ProjectPageParams,
+  type ProjectRole,
+  type ProjectMemberRolePreviewPayload,
+  type ProjectMemberRoleChangePayload,
 } from "../api/projects";
 import { useAuthStore } from "@/stores/authStore";
 
@@ -140,12 +143,41 @@ export function useProjectMentionCandidates(id: string) {
 export function useAddProjectMember(id: string) {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: (payload: { user_id: string; role: "annotator" | "reviewer" }) =>
+    mutationFn: (payload: { user_id: string; role: ProjectRole }) =>
       projectsApi.addMember(id, payload),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["project-members", id] });
       qc.invalidateQueries({ queryKey: ["project", id] });
       qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["project-access", id] });
+    },
+  });
+}
+
+/**
+ * B1 · read-only role-change preview.  Returns blockers, the affected resource
+ * snapshot and an opaque token that the write must echo.
+ */
+export function usePreviewProjectMemberRole(id: string) {
+  return useMutation({
+    mutationFn: (vars: { memberId: string; payload: ProjectMemberRolePreviewPayload }) =>
+      projectsApi.previewMemberRole(id, vars.memberId, vars.payload),
+  });
+}
+
+export function useChangeProjectMemberRole(id: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (vars: { memberId: string; payload: ProjectMemberRoleChangePayload }) =>
+      projectsApi.changeMemberRole(id, vars.memberId, vars.payload),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["project-members", id] });
+      qc.invalidateQueries({ queryKey: ["project", id] });
+      qc.invalidateQueries({ queryKey: ["projects"] });
+      qc.invalidateQueries({ queryKey: ["project-access", id] });
+      qc.invalidateQueries({ queryKey: ["tasks"] });
+      qc.invalidateQueries({ queryKey: ["batches"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
     },
   });
 }

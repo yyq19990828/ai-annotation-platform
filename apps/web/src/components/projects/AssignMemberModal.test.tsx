@@ -65,8 +65,10 @@ describe("AssignMemberModal", () => {
     mockMutateAsync.mockReset();
     mockMutateAsync.mockResolvedValue({});
     mockUsersList.mockReset();
-    mockUsersList.mockImplementation(({ role }: { role: "annotator" | "reviewer" }) =>
-      Promise.resolve(USERS[role]),
+    // Assignment candidates are ordinary employees; the membership role is
+    // selected by the role tabs, not by the candidate query.
+    mockUsersList.mockImplementation(() =>
+      Promise.resolve([...USERS.annotator, ...USERS.reviewer]),
     );
     mockPushToast.mockReset();
   });

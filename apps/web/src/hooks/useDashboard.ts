@@ -2,31 +2,42 @@ import { useQuery } from "@tanstack/react-query";
 import { dashboardApi } from "../api/dashboard";
 import { useAuthStore } from "@/stores/authStore";
 
+/** Account identity for cache binding; `bindAuthQueryCache` also clears on change. */
+function useAccountScope() {
+  const userId = useAuthStore((state) => state.user?.id ?? null);
+  const token = useAuthStore((state) => state.token);
+  return { userId, token };
+}
+
 export function useAdminStats(enabled: boolean = true) {
+  const { userId, token } = useAccountScope();
   return useQuery({
-    queryKey: ["dashboard", "admin"],
+    queryKey: ["dashboard", "admin", userId, token],
     queryFn: dashboardApi.getAdminStats,
     enabled,
   });
 }
 
 export function useReviewerStats() {
+  const { userId, token } = useAccountScope();
   return useQuery({
-    queryKey: ["dashboard", "reviewer"],
+    queryKey: ["dashboard", "reviewer", userId, token],
     queryFn: dashboardApi.getReviewerStats,
   });
 }
 
 export function useAnnotatorStats() {
+  const { userId, token } = useAccountScope();
   return useQuery({
-    queryKey: ["dashboard", "annotator"],
+    queryKey: ["dashboard", "annotator", userId, token],
     queryFn: dashboardApi.getAnnotatorStats,
   });
 }
 
 export function useMyBatches() {
+  const { userId, token } = useAccountScope();
   return useQuery({
-    queryKey: ["dashboard", "annotator", "batches"],
+    queryKey: ["dashboard", "annotator", "batches", userId, token],
     queryFn: dashboardApi.getMyBatches,
     // B-20：标注员看进度需实时性，10s 轻量轮询；窗口可见时才轮询，避免后台 tab 浪费
     refetchInterval: 10_000,
@@ -44,8 +55,9 @@ export function useOnboardingProjectSummary(projectId: string | undefined) {
 }
 
 export function useMyRecentReviews(limit = 20) {
+  const { userId, token } = useAccountScope();
   return useQuery({
-    queryKey: ["dashboard", "me-recent-reviews", limit],
+    queryKey: ["dashboard", "me-recent-reviews", limit, userId, token],
     queryFn: () => dashboardApi.getMyRecentReviews(limit),
   });
 }
@@ -91,8 +103,9 @@ export function usePredictionCostStats(range: "7d" | "30d" = "30d") {
 
 // v0.8.7 F5.3 · ReviewWorkbench mini 仪表（20s 自动 refetch）
 export function useReviewerTodayMini() {
+  const { userId, token } = useAccountScope();
   return useQuery({
-    queryKey: ["dashboard", "reviewer", "today-mini"],
+    queryKey: ["dashboard", "reviewer", "today-mini", userId, token],
     queryFn: dashboardApi.getReviewerTodayMini,
     refetchInterval: 20_000,
   });

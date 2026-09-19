@@ -148,7 +148,10 @@ export interface ReactivateRequest {
 
 export interface InvitePayload {
   email: string;
+  /** Platform (account) role. */
   role: string;
+  /** Project responsibility, only when a target project is selected. */
+  project_member_role?: string | undefined;
   group_name?: string;
   project_id?: string;
 }
@@ -179,7 +182,10 @@ export interface UsersStats {
 
 export interface BulkInviteItemPayload {
   email: string;
+  /** Platform (account) role. */
   role: string;
+  /** Project responsibility, only when a target project is selected. */
+  project_member_role?: string;
   group_name?: string;
   project_id?: string;
 }

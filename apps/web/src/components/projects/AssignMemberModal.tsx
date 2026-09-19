@@ -37,8 +37,10 @@ export function AssignMemberModal({ open, projectId, existing, onClose }: Props)
   }, [role]);
 
   const { data: users = [], isLoading } = useQuery({
-    queryKey: ["users", "assign-member", role],
-    queryFn: () => usersApi.list({ role }),
+    // Assignment candidates are ordinary active employees; the membership role
+    // is chosen separately below and rechecked by the server on write.
+    queryKey: ["users", "assign-member", "employee"],
+    queryFn: () => usersApi.list({ role: "employee" }),
     enabled: open,
   });
 

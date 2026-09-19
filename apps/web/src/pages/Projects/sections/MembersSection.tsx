@@ -8,7 +8,10 @@ import { Modal } from "@/components/ui/Modal";
 import { useToastStore } from "@/components/ui/Toast";
 import { useProjectMembers, useRemoveProjectMember } from "@/hooks/useProjects";
 import { AssignMemberModal } from "@/components/projects/AssignMemberModal";
+import { MemberRoleChangeModal } from "@/components/projects/MemberRoleChangeModal";
+import { PROJECT_ROLE_LABELS, ROLE_LABELS } from "@/constants/roles";
 import type { ProjectResponse, ProjectMemberResponse } from "@/api/projects";
+import type { PlatformRole, ProjectRole } from "@/types";
 
 const PLACEHOLDER_CLASS = "p-8 text-center text-sm text-muted-foreground";
 const HEAD_CELL_BASE =
@@ -20,6 +23,7 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
   const remove = useRemoveProjectMember(project.id);
   const [assignOpen, setAssignOpen] = useState(false);
   const [confirmRemove, setConfirmRemove] = useState<ProjectMemberResponse | null>(null);
+  const [roleChangeMember, setRoleChangeMember] = useState<ProjectMemberResponse | null>(null);
 
   const onRemove = (m: ProjectMemberResponse) => {
     remove.mutate(m.id, {
@@ -90,16 +94,34 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
                       </div>
                     </td>
                     <td className="border-b border-border p-3 whitespace-nowrap">
-                      {m.role === "annotator" ? (
-                        <Badge variant="accent">标注员</Badge>
-                      ) : (
-                        <Badge variant="warning">审核员</Badge>
-                      )}
+                      <Badge
+                        variant={
+                          m.role === "annotator"
+                            ? "accent"
+                            : m.role === "reviewer"
+                              ? "warning"
+                              : "outline"
+                        }
+                      >
+                        {PROJECT_ROLE_LABELS[m.role as ProjectRole] ?? m.role}
+                      </Badge>
+                      <span className="mt-1 block text-2xs text-muted-foreground">
+                        {ROLE_LABELS[m.platform_role as PlatformRole] ?? m.platform_role}
+                      </span>
                     </td>
                     <td className="border-b border-border p-3 whitespace-nowrap text-muted-foreground">
                       {new Date(m.assigned_at).toLocaleDateString("zh-CN")}
                     </td>
                     <td className="border-b border-border py-2.5 pr-4 pl-3 text-right whitespace-nowrap">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        title="更改职责"
+                        onClick={() => setRoleChangeMember(m)}
+                      >
+                        <Icon name="refresh" size={11} />
+                        更改职责
+                      </Button>
                       <Button size="sm" variant="ghost" onClick={() => setConfirmRemove(m)}>
                         <Icon name="x" size={11} />
                         移除
@@ -121,6 +143,14 @@ export function MembersSection({ project }: { project: ProjectResponse }) {
           onClose={() => setAssignOpen(false)}
         />
       )}
+
+      <MemberRoleChangeModal
+        open={!!roleChangeMember}
+        projectId={project.id}
+        member={roleChangeMember}
+        members={members}
+        onClose={() => setRoleChangeMember(null)}
+      />
 
       <Modal
         open={!!confirmRemove}
