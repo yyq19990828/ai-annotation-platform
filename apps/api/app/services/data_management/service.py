@@ -117,11 +117,14 @@ class DataManagerService:
         filter_json: dict[str, Any],
         user: User,
         project: Project,
+        project_role: str | None = None,
     ) -> DataManagerSummaryResponse:
-        visible_stmt = visible_tasks_stmt(project_id, user=user, project=project)
-        matched_stmt = visible_tasks_stmt(project_id, user=user, project=project).where(
-            compile_filter(filter_json, project=project, user=user)
+        visible_stmt = visible_tasks_stmt(
+            project_id, user=user, project=project, project_role=project_role
         )
+        matched_stmt = visible_tasks_stmt(
+            project_id, user=user, project=project, project_role=project_role
+        ).where(compile_filter(filter_json, project=project, user=user))
         visible_ids = visible_stmt.subquery("dm_visible_tasks")
         matched_ids = matched_stmt.subquery("dm_matched_tasks")
 
@@ -496,16 +499,19 @@ class DataManagerService:
         offset: int,
         user: User,
         project: Project,
+        project_role: str | None = None,
     ) -> DataManagerMatchesResponse:
         visible = await self.db.scalar(
-            visible_tasks_stmt(project_id, user=user, project=project).where(
-                Task.id == task_id
-            )
+            visible_tasks_stmt(
+                project_id, user=user, project=project, project_role=project_role
+            ).where(Task.id == task_id)
         )
         if visible is None:
             raise HTTPException(status_code=404, detail="Task not found")
         matched = await self.db.scalar(
-            visible_tasks_stmt(project_id, user=user, project=project).where(
+            visible_tasks_stmt(
+                project_id, user=user, project=project, project_role=project_role
+            ).where(
                 Task.id == task_id,
                 compile_filter(filter_json, project=project, user=user),
             )

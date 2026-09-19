@@ -15,7 +15,11 @@ from app.deps import (
 )
 from app.db.models.task import Task
 from app.db.models.user import User
-from app.services.project_access import ProjectAccess, ProjectCapability
+from app.services.project_access import (
+    ProjectAccess,
+    ProjectCapability,
+    resolve_project_access,
+)
 from app.schemas.data_manager import (
     DataManagerMatchesRequest,
     DataManagerMatchesResponse,
@@ -304,12 +308,14 @@ async def get_data_manager_summary(
     user: User = Depends(get_current_user),
 ):
     project = await assert_project_visible(project_id, db, user)
+    access = await resolve_project_access(db, user=user, project=project)
     validate_filter(payload.filter_json, project=project, user=user)
     return await DataManagerService(db).summary(
         project_id=project_id,
         filter_json=payload.filter_json,
         user=user,
         project=project,
+        project_role=access.project_role,
     )
 
 
@@ -325,6 +331,7 @@ async def get_data_manager_matches(
     user: User = Depends(get_current_user),
 ):
     project = await assert_project_visible(project_id, db, user)
+    access = await resolve_project_access(db, user=user, project=project)
     validate_filter(payload.filter_json, project=project, user=user)
     return await DataManagerService(db).matches(
         project_id=project_id,
@@ -334,6 +341,7 @@ async def get_data_manager_matches(
         offset=payload.offset,
         user=user,
         project=project,
+        project_role=access.project_role,
     )
 
 
