@@ -6,6 +6,8 @@ import pytest
 
 from app.core.security import create_access_token
 from app.db.models.annotation import Annotation
+from app.db.models.async_job import AsyncJob
+from app.db.models.notification import Notification
 from app.db.models.project_member import ProjectMember
 from tests.factory import create_batch, create_project, create_task, create_user
 
@@ -218,3 +220,94 @@ async def test_top_level_bulk_annotation_requires_annotation_phase_capability(
     await db_session.refresh(task)
     assert annotation.is_hidden is False
     assert str(actor.id) not in (task.annotation_contributor_ids or [])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target_type", ["export", "async_job"])
+@pytest.mark.parametrize("misleading_payload", [False, True])
+async def test_notification_delivery_uses_actual_job_project_after_revocation(
+    httpx_client, db_session, monkeypatch, target_type, misleading_payload
+):
+    from app.services.notification import NotificationService
+
+    owner = await create_user(
+        db_session, "project_admin", f"owner-{uuid.uuid4()}@test.local", "Owner"
+    )
+    employee = await create_user(
+        db_session, "employee", f"staff-{uuid.uuid4()}@test.local", "Employee"
+    )
+    project_a = await create_project(db_session, owner_id=owner.id, name="Revoked")
+    project_b = await create_project(db_session, owner_id=owner.id, name="Allowed")
+    membership = ProjectMember(
+        project_id=project_a.id, user_id=employee.id, role="reviewer"
+    )
+    db_session.add_all(
+        [
+            membership,
+            ProjectMember(
+                project_id=project_b.id, user_id=employee.id, role="reviewer"
+            ),
+        ]
+    )
+    job = AsyncJob(
+        kind="export",
+        project_id=project_a.id,
+        user_id=employee.id,
+        status="completed",
+        payload={},
+        result={},
+    )
+    db_session.add(job)
+    await db_session.flush()
+    secret = Notification(
+        user_id=employee.id,
+        type="export.completed",
+        target_type=target_type,
+        target_id=job.id,
+        payload={"project_id": str(project_b.id)} if misleading_payload else {},
+    )
+    allowed = Notification(
+        user_id=employee.id,
+        type="task.mentioned",
+        target_type="task",
+        target_id=uuid.uuid4(),
+        payload={"project_id": str(project_b.id)},
+    )
+    global_notice = Notification(
+        user_id=employee.id,
+        type="system.notice",
+        target_type="system",
+        target_id=uuid.uuid4(),
+        payload={},
+    )
+    db_session.add_all([secret, allowed, global_notice])
+    await db_session.flush()
+    await db_session.delete(membership)
+    await db_session.flush()
+    headers = {
+        "Authorization": "Bearer "
+        + create_access_token(subject=str(employee.id), role="employee")
+    }
+    response = await httpx_client.get("/api/v1/notifications", headers=headers)
+    assert response.status_code == 200, response.text
+    assert {row["id"] for row in response.json()["items"]} == {
+        str(allowed.id),
+        str(global_notice.id),
+    }
+    assert response.json()["total"] == response.json()["unread"] == 2
+    unread = await httpx_client.get(
+        "/api/v1/notifications/unread-count", headers=headers
+    )
+    assert unread.status_code == 200, unread.text
+    assert unread.json()["unread"] == 2
+
+    published = []
+
+    async def capture_publish(*, user_id, message):
+        published.append(message["id"])
+
+    monkeypatch.setattr("app.services.notification._publish", capture_publish)
+    await NotificationService(db_session).publish_committed(
+        [secret, allowed, global_notice]
+    )
+    assert set(published) == {str(allowed.id), str(global_notice.id)}
