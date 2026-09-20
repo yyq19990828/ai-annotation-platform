@@ -357,13 +357,16 @@ def _delete_filtering_seed_objects(storage: Any) -> None:
 
 
 def _is_transaction_abort(exc: BaseException) -> bool:
-    """Recognise errors that abort the enclosing transaction.
+    """Recognise a deadlock/serialization failure for the cleanup fail-fast policy.
 
-    ``ROLLBACK TO SAVEPOINT`` cannot recover a deadlock/serialization failure, so
-    continuing the cleanup would silently skip every later delete and surface as a
-    misleading ``e2e_seed_cleanup_incomplete`` residual instead of the real cause.
-    ``25P02`` (transaction already aborted) is only the downstream symptom and is
-    deliberately not treated as a primary signal.
+    Observed in the P9 owned-cleanup failure: a DELETE that hit a PostgreSQL
+    deadlock was rolled back, the following cleanup DELETEs were also skipped, and
+    the request ended as a misleading ``e2e_seed_cleanup_incomplete`` residual
+    instead of the real cause. The deliberate policy here is therefore: never
+    absorb a recognised deadlock/serialization error (``40P01``/``40001``) —
+    re-raise it so the original cause stays visible. ``25P02`` (transaction
+    already aborted) is treated only as a downstream symptom of another failure,
+    not as an independent signal.
     """
     for candidate in (exc, getattr(exc, "orig", None), getattr(exc, "__cause__", None)):
         if candidate is None:
@@ -441,9 +444,8 @@ async def _cleanup_e2e_fixtures(
                 await db.execute(text(sql), params or {})
         except Exception as exc:
             if _is_transaction_abort(exc):
-                # A deadlock/serialization failure aborts the whole transaction;
-                # swallowing it would silently skip every later delete and leave a
-                # misleading residual. Fail fast so the real cause stays visible.
+                # Fail fast: in the P9 repro an absorbed deadlock left the later
+                # cleanup statements skipped and surfaced as a misleading residual.
                 log.warning("seed_cleanup abort · %s · %s", sql.split()[2], exc)
                 raise
             log.warning("seed_cleanup skip · %s · %s", sql.split()[2], exc)

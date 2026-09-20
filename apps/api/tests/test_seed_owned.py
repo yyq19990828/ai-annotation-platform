@@ -728,7 +728,7 @@ async def test_owned_project_roles_fixture_is_namespaced(
     )
 
 
-async def test_owned_cleanup_removes_namespace_takeover_actor_and_keeps_neighbours(
+async def test_owned_cleanup_removes_own_takeover_actor_and_keeps_neighbours(
     httpx_client, db_session: AsyncSession
 ):
     """The namespace-scoped invite actor is removed by the exact owned cleanup.
@@ -736,7 +736,8 @@ async def test_owned_cleanup_removes_namespace_takeover_actor_and_keeps_neighbou
     `video-issue-context` creates its second actor through the real invite ->
     register path. That actor must be namespace-scoped (`takeover-<namespace>@e2e.test`)
     so the exact owned cleanup removes it instead of leaking a shared global
-    account that only the global teardown could touch.
+    account that only the global teardown could touch. A *different* namespace's
+    takeover actor and an ordinary non-E2E account must both survive.
     """
     from app.db.models.user import User
 
@@ -750,7 +751,7 @@ async def test_owned_cleanup_removes_namespace_takeover_actor_and_keeps_neighbou
         status="offline",
         is_active=True,
     )
-    takeover = User(
+    own_takeover = User(
         id=uuid.uuid4(),
         email=f"takeover-{A}@e2e.test",
         name="E2E Takeover",
@@ -759,7 +760,16 @@ async def test_owned_cleanup_removes_namespace_takeover_actor_and_keeps_neighbou
         status="offline",
         is_active=True,
     )
-    db_session.add_all([keeper, takeover])
+    neighbour_takeover = User(
+        id=uuid.uuid4(),
+        email=f"takeover-{B}@e2e.test",
+        name="E2E Neighbour Takeover",
+        password_hash="x",
+        role="employee",
+        status="offline",
+        is_active=True,
+    )
+    db_session.add_all([keeper, own_takeover, neighbour_takeover])
     await db_session.commit()
 
     response = await _cleanup_owned(httpx_client, A)
@@ -777,10 +787,21 @@ async def test_owned_cleanup_removes_namespace_takeover_actor_and_keeps_neighbou
         await db_session.scalar(
             select(func.count())
             .select_from(User)
+            .where(User.email == f"takeover-{B}@e2e.test")
+        )
+        == 1
+    )
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(User)
             .where(User.email == "owned-takeover-keeper@example.com")
         )
         == 1
     )
+
+    await db_session.delete(neighbour_takeover)
+    await db_session.commit()
 
 
 async def test_owned_cleanup_does_not_match_legacy_shared_bug_prefix(
@@ -788,10 +809,13 @@ async def test_owned_cleanup_does_not_match_legacy_shared_bug_prefix(
 ):
     """An owned cleanup must never delete the shared `BUG-E2E-FILTER-` rows.
 
-    The legacy shared filtering fixture identifies its bug reports with the
-    `BUG-E2E-FILTER-` display prefix. An owned namespace cleanup may only match
-    its own project/task-owned rows; matching that shared prefix would let one
-    namespace delete the shared fixture's rows (a neighbour-safety violation).
+    The cleanup deletes `bug_comments` first (they reference `bug_reports`), then
+    the `bug_reports` themselves. The legacy shared filtering fixture identifies
+    its reports with the `BUG-E2E-FILTER-` display prefix, so that prefix may only
+    be matched by the shared (`owned is None`) cleanup; an owned namespace may
+    only match its own project/task-owned rows. Matching the shared prefix from an
+    owned cleanup would let one namespace delete the shared fixture's rows (a
+    neighbour-safety violation).
     """
     from app.db.models.bug_report import BugReport
     from app.db.models.user import User
@@ -838,27 +862,54 @@ async def test_owned_cleanup_does_not_match_legacy_shared_bug_prefix(
     await db_session.commit()
 
 
-async def test_is_transaction_abort_recognizes_only_aborting_sqlstates():
-    """Deadlock/serialization aborts fail fast; benign drift stays absorbed.
+async def test_owned_cleanup_propagates_controlled_abort_and_skips_rest(
+    httpx_client, db_session: AsyncSession, monkeypatch
+):
+    """A recognised deadlock/serialization failure must fail fast, not mask.
 
-    `_try_delete` must still swallow a per-table drift error, but a deadlock
-    (40P01) or serialization failure (40001) aborts the whole transaction, so it
-    must propagate instead of silently skipping every later delete and leaving a
-    misleading residual. 25P02 is only the downstream symptom, not a signal.
+    Behaviour regression for the `_try_delete` policy: run the real cleanup path
+    against a real session, inject a controlled abort on the `tasks` DELETE, and
+    prove (a) the original error propagates out of the cleanup and (b) the later
+    destructive statements (projects/users) are never attempted, so a
+    contention failure can never be reported as a successful cleanup. The
+    existing `test_owned_cleanup_exposes_residuals_on_partial_failure` keeps the
+    benign per-table-failure (swallow and let the residual guard reject) path.
     """
-    from app.api.v1._test_seed import _is_transaction_abort
+    from app.api.v1._test_seed import _cleanup_e2e_fixtures, _parse_owned_namespace
 
-    class FakeOrig(Exception):
-        def __init__(self, sqlstate: str) -> None:
-            self.sqlstate = sqlstate
+    class DeadlockDetectedError(Exception):
+        """Stand-in carrying the recognised deadlock SQLSTATE via `orig`."""
 
-    class FakeDBAPIError(Exception):
-        def __init__(self, sqlstate: str) -> None:
-            self.orig = FakeOrig(sqlstate)
+        class _Orig:
+            sqlstate = "40P01"
 
-    assert _is_transaction_abort(FakeDBAPIError("40P01")) is True
-    assert _is_transaction_abort(FakeDBAPIError("40001")) is True
-    assert _is_transaction_abort(FakeDBAPIError("25P02")) is False
-    assert _is_transaction_abort(FakeDBAPIError("42P01")) is False
-    assert _is_transaction_abort(FakeDBAPIError("23503")) is False
-    assert _is_transaction_abort(RuntimeError("boom")) is False
+        orig = _Orig()
+
+    await _build_owned(httpx_client, A)
+
+    real_execute = db_session.execute
+    executed: list[str] = []
+
+    async def fake_execute(statement, *args, **kwargs):
+        sql = str(getattr(statement, "text", statement))
+        executed.append(sql)
+        if "DELETE FROM tasks WHERE project_id" in sql:
+            raise DeadlockDetectedError()
+        return await real_execute(statement, *args, **kwargs)
+
+    monkeypatch.setattr(db_session, "execute", fake_execute)
+
+    with pytest.raises(DeadlockDetectedError):
+        await _cleanup_e2e_fixtures(db_session, _parse_owned_namespace(A))
+
+    assert any("DELETE FROM tasks WHERE project_id" in sql for sql in executed)
+    # Destructive statements after the abort must not run, so the cleanup cannot
+    # silently continue (or be reported as success) on a broken transaction.
+    assert not any("DELETE FROM projects" in sql for sql in executed)
+    assert not any("DELETE FROM users" in sql for sql in executed)
+
+    # Release the aborted test transaction and the injected execute override, then
+    # the namespace is still intact and cleanable by a fresh (uninjected) cleanup.
+    monkeypatch.setattr(db_session, "execute", real_execute)
+    await db_session.rollback()
+    assert (await _cleanup_owned(httpx_client, A)).status_code == 200
