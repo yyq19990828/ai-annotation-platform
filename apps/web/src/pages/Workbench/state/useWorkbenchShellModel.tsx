@@ -4842,7 +4842,7 @@ export function useWorkbenchShellModel({
         userBoxes={userBoxes}
         visibleAnnotations={visibleAnnotationsData}
         videoBatchTracks={videoBatchTracks}
-        annotationsSnapshot={annotationsRef.current}
+        annotationsSnapshotRef={annotationsRef}
         classes={classes}
         hiddenVideoTrackIds={hiddenVideoTrackIds}
         lockedVideoTrackIds={lockedVideoTrackIds}

@@ -47,7 +47,8 @@ export interface SelectionCardContentProps {
   userBoxes: Annotation[];
   visibleAnnotations: AnnotationResponse[];
   videoBatchTracks: VideoTrackAnnotation[];
-  annotationsSnapshot: readonly AnnotationResponse[];
+  /** 活跃标注引用（装配层持有）；删除确认 await 之后必须迟到读取，过滤并发已删轨迹。 */
+  annotationsSnapshotRef: { readonly current: readonly AnnotationResponse[] };
   classes: VideoTrackBatchProps["classes"];
   hiddenVideoTrackIds: ReadonlySet<string>;
   lockedVideoTrackIds: ReadonlySet<string>;
@@ -117,7 +118,7 @@ export function SelectionCardContent(props: SelectionCardContentProps): ReactNod
     userBoxes,
     visibleAnnotations,
     videoBatchTracks,
-    annotationsSnapshot,
+    annotationsSnapshotRef,
     classes,
     hiddenVideoTrackIds,
     lockedVideoTrackIds,
@@ -359,9 +360,10 @@ export function SelectionCardContent(props: SelectionCardContentProps): ReactNod
                 confirmLabel: "删除",
               });
               if (!confirmed) return;
-              // 等待决定期间部分轨迹可能已被删除;过滤后仍非空才提交 (删除已消失项只会报错)。
+              // 等待决定期间部分轨迹可能已被删除;确认后迟到读取活跃标注，
+              // 过滤后仍非空才提交 (删除已消失项只会报错)。
               const stillPresent = videoBatchTracks.filter((t) =>
-                annotationsSnapshot.some((item) => item.id === t.id),
+                annotationsSnapshotRef.current.some((item) => item.id === t.id),
               );
               if (stillPresent.length > 0) props.onVideoBatchDelete(stillPresent);
             })();
