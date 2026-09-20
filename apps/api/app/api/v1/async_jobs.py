@@ -19,12 +19,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.enums import PlatformRole, ProjectRole
 from app.db.models.async_job import AsyncJob, AsyncJobStatus
 from app.db.models.project import Project
-from app.db.models.mask_qc import MaskQCRun
-from app.db.models.point_cloud_quality import PointCloudQualityRun
 from app.db.models.mask_repair_batch import MaskRepairBatch
 from app.db.models.mask_format_import import MaskFormatImport
 from app.db.models.user import User
 from app.deps import get_current_user, get_db
+from app.services.async_job_terminal import reconcile_domain_terminal
 from app.services.project_aggregates import project_scope_clause
 from app.schemas.async_job import (
     AsyncJobListResponse,
@@ -300,16 +299,9 @@ async def cancel_async_job(
             job.id,
             result={"reason": "cancelled_by_user"},
         )
-        run = (
-            await db.execute(
-                select(MaskQCRun)
-                .where(MaskQCRun.async_job_id == job.id)
-                .with_for_update()
-            )
-        ).scalar_one_or_none()
-        if run is not None and run.status in {"pending", "running"}:
-            run.status = "cancelled"
-            run.completed_at = datetime.now(timezone.utc)
+        # Reuse the shared domain terminal rule (pending/running -> cancelled)
+        # instead of a second inline copy of the MaskQCRun transition.
+        await reconcile_domain_terminal(db, job, cancelled=True)
         await notify_job_terminal(db, job_id=job.id)
         await db.commit()
         return {"status": "cancelled", "id": str(job_id)}
@@ -325,16 +317,7 @@ async def cancel_async_job(
         await async_job_svc.mark_cancelled(
             db, job.id, result={"reason": "cancelled_by_user"}
         )
-        run = (
-            await db.execute(
-                select(PointCloudQualityRun)
-                .where(PointCloudQualityRun.async_job_id == job.id)
-                .with_for_update()
-            )
-        ).scalar_one_or_none()
-        if run is not None and run.status in {"pending", "running"}:
-            run.status = "cancelled"
-            run.completed_at = datetime.now(timezone.utc)
+        await reconcile_domain_terminal(db, job, cancelled=True)
         await notify_job_terminal(db, job_id=job.id)
         await db.commit()
         return {"status": "cancelled", "id": str(job_id)}
