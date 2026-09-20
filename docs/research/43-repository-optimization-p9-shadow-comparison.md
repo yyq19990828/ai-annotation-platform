@@ -1,20 +1,26 @@
 # 仓库优化 P9：影子对照与 Frontend E2E 门禁切换
 
 > 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P9 工作包 + §6.7）
-> 工作树/分支：`/home/hehao/桌面/ai-annotation-platform-worktree-agent-opt-p7`（分支 `worktree-agent-opt-p9`）
-> 冻结候选：`dc972be08a42855c836023da178487469aae2fc9`（rebase 到已接受根 `e91ac8dfd`；app 输入与该根逐字节一致）
+> 首次对照候选（历史）：`dc972be08a42855c836023da178487469aae2fc9`（rebase 到已接受根 `e91ac8dfd`；app 输入与该根逐字节一致）
+> 最终验证候选：`8985054699ac203c1ed2b5ebe68e6d6897bda724`（共享分支 `feat/codebase_opt260920`）
+> 最终验证 lane：A `worktree-agent-opt-p9-final-lane-a`（smoke/visual/default-one/default-two）、B（default-three/four）、C（pointcloud/video-pipeline/mask×3/layout-stress）
+> 阶段状态：**P9 进行中；`Frontend E2E` 最终门禁保持失败**——最终候选 `default-four` 未关闭（§6.2）
 > 证据图例：**[V]** 本工作树实际执行/逐条核对；**[M]** 变异/负向探针；**[EXT]** 外部事实（只读核查）；**[GAP]** 未执行或留待 P10
+> 历史边界：旧候选 `dc972be08` 的失败保留在显式的历史小节（§5.0、§6.1、§7），未回溯修改；最终候选结果单独列出，不把历史绿灯搬到新候选。
 
 ## 0. 结论
 
-1. **门禁切换完成 [V]**：`Frontend E2E` 的矩阵现在执行 §6 计划选择（有界 smoke + 触发专项 + 保守放大 + 显式 full），`push`/夜间/手动 full 走全量，纯文档走带原因的显式跳过；每次运行都同时输出冻结旧选集与计划选集的对照，稳定检查名 `Frontend E2E` 未变。回退为仓库变量 `E2E_SELECTION_MODE=legacy`（空/未设置即计划模式，未知值报错）。
+1. **门禁切换实现完成 [V]**：`Frontend E2E` 的矩阵现在执行 §6 计划选择（有界 smoke + 触发专项 + 保守放大 + 显式 full），`push`/夜间/手动 full 走全量，纯文档走带原因的显式跳过；每次运行都同时输出冻结旧选集与计划选集的对照，稳定检查名 `Frontend E2E` 未变。回退为仓库变量 `E2E_SELECTION_MODE=legacy`（空/未设置即计划模式，未知值报错）。
 2. **核心 flaky 门禁落地 [V]**：有界 smoke 以 `--retries=0` 运行并带 `flakyPolicy=forbid`，必需套件审计在核心 flaky>0 时以 `core-flaky` 阻塞；非核心专项保留一次诊断重试且重试后通过仍单列 flaky。
-3. **必需套件审计按“实际执行的门”生成 [V]**：manifest 与有效选集一致（计划模式=计划套件含策略；回退模式=旧 9 套件，不要求未执行的 smoke/video/pointcloud；docs-only 仅在计划模式产生带非空原因的显式跳过）。CLI 子进程回归覆盖 push/PR-app/docs/手动 full/夜间与空环境变量。
+3. **必需套件审计按“实际执行的门”生成 [V]**：manifest 与有效选集一致（计划模式=计划套件含策略；回退模式=旧 9 套件；docs-only 仅在计划模式产生带非空原因的显式跳过）。套件 ID 使用 planner 规范名（`smoke`、`visual`、`layout-stress`、`default-one`…`default-four`、`mask-readonly|native|ai-native`、`pointcloud`、`video-pipeline`）；逐套件状态产物按该 ID 采集。
 4. **缺陷注入证据 [M]**：移除“未映射回退 + 共享 owner 放大”的变异使共享 Workbench state owner 从全量 12 静默缩到 smoke，且提交的回归测试对变异体失败（`node --test` 非零）；缺失/取消/setup-failure/格式错误/核心 flaky/docs-only 缺原因等审计探针均按预期非零。
-5. **同候选 old9/new3 联合执行 [V]**：本工作树执行旧 9（4 分片 + Mask×3 + visual/layout-stress）+ 新 smoke；领域 worker 在同候选执行新 pointcloud + video-pipeline（独立运行时）。构建产物经指纹 + SHA256SUMS 校验后由 `vite preview` 提供（默认 worktree 配置只启 dev server，不能作为构建产物证据）。
-6. **外部事实 [EXT]**：`main` 当前**没有**经典分支保护也没有 ruleset，因此不存在需要在远端同步的必需检查配置；切换只影响仓库内工作流逻辑，未做任何远端改动。
+5. **首次对照（历史）[V]**：旧候选 `dc972be08` 的 old9/new3 联合执行发现多处真实失败与清理残留，全部保留首次证据（§5.0），后续在集成根与最终候选上分别修复。
+6. **最终候选（`8985054`）三 lane、12 个 raw 套件 [V]**：11 绿、1 失败——`default-four`（`workbench-layout.spec.ts:185`，CI `maxFailures` 提前停止，13 passed / 1 failed / 53 not run）。**门禁保持失败，P9 不声明完成**（§5.1、§6.2）。
+7. **外部事实 [EXT]**：`main` 当前**没有**经典分支保护也没有 ruleset，因此不存在需要在远端同步的必需检查配置；切换只影响仓库内工作流逻辑，未做任何远端改动（§6.0）。
 
 ## 1. 冻结候选与身份
+
+### 1.1 首次对照候选（历史，`dc972be08`）
 
 | 项                   | 值                                                                                                                                                                                                         |
 | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -26,7 +32,18 @@
 | 构建产物             | `/tmp/opencode/web-e2e-dist-253b54a03c4f0fc663b26cd9038913bce188e6b7f772de67dad1a5ec616015e1.tar.gz`，sha256 `754d61b997f69491520245dabe714b5f60102edd4d44bc770d80d54027ab913f`，`SHA256SUMS` 同名目录 [V] |
 | 完整性               | `grep -F <指纹 archive> SHA256SUMS \| sha256sum -c -` 通过；diff 断言 manifest 不含其他 archive（P8 已做篡改/多余 archive 拒绝探针）[V]                                                                    |
 
-**构建产物观测方式**：worktree 模式下 `playwright.config.ts` 判定 `useIsolatedServers=true`，即使 `CI=1` 也会启动 `pnpm dev`，因此普通本地 E2E **不消费**指纹构建产物。P9 使用临时配置 `apps/web/playwright.preview.e2e.config.ts`（只覆盖 webServer：同一自有 API 命令 + `vite preview` 指定的 `--mode e2e` dist；projects/testDir/testMatch/grepInvert/retries/reporter 全部沿用真实配置），并派生 `playwright.preview-visual.config.ts` / `playwright.preview-stress.config.ts` 复用同一 webServer。这些临时配置在证据采集后删除。
+### 1.2 最终验证候选（`8985054`）
+
+| 项                   | 值                                                                                                                                                                                                                                          |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 候选 SHA             | `8985054699ac203c1ed2b5ebe68e6d6897bda724`（本地共享分支 `feat/codebase_opt260920`；三条 lane 分别建同名分支）                                                                                                                              |
+| 构建方式             | 单次 `pnpm build --mode e2e`（`OPENAPI_URL=apps/api/openapi.snapshot.json`），显式 bash 下以 `rc=${PIPESTATUS[0]}` 立即取管道退出码；**BUILD_EXIT=0**，非零则中止（构建日志 `/tmp/opencode/p9-final-build.log`）[V]                         |
+| 指纹                 | `b3fe3e8ca069357eff583944dbafedba177a143ce02eb307aef0ffa7e86face3`（按 `e2e-run.yml` 公式：SHA + lockfile + openapi snapshot + node + 排序 `VITE_*` + `.env`）                                                                              |
+| 构建产物             | `/tmp/opencode/web-e2e-dist-b3fe3e8c….tar.gz`，sha256 `b5dbe24fc4bd8bf2e616e72ef6a209d8b89846f50c5289dd8119c2eadc7ed7da`；`dist/index.html` sha256 `aa91e1e95f020186c51b96adcdc7957696f6f732eada4b3b0783cedaf27e8515`；270 个 dist 文件 [V] |
+| 字节一致性           | B/C 与 A 均解压同一 archive 并校验：archive sha256、`dist/index.html`、270 个逐文件 sha256 与 `diff -rq` 全部一致（未重建）[V]                                                                                                              |
+| 证据目录（自有副本） | `/tmp/opencode/p9-final-evidence/`（35 文件 + `EVIDENCE-SHA256SUMS`），含两候选 archive 之外的最终 manifest、12 套件 raw JSON/log/status 与 lane handoff [V]                                                                                |
+
+**构建产物观测方式**：worktree 模式下 `playwright.config.ts` 判定 `useIsolatedServers=true`，即使 `CI=1` 也会启动 `pnpm dev`，因此普通本地 E2E **不消费**指纹构建产物。P9 使用临时配置 `apps/web/playwright.preview.e2e.config.ts`（只覆盖 webServer：同一自有 API 命令 + `vite preview` 指定的 `--mode e2e` dist；projects/testDir/testMatch/grepInvert/retries/reporter 全部沿用真实配置），并派生 `playwright.preview-visual.config.ts` / `playwright.preview-stress.config.ts` 复用同一 webServer。这些临时配置在最终证据采集完成后从最终树移除。
 
 ## 2. 旧/新选择对照（同一候选、实际 CLI 输出）
 
@@ -40,11 +57,11 @@
 | 夜间 `E2E extended`                                                | 2（仅 extended） | 全量 12（`E2E_SCHEDULE_SCOPE=full`）              | §6.2 定时全量；显式 scope                                                   |
 | 手动 `ci.yml` / `E2E extended`                                     | 2                | `e2e_scope`/`scope` 输入显式 `extended` 或 `full` | §6.7-5 不再用事件名隐含范围                                                 |
 
-**契约对照**：旧 9 套件与新的 9 个同名套件命令/config/env 逐字节一致（可复用证据，不重复执行）；新增仅 `smoke`、`video-pipeline`、`pointcloud` 三个命令，需实际执行验证成员（见 §4）。业务契约层面：C1–C8 的浏览器保护映射不变（P8 文档 §6 表），新选集在受影响路径上仍选中对应专项；未被选中的路径由保守放大覆盖，不存在静默漏选。
+**契约对照**：旧 9 套件与新的同名套件命令/config/env 逐字节一致；新增仅 `smoke`、`video-pipeline`、`pointcloud` 三个命令。业务契约层面：C1–C8 的浏览器保护映射不变（P8 文档 §6 表），新选集在受影响路径上仍选中对应专项；未被选中的路径由保守放大覆盖，不存在静默漏选。
 
 ## 3. 门禁切换实现
 
-- **planner**（`scripts/plan-e2e-suites.mjs`）：默认输出计划选集作为 `matrix`；同时输出 `legacy=`（冻结旧集）、`shadow=`（旧/新对照 + 分类/原因/警告）、`required=`（**有效门**的必需 manifest）、`run_suites`、`selection_mode`、`ml_cpu`。
+- **planner**（`scripts/plan-e2e-suites.mjs`）：默认输出计划选集作为 `matrix`；同时输出 `legacy=`（冻结旧集）、`shadow=`（旧/新对照 + 分类/原因/警告）、`required=`（**有效门**的必需 manifest）、`run_suites`、`selection_mode`、`ml_cpu`。规范套件 ID 见 §0.3。
 - **必需 manifest**：计划模式 = 计划套件（smoke 带 `flakyPolicy=forbid`）；回退模式 = 旧 9 套件（不含未执行的 smoke/video/pointcloud）；纯文档 = `{classification:"docs-only", reason, suites:[]}`。
 - **ci.yml**：`e2e-suites` 仅在 `run_suites=true` 时执行；聚合 `Frontend E2E`（名称不变）下载逐套件状态产物并运行 `audit-e2e-requirements.mjs`；`run_suites=false` 时用空目录审计显式 docs-only 跳过。手动 `e2e_scope` 输入显式选择 full/extended。仓库变量 `E2E_SELECTION_MODE` 提供回退（空值归一为计划模式）。
 - **夜间 caller**（`e2e-extended.yml`）：`E2E_SCHEDULE_SCOPE=full` 显式夜间全量，手动 `scope` 输入显式选择；新增聚合审计 job（保持 `Frontend extended ...` 命名约定）对计划 manifest 做同样的 fail-closed 记账。
@@ -68,27 +85,63 @@
 
 ## 5. 同候选实际执行结果
 
-执行方式：自有 e2e 模式、workers 1、一次启用；built 套件经临时 preview harness 消费指纹产物，`built:false` 的 Mask 套件走 dev server（与 CI 的 mask 矩阵一致）。未使用 maxFailures 未执行用例充当通过。
+### 5.0 历史：旧候选 `dc972be08` 的首次失败（历史证据，未回溯修改）
 
-| 套件                 | 配置/入口                                             | 结果                                                                                                                                                                                                                                    | 时间              |
-| -------------------- | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------- |
-| smoke（新，核心）    | preview harness，`--retries=0`，9 例 grep 成员        | **9 passed**，首过无 flaky，exit 0                                                                                                                                                                                                      | 40.0s（进程 50s） |
-| mask-readonly（旧）  | `test:e2e:mask-readonly`（dev）                       | **2 passed + 11 skipped**（native 矩阵运行时跳过），exit 0                                                                                                                                                                              | 25.8s             |
-| mask-native（旧）    | `test:e2e:mask-native`（dev）                         | **20 passed + 2 skipped**（readonly 矩阵运行时跳过），exit 0                                                                                                                                                                            | 3.4m              |
-| mask-ai-native（旧） | `test:e2e:mask-ai-native`（dev）                      | **7 passed**，exit 0                                                                                                                                                                                                                    | 1.5m              |
-| visual（旧）         | preview-visual harness（`--grep @visual`，retries 0） | **1 failed / 1 passed / 1 skipped，exit 1**：`workbench-layout.spec.ts:397` 硬编码旧显示 id；更早 13:07:30 启动仅因 reporter 切换被取消，记为 cancelled/not-complete                                                                    | 35.5s             |
-| layout-stress（旧）  | preview-stress harness（`@stress`，retries 1 诊断）   | **6 passed / 0 failed / 0 skip，exit 0（绿）**                                                                                                                                                                                          | 202.2s            |
-| default-one（旧）    | preview harness `--shard=1/4`                         | **79 passed / 2 unexpected / 0 flaky / 0 skip，exit 1**：① dashboard 项目名 ② markdown 单元格图片                                                                                                                                       | 445.6s            |
-| default-two（旧）    | preview harness `--shard=2/4`                         | **52 passed / 3 unexpected / 19 skipped / 0 flaky，exit 1**：① CI 条件 Worker 用例在 preview 装置下不适用 ②③ `mask-slice` 生命周期夹具桶守卫过窄                                                                                        | 705.2s            |
-| default-three（旧）  | preview harness `--shard=3/4`                         | **53 passed / 4 unexpected / 30 skipped / 0 flaky，exit 1**：①② video-issue seed 超时 + 清理残留（清理所有者）③ workbench-discussion `seed.owned()` 失败（清理所有者）④ `workbench-context-toolbars` Python 助手旧前缀断言（已授权 P9） | 628.4s            |
-| default-four（旧）   | preview harness `--shard=4/4`                         | 见执行日志（进行中/待完成）                                                                                                                                                                                                             | —                 |
-| video-pipeline（新） | 领域 worker（同候选，preview，独立运行时）            | 见 `/tmp/aap-opt-p9-domain-report.md`                                                                                                                                                                                                   | —                 |
-| pointcloud（新）     | 领域 worker（同候选，preview，独立运行时）            | **37 first-attempt passed / 1 failed**（`workbench-pointcloud-tools.spec.ts:379` 双击多边形；含清理残留），exit 1；详见 `/tmp/aap-opt-p9-domain-report.md`                                                                              | —                 |
-| video-pipeline（新） | 领域 worker（同候选，preview，独立运行时）            | **43 passed / 20 intentional skips**，但 cleanup/teardown 失败导致 **exit 1（不记为绿）**；详见领域报告                                                                                                                                 | —                 |
+**已记录但归属他人的失败**：`employee-project-roles.spec.ts` dashboard 项目名（授权 P9 在冻结执行结束后修复该单测）、`markdown-authoring.spec.ts` 目标单元格内图片不可见（Markdown 独立工作流；仅记录图片未出现，不推测单元格缺失）、pointcloud `workbench-pointcloud-tools.spec.ts:379` 与相关清理（清理所有者负责）。以下为 P9 自有失败与验证边界。
 
-（前三个套件在 JSON reporter 切换前完成：其证据来自真实 line-reporter stdout 与进程退出码，另有明确标注来源的 `/tmp/opencode/p9-status/*.json` 派生记录；其余套件从下一个边界起以 `--reporter=line,json` 与唯一 `PLAYWRIGHT_JSON_OUTPUT_NAME` 采集。每个套件的完整日志位于 `/tmp/opencode/p9-*.log`，进程级起止与退出码见 `/tmp/opencode/p9-campaign-status.txt`。软件渲染/pointcloud 为 SwiftShader；不主张 GPU/硬件资格验证，严格 WebGPU/WebCodecs 资格由 renderer 专项证据承担。）
+同候选联合执行发现两处真实失败，均已保留首次证据、未放宽断言、未跳过保护：
 
-## 6. 分支保护核查（只读）
+1. **visual**：`apps/web/e2e/tests/workbench-layout.spec.ts:397` 在 `seed.owned()` 之后仍断言旧共享显示 id `T-E2E-000001`；owned 任务的显示 id 为命名空间形态。属 P7 迁移遗留的消费方缺陷，已请求 bounded separate fix（保留 `text-brand` 与文件名断言）。
+2. **pointcloud（领域 worker）**：`workbench-pointcloud-tools.spec.ts:379` 双击多边形失败（retries 1 后仍失败，0 skip）；同次运行的 owned-cleanup 返回 500（residual users=3/projects=2）并在 global teardown 留 3 个用户。
+
+旧候选各套件的原始结果（历史，不改写）：
+
+| 套件                 | 结果（历史）                                                                                                                                                                                  |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| smoke（新，核心）    | **9 passed**，首过无 flaky，exit 0                                                                                                                                                            |
+| visual（旧）         | **1 failed / 1 passed / 1 skipped，exit 1**：`workbench-layout.spec.ts:397` 硬编码旧显示 id；更早 13:07:30 启动仅因 reporter 切换被取消，记为 cancelled/not-complete                          |
+| default-one（旧）    | **79 passed / 2 unexpected / 0 flaky / 0 skip，exit 1**：① dashboard 项目名 ② markdown 单元格图片                                                                                             |
+| default-two（旧）    | **52 passed / 3 unexpected / 19 skipped / 0 flaky，exit 1**：① CI 条件 Worker 用例在 preview 装置下不适用（旧运行未设 `CI`）②③ `mask-slice` 生命周期夹具桶守卫过窄                            |
+| default-three（旧）  | **53 passed / 4 unexpected / 30 skipped / 0 flaky，exit 1**：video-issue seed 超时 + 清理残留、workbench-discussion `seed.owned()` 失败、`workbench-context-toolbars` 旧前缀断言（已授权 P9） |
+| default-four（旧）   | **64 passed / 3 unexpected / 0 skipped / 0 flaky，exit 1**：tool-dock `launchPersistentContext` SIGTRAP、topbar 800px 重叠、pointcloud-tools 379（清理残留）                                  |
+| mask-readonly（旧）  | **2 passed + 11 skipped**（native 矩阵运行时跳过），exit 0                                                                                                                                    |
+| mask-native（旧）    | **20 passed + 2 skipped**（readonly 矩阵运行时跳过），exit 0                                                                                                                                  |
+| mask-ai-native（旧） | **7 passed**，exit 0                                                                                                                                                                          |
+| layout-stress（旧）  | **6 passed / 0 failed / 0 skip，exit 0**                                                                                                                                                      |
+| pointcloud（新）     | **37 first-attempt passed / 1 failed**（`workbench-pointcloud-tools.spec.ts:379` 双击多边形；含清理残留），exit 1                                                                             |
+| video-pipeline（新） | **43 passed / 20 intentional skips**，但 cleanup/teardown 失败导致 **exit 1（不记为绿）**                                                                                                     |
+
+**历史说明**：前三个套件在 JSON reporter 切换前完成（证据来自 line-reporter stdout 与进程退出码及派生状态记录）；旧运行普遍未设 `CI`，因此 `mask-advanced-operations.spec.ts:334` 的源码 Worker 用例表现为失败而非预期的跳过——这与最终候选的 `CI=true` 装置不同。软件渲染/pointcloud 为 SwiftShader；不主张 GPU/硬件资格验证。
+
+### 5.1 最终候选 `8985054` 的 12 个 raw 套件
+
+执行方式：三条 lane 各自新建分支于同一 SHA，各自 fresh disposable `--mode e2e`（migration head `0174`、残余 0），解压同一 archive 并逐字节校验；全部 `CI=true`、显式 `--retries=0`、`workers 1`、`fullyParallel false`，每套件独立 `E2E_STATUS_OUT` 状态产物。built 套件经 preview harness 消费指纹产物，`built:false` 的 Mask 套件走 dev server（与 CI 的 mask 矩阵一致）。**不使用 maxFailures 未执行用例充当通过**。
+
+| 套件（规范 ID） | lane | 入口                                  | expected | unexpected | flaky | skipped    | exit | residual |
+| --------------- | ---- | ------------------------------------- | -------- | ---------- | ----- | ---------- | ---- | -------- |
+| smoke           | A    | preview e2e，9 例 grep，`--retries=0` | 9        | 0          | 0     | 0          | 0    | 0        |
+| visual          | A    | preview-visual `--grep @visual`       | 2        | 0          | 0     | 1          | 0    | 0        |
+| default-one     | A    | preview e2e `--shard=1/4`             | 83       | 0          | 0     | 0          | 0    | 0        |
+| default-two     | A    | preview e2e `--shard=2/4`             | 53       | 0          | 0     | 20         | 0    | 0        |
+| default-three   | B    | preview e2e `--shard=3/4`             | 58       | 0          | 0     | 30         | 0    | 0        |
+| default-four    | B    | preview e2e `--shard=4/4`             | 13       | 1          | 0     | 53 not run | 1    | 0        |
+| layout-stress   | C    | preview-stress `--grep @stress`       | 6        | 0          | 0     | 0          | 0    | 0        |
+| mask-readonly   | C    | `test:e2e:mask-readonly`（dev）       | 2        | 0          | 0     | 11         | 0    | 0        |
+| mask-native     | C    | `test:e2e:mask-native`（dev）         | 20       | 0          | 0     | 2          | 0    | 0        |
+| mask-ai-native  | C    | `test:e2e:mask-ai-native`（dev）      | 7        | 0          | 0     | 0          | 0    | 0        |
+| pointcloud      | C    | preview e2e `--project pointcloud`    | 38       | 0          | 0     | 0          | 0    | 0        |
+| video-pipeline  | C    | preview e2e `video-*`                 | 43       | 0          | 0     | 20         | 0    | 0        |
+
+**说明**：
+
+- 合计 **11 绿 / 1 失败**（`default-four`）；全部套件无 `e2e_seed_cleanup_incomplete`、运行后 `@e2e.test` users/projects=0。
+- `default-two` 的 20 个跳过 = `mask-advanced-operations.spec.ts:334` 的**有意 CI 跳过**（`CI=true` 且未选 Mask 矩阵，源码 `import "/src/..."` 无法由构建 preview 提供）+ 19 个矩阵门控的 raster-mask 跳过；该 Worker 路径的 native 覆盖由 `mask-native` 套件承担。这与旧候选未设 `CI` 的失败形成明确对照。
+- 证据文件：`/tmp/opencode/p9-final-status/<suite>.json`（规范 ID）、`/tmp/opencode/p9-final-<suite>.json`、`/tmp/opencode/p9-final-<suite>.log`；自有副本与校验见 `/tmp/opencode/p9-final-evidence/`（`EVIDENCE-SHA256SUMS`）。
+- 未采用“从旧候选字节一致复用”的说法：root 复核认定四个 Mask/stress 套件的相关输入（共享 Topbar 与 owned-seed 清理）已变化，不能主张逐字节复用，故在最终候选上**重跑为 raw 结果**。
+
+## 6. 分支保护核查与失败归属
+
+### 6.0 分支保护（只读，[EXT]）
 
 | 检查                | 命令                                                                       | 结果                             |
 | ------------------- | -------------------------------------------------------------------------- | -------------------------------- |
@@ -99,24 +152,9 @@
 
 结论：远端当前没有要求 `Frontend E2E` 的必需检查配置，因此切换门禁内部逻辑不存在“远端保护未同步”的外部阻塞；稳定检查名保留，任何后续需要的分支保护配置由协调方在具备本次对照证据后决定。未做任何远端写操作。
 
-## 6.1 候选上的真实失败（阻塞验收，不视为绿灯）
+### 6.1 历史：旧候选阻塞项的定向修复（均已合并，历史证据）
 
-**已记录但归属他人的失败**：`employee-project-roles.spec.ts` dashboard 项目名（授权 P9 在冻结执行结束后修复该单测）、`markdown-authoring.spec.ts` 目标单元格内图片不可见（Markdown 独立工作流；仅记录图片未出现，不推测单元格缺失）、pointcloud `workbench-pointcloud-tools.spec.ts:379` 与相关清理（清理所有者负责）。以下为 P9 自有失败与验证边界。
-
-同候选联合执行发现两处真实失败，均已保留首次证据、未放宽断言、未跳过保护：
-
-1. **visual**：`apps/web/e2e/tests/workbench-layout.spec.ts:397` 在 `seed.owned()` 之后仍断言旧共享显示 id `T-E2E-000001`；owned 任务的显示 id 为命名空间形态。属 P7 迁移遗留的消费方缺陷（与已修复的 pointcloud/lidar 同类），已请求 bounded separate fix（保留 `text-brand` 与文件名断言）。
-2. **pointcloud（领域 worker）**：`workbench-pointcloud-tools.spec.ts:379` 双击多边形失败（retries 1 后仍失败，0 skip）；同次运行的 owned-cleanup 返回 500（residual users=3/projects=2）并在 global teardown 留 3 个用户。由独立诊断者定位根因；若落在 P7 seed/fixture 归属内，将以独立 fix + 回归提交。
-
-上述两项修复前，P9 不得声明“全绿”或“完成”；`Frontend E2E` 的 fail-closed 汇总/审计语义不变（真实失败会照常阻塞）。
-
-## 6.2 待修复：mask-slice 生命周期夹具的桶所有权守卫（已提交提案）
-
-`apps/web/e2e/fixtures/mask-slice-lifecycle.py` 当前以桶名后缀（`-e2e/_e2e/-test/_test`）判定“独占一次性桶”，但工作树模式的自有桶命名为 `aap-wt-<id>-<mode>-<purpose>`（含 `-e2e-`、不以 `-e2e` 结尾），导致 `mask-slice.spec.ts:682/716` 失败。修复方向：改用**既有的工作树资源所有权机制**（`.worktree/<mode>/resources.json` 的声明桶 + 所有者 + `scripts/worktree_runtime.require_owner` 的标签语义），在无工作树清单时保留旧的 CI 后缀回退；负向校验覆盖共享桶（无所有者标签）、他人所有、未声明桶。保留 GC/版本丢失断言，仅重跑这两个用例。新增回归模块 `apps/api/tests/test_mask_slice_fixture_guard.py`（由既有后端 pytest job 自动发现）只做守卫函数的多正/负例验证；按协调方划分，共享测试清单 TSV 与 research 26/27/45 由最终 P10 集成方回填该文件与计数，P9 不在共享清单内改动。CI 条件差异审计：全仓 e2e 仅 `mask-advanced-operations.spec.ts:334` 一处依赖 `process.env.CI`。
-
-## 6.3 定向修复与后续验证（与原失败明确区分）
-
-四处已授权 fixture/消费方修复已实施，并按原装置做定向复跑（原始失败证据保留，不覆盖）：
+四处已授权 fixture/消费方修复按原装置做定向复跑（原始失败证据保留在 §5.0）：
 
 | 修复                  | 文件                                                                                                       | 定向结果                                                                                                                                                                                                                                |
 | --------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -127,36 +165,21 @@
 
 复评修正（`0e97634a4`）：context-toolbars 清理改为从任务行派生并校验精确 owned 前缀与 taskId 文件名、恢复替换 PNG 与 ROI crop 的 `list_objects_v2` 缺失后置断言、复用单个 StorageService；守卫显式拒绝缺失/空清单所有者并校验清单模式与 checkout 身份。
 
-干净模式复验（原污染 e2e 模式已按授权 reset，仅保留只读残留身份存档）：在冻结共享构建产物上，上述消费方一起复跑 **6 passed / 0 failed / 0 skipped、退出码 0、无 global teardown 残留**。
+原生浏览器缩放助手（历史，已修复）：`workbench-tool-dock.spec.ts:63` 的 `launchPersistentContext` SIGTRAP（~200ms）根因是**完整 Chromium 的 POSIX singleton 套接字路径**：`<TMPDIR>/org.chromium.Chromium.*/SingletonSocket`，77 字节 TMPDIR → 122 字节路径，超过本机 Linux 的 `sockaddr_un.sun_path` 上限（108）；owned 39 字节 `/tmp` TMPDIR → 84 字节路径，同参数通过。已排除单一 Playwright 参数、headless 变体、sandbox/GPU/zygote 与非 ASCII 路径本身；`strace` 显示内核态 `SIGTRAP {si_code=SI_KERNEL}`。修复：为浏览器子进程创建自有短临时目录并在 `close()` 两条路径删除；复跑原单测 **1 passed**，无残留。
 
-CI 条件差异证明：`mask-advanced-operations.spec.ts` 的 1080p Worker 用例在 `CI=true` 且未选 Mask 矩阵时实测 **1 skipped**（预期语义），native 矩阵已实际执行并通过（mask-native 20 passed / 2 skipped）。
+### 6.2 未决：最终候选 `default-four` 失败（阻塞最终门禁）
 
-附注：污染模式下的定向运行进程退出码曾为 1，原因是当时全局 `seed/cleanup` 报 `users=3` 残留（旧 campaign 自有污染，已存档 `/tmp/opencode/p9-residual-archive.{json,md}` 并交清理通道），与四处修复无关；上述干净模式复验已消除该残留。
-
-## 6.4 原生浏览器缩放助手：SIGTRAP 根因与修复
-
-`workbench-tool-dock.spec.ts:63`（首个高度 768 → 窗口 1920×855）失败为 `launchPersistentContext` 在 ~200ms 内以 `signal=SIGTRAP` 中止，非 150s 预算、非偶发。
-
-**最小崩溃边界（同候选、同参数，仅区分 TMPDIR）**：
-
-| 观察项                          | 结果                                                                                                               |
-| ------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
-| 可执行文件                      | `chromium-1217/chrome-linux64/chrome`（Google Chrome for Testing 147.0.7727.15）                                   |
-| 完整 Chromium、无扩展           | FAIL（SIGTRAP），说明崩溃在完整 Chromium 启动而非 MV3 扩展/bootstrap                                               |
-| 默认 `chromium_headless_shell`  | PASS 但注册 0 个扩展 service worker（无法执行 zoom API，故不可替代）                                               |
-| long TMPDIR（77 字节）          | FAIL 245ms；singleton 套接字路径 = 77 + 45 = **122 字节**，超过 `sun_path` 上限                                    |
-| owned short TMPDIR（39 字节）   | PASS 324ms；实测套接字 `/tmp/aap-native-browser-zoom-tmp-*/org.chromium.Chromium.*/SingletonSocket` 长 **84 字节** |
-| 同 binary Playwright 外手动启动 | PASS 且 MV3 service worker 正常加载，确认非产品缺陷、非断言问题                                                    |
-
-已排除项（均非充分条件）：单一 Playwright 默认参数（breakpad/field-trial/features/swiftshader/automation 等）、`--headless` vs `--headless=new`、`--no-sandbox`/`--disable-gpu`/`--no-zygote`/`--single-process`、`channel` 与 `executablePath` 的差异、非 ASCII 路径本身（同为非 ASCII 的短路径可通过，判别因素是**路径长度**）；`strace` 显示内核态 `SIGTRAP {si_code=SI_KERNEL}`。原始探针输出：`/tmp/opencode/p9-nativezoom-boundary-evidence.txt`。
-
-**修复**：`apps/web/e2e/fixtures/native-browser-zoom.ts` 为该浏览器子进程创建**自有短临时目录**（`/tmp/aap-native-browser-zoom-tmp-*`，Windows 保留继承环境），并在既有 `close()` 中于启动失败与正常关闭两条路径都删除该目录；扩展与 profile 仍留在原有自有作用域。复跑原单测（冻结产物、干净模式、`--retries=0`）：**1 passed**（原 failed），退出码 0，且运行后无短临时目录/profile 残留。
+- 失败用例：`apps/web/e2e/tests/workbench-layout.spec.ts:185`“图片布局预设、面板隐藏和浮动保留画布及未发送讨论草稿，刷新恢复已保存树”，断言在 `:289`：`panelCommand(page, "讨论", "停靠到底部")` 后 `expect.poll` 5s 内未观察到 discussion 分组重新停靠到底部。
+- 运行事实：shard 4/4、67 tests、CI `maxFailures` 在首个失败后停止 → **13 passed / 1 failed / 53 not run**，`--retries=0`，240.8s；这是**失败**，53 个 not-run 不等同于 skipped 或 passed。
+- 只读诊断（B lane）：停靠拖拽后未出现 preferences PATCH，discussion 仍留在 inspector 分组；疑为渲染 overlay 遮挡分组 dropzone，但 DOM 祖先关系不构成事件证据；已授权 B 在自有分支做聚焦的真实拖拽/hit-test 捕获与诊断性 CSS 正/负对照。
+- 处置：**门禁保持失败**。仅在 B 的证据证明后，才由既有 owner 做最小 drag-lifecycle 修复；修复需自有新构建 + 聚焦 layout/真实对照/stress + **default-four 全量（含 53 not-run）** 复跑。不得新增 dock 菜单/超时/重试/弱化断言；不得用未执行用例冒充通过。
 
 ## 7. 保留与限制
 
 - workers 1、重试/超时/覆盖率预算未放宽；核心不依赖重试。
-- old/new 对照复用同名同配置套件证据，只对新增 `smoke`/`video-pipeline`/`pointcloud` 做实际成员验证（domain worker 承担后两者）。
-- 纯文档跳过必须在汇总可审计；回退开关保留且经过 CLI 回归。
+- 门禁**未完成**：最终候选 `default-four` 未关闭，P9 保持进行中；最终报告不得把 53 not-run 写成 skip/pass。
+- 首次对照候选（`dc972be08`）的失败保留在历史小节，未回溯改写；最终候选结果为独立 raw 证据。
+- 不主张“字节一致复用”：相关输入变化的四个套件在最终候选上重跑；未变化行为的证据可在后续修复 follow-up 中以精确“变更触发点 + 验证范围”组合说明，而非整体重放 12 套件。
 - [GAP] 远端 CI 未运行（不推送）；首次真实 runner 观察（构建复用、审计、ml-cpu）留待集成后。
 - [GAP] 严格 WebGPU/WebCodecs 资格与渲染家族证据由 renderer 专项负责，本阶段不重复。
 - [GAP] 发布候选完整验证记录入口在 P10 台账中明确；不声称已存在 release gate。
