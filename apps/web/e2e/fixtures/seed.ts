@@ -886,7 +886,7 @@ export class SeedAPI {
   /** 直接拿 JWT 注入 localStorage（跳过 UI 登录，加快非 auth spec）。 */
   async injectToken(page: Page, email: string, baseURL?: string): Promise<void> {
     const res = await this.seedLogin(email);
-    if (!res.ok()) throw new Error(`seed/login failed: ${res.status()}`);
+    if (!res.ok()) throw new Error(`seed/login failed: ${res.status()} ${await res.text()}`);
     const body = (await res.json()) as { access_token: string; user: unknown };
     await this.setPetEnabled(email, false, body.access_token);
     const target = baseURL ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3001";
