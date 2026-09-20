@@ -1487,12 +1487,15 @@ test.describe("video Issue persisted context", () => {
     const annotator = users.find((user) => user.email === fixture.data.annotator_email)!;
     // Authority now comes from project membership: invite a second employee who
     // accepts an annotator responsibility in this project through the real
-    // invitation → registration path, then hand the batch to them.
+    // invitation → registration path, then hand the batch to them. The actor is
+    // namespace-scoped (`takeover-<namespace>@e2e.test`) so the exact owned
+    // cleanup removes it instead of leaking a shared global account.
+    const takeoverEmail = fixture.data.admin_email.replace(/^admin-/, "takeover-");
     const invitation = await json<{ token: string }>(
       await request.post(`${API_BASE}/api/v1/users/invite`, {
         headers: auth(fixture.token),
         data: {
-          email: "takeover@e2e.test",
+          email: takeoverEmail,
           role: "employee",
           project_id: fixture.data.project_id,
           project_member_role: "annotator",

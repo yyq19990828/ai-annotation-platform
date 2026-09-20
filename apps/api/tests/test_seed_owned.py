@@ -726,3 +726,139 @@ async def test_owned_project_roles_fixture_is_namespaced(
         )
         == 0
     )
+
+
+async def test_owned_cleanup_removes_namespace_takeover_actor_and_keeps_neighbours(
+    httpx_client, db_session: AsyncSession
+):
+    """The namespace-scoped invite actor is removed by the exact owned cleanup.
+
+    `video-issue-context` creates its second actor through the real invite ->
+    register path. That actor must be namespace-scoped (`takeover-<namespace>@e2e.test`)
+    so the exact owned cleanup removes it instead of leaking a shared global
+    account that only the global teardown could touch.
+    """
+    from app.db.models.user import User
+
+    await _build_owned(httpx_client, A)
+    keeper = User(
+        id=uuid.uuid4(),
+        email="owned-takeover-keeper@example.com",
+        name="Owned Takeover Keeper",
+        password_hash="x",
+        role="employee",
+        status="offline",
+        is_active=True,
+    )
+    takeover = User(
+        id=uuid.uuid4(),
+        email=f"takeover-{A}@e2e.test",
+        name="E2E Takeover",
+        password_hash="x",
+        role="employee",
+        status="offline",
+        is_active=True,
+    )
+    db_session.add_all([keeper, takeover])
+    await db_session.commit()
+
+    response = await _cleanup_owned(httpx_client, A)
+    assert response.status_code == 200, response.text
+
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(User)
+            .where(User.email == f"takeover-{A}@e2e.test")
+        )
+        == 0
+    )
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(User)
+            .where(User.email == "owned-takeover-keeper@example.com")
+        )
+        == 1
+    )
+
+
+async def test_owned_cleanup_does_not_match_legacy_shared_bug_prefix(
+    httpx_client, db_session: AsyncSession
+):
+    """An owned cleanup must never delete the shared `BUG-E2E-FILTER-` rows.
+
+    The legacy shared filtering fixture identifies its bug reports with the
+    `BUG-E2E-FILTER-` display prefix. An owned namespace cleanup may only match
+    its own project/task-owned rows; matching that shared prefix would let one
+    namespace delete the shared fixture's rows (a neighbour-safety violation).
+    """
+    from app.db.models.bug_report import BugReport
+    from app.db.models.user import User
+
+    reporter = User(
+        id=uuid.uuid4(),
+        email="owned-bug-reporter@example.com",
+        name="Owned Bug Reporter",
+        password_hash="x",
+        role="employee",
+        status="offline",
+        is_active=True,
+    )
+    db_session.add(reporter)
+    await db_session.flush()
+    shared_bug = BugReport(
+        id=uuid.uuid4(),
+        display_id="BUG-E2E-FILTER-RGT",
+        reporter_id=reporter.id,
+        route="/e2e",
+        user_role="employee",
+        title="Shared filtering bug",
+        description="shared fixture row",
+        severity="low",
+        status="new",
+    )
+    db_session.add(shared_bug)
+    await db_session.commit()
+
+    await _build_owned(httpx_client, A)
+    response = await _cleanup_owned(httpx_client, A)
+    assert response.status_code == 200, response.text
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(BugReport)
+            .where(BugReport.display_id == "BUG-E2E-FILTER-RGT")
+        )
+        == 1
+    )
+
+    await db_session.delete(shared_bug)
+    await db_session.delete(reporter)
+    await db_session.commit()
+
+
+async def test_is_transaction_abort_recognizes_only_aborting_sqlstates():
+    """Deadlock/serialization aborts fail fast; benign drift stays absorbed.
+
+    `_try_delete` must still swallow a per-table drift error, but a deadlock
+    (40P01) or serialization failure (40001) aborts the whole transaction, so it
+    must propagate instead of silently skipping every later delete and leaving a
+    misleading residual. 25P02 is only the downstream symptom, not a signal.
+    """
+    from app.api.v1._test_seed import _is_transaction_abort
+
+    class FakeOrig(Exception):
+        def __init__(self, sqlstate: str) -> None:
+            self.sqlstate = sqlstate
+
+    class FakeDBAPIError(Exception):
+        def __init__(self, sqlstate: str) -> None:
+            self.orig = FakeOrig(sqlstate)
+
+    assert _is_transaction_abort(FakeDBAPIError("40P01")) is True
+    assert _is_transaction_abort(FakeDBAPIError("40001")) is True
+    assert _is_transaction_abort(FakeDBAPIError("25P02")) is False
+    assert _is_transaction_abort(FakeDBAPIError("42P01")) is False
+    assert _is_transaction_abort(FakeDBAPIError("23503")) is False
+    assert _is_transaction_abort(RuntimeError("boom")) is False

@@ -227,11 +227,21 @@ class _OwnedFixtureScope:
     def filter_storage_prefix(self) -> str:
         return f"e2e/owned/{self.namespace}/filtering/"
 
+    @property
+    def takeover_email(self) -> str:
+        """Namespace-scoped actor created through the real invite/register path."""
+        return f"takeover-{self.namespace}@e2e.test"
+
     # -- aggregate exact selectors for the cleanup engine --
 
     @property
     def all_user_emails(self) -> list[str]:
-        return [*self.user_emails, *self.pr_user_emails, *self.filter_user_emails]
+        return [
+            *self.user_emails,
+            self.takeover_email,
+            *self.pr_user_emails,
+            *self.filter_user_emails,
+        ]
 
     @property
     def all_project_names(self) -> list[str]:
@@ -346,6 +356,28 @@ def _delete_filtering_seed_objects(storage: Any) -> None:
     )
 
 
+def _is_transaction_abort(exc: BaseException) -> bool:
+    """Recognise errors that abort the enclosing transaction.
+
+    ``ROLLBACK TO SAVEPOINT`` cannot recover a deadlock/serialization failure, so
+    continuing the cleanup would silently skip every later delete and surface as a
+    misleading ``e2e_seed_cleanup_incomplete`` residual instead of the real cause.
+    ``25P02`` (transaction already aborted) is only the downstream symptom and is
+    deliberately not treated as a primary signal.
+    """
+    for candidate in (exc, getattr(exc, "orig", None), getattr(exc, "__cause__", None)):
+        if candidate is None:
+            continue
+        state = getattr(candidate, "sqlstate", None) or getattr(
+            candidate, "pgcode", None
+        )
+        if state in {"40P01", "40001"}:
+            return True
+        if type(candidate).__name__ in {"DeadlockDetectedError", "SerializationError"}:
+            return True
+    return False
+
+
 async def _cleanup_e2e_fixtures(
     db: AsyncSession, owned: _OwnedFixtureScope | None = None
 ) -> None:
@@ -408,6 +440,12 @@ async def _cleanup_e2e_fixtures(
             async with db.begin_nested():
                 await db.execute(text(sql), params or {})
         except Exception as exc:
+            if _is_transaction_abort(exc):
+                # A deadlock/serialization failure aborts the whole transaction;
+                # swallowing it would silently skip every later delete and leave a
+                # misleading residual. Fail fast so the real cause stays visible.
+                log.warning("seed_cleanup abort · %s · %s", sql.split()[2], exc)
+                raise
             log.warning("seed_cleanup skip · %s · %s", sql.split()[2], exc)
 
     fixture_annotation_ids: list = []
@@ -442,11 +480,17 @@ async def _cleanup_e2e_fixtures(
 
         # The filtering fixture owns these rows outside the ordinary task cascade.
         # Delete them before tasks/projects so their restrictive foreign keys cannot
-        # block reset, while leaving every non-E2E row untouched.
+        # block reset, while leaving every non-E2E row untouched. The legacy
+        # `BUG-E2E-FILTER-` prefix is a shared-fixture identifier and may only be
+        # matched by the shared (`owned is None`) cleanup; an owned namespace must
+        # never delete another namespace's or the shared filtering rows.
+        legacy_bug_prefix = (
+            " OR display_id LIKE 'BUG-E2E-FILTER-%'" if owned is None else ""
+        )
         await _try_delete(
             "DELETE FROM bug_comments WHERE bug_report_id IN ("
             " SELECT id FROM bug_reports WHERE project_id = ANY(:pids) "
-            " OR task_id = ANY(:tids) OR display_id LIKE 'BUG-E2E-FILTER-%')",
+            f" OR task_id = ANY(:tids){legacy_bug_prefix})",
             {
                 "pids": fixture_project_ids,
                 "tids": fixture_task_ids,
@@ -454,7 +498,7 @@ async def _cleanup_e2e_fixtures(
         )
         await _try_delete(
             "DELETE FROM bug_reports WHERE project_id = ANY(:pids) "
-            " OR task_id = ANY(:tids) OR display_id LIKE 'BUG-E2E-FILTER-%'",
+            f" OR task_id = ANY(:tids){legacy_bug_prefix}",
             {
                 "pids": fixture_project_ids,
                 "tids": fixture_task_ids,
