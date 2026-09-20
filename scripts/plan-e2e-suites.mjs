@@ -153,9 +153,11 @@ const functional = [
     triggers: [
       "apps/web/e2e/tests/mask-",
       "apps/web/e2e/tests/raster-mask-",
-      "apps/web/src/pages/Workbench/",
       "apps/api/app/api/v1/mask_",
       "apps/api/app/services/",
+      "apps/web/src/pages/Workbench/state/mask",
+      "apps/web/src/pages/Workbench/stage/shared/geometry/",
+      "apps/web/src/pages/Workbench/stage/shared/rasterMask",
     ],
     reason: `raster Mask ${name} matrix contract`,
     runtime: {
@@ -364,6 +366,14 @@ function classifyPaths(paths) {
   };
 }
 
+// Shared Workbench shell/state owners (task navigation, shell model,
+// commands): a change here can affect image, video and point-cloud flows at
+// once, so it broadens to the full selection instead of claiming Mask-only.
+const SHARED_WORKBENCH_TRIGGERS = [
+  "apps/web/src/pages/Workbench/state/",
+  "apps/web/src/pages/Workbench/shell/",
+];
+
 // Shared UI/API/client/auth/layout dependencies fan out to every domain that
 // consumes them: a change here is not observable from the module path alone.
 const SHARED_DEPENDENCY_TRIGGERS = [
@@ -523,9 +533,13 @@ export function selectSuites(eventName, paths, options = {}) {
       );
 
     const triggered = triggeredSpecialties(classification.appCode);
-    const sharedDepHit = SHARED_DEPENDENCY_TRIGGERS.find((prefix) =>
-      classification.appCode.some((path) => path.startsWith(prefix)),
-    );
+    const sharedDepHit =
+      SHARED_DEPENDENCY_TRIGGERS.find((prefix) =>
+        classification.appCode.some((path) => path.startsWith(prefix)),
+      ) ??
+      SHARED_WORKBENCH_TRIGGERS.find((prefix) =>
+        classification.appCode.some((path) => path.startsWith(prefix)),
+      );
     const runtimeLike = classification.appCode.some(
       (path) =>
         [
