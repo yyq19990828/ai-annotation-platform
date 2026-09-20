@@ -13,7 +13,7 @@
 3. **ReviewPage 纯 URL 规则下沉 [V]**：新增 `reviewUrlState.ts`（读取 / 比较作用域、选批次、清 assignee、回概览、开合任务抽屉），页面只保留装配；保留 P3 已论证的异步迟到响应 mock 边界。UsersPage 去掉重复的 `ApiError` 假类；其 MSW 化为**有据延后**（§3.3）。
 4. **provenance 清理 [V]**：`gpu_arbitration/ledger` 6 处「Extracted verbatim from legacy …」叙事删除，`check_removed_service_modules.mjs` 的 5 项 `PROVENANCE_FILES` 白名单同步删除（扫描器保持绿）；该扫描器 allowlist 里不存在的根路径改为真实路径 `apps/api/scripts/check_removed_service_modules.py`。SDK / scripts / config / instruction 的版本叙事按「当前契约保留、历史叙事删除」清理。
 5. **两条 P4 复核候选均为有据 KEEP [V]**：通知「列表 vs 投递」谓词差异被请求期认证挡住（停用账号无法到达列表路径）；`mask_repair_rollback` 的信号取消不回填领域行是有意契约。均未改语义。
-6. **测试清单缺口修复 [V]**：TSV 从 1042 行补录到 **1125** 行（ML backend 70 + 共享 5 + P1/P3/P4 新增 4 + 截图 spec 4），并以双向比对证明无残余缺口；`protocol_v2`（163 passed）与 `mask_utils`（41 passed）的 CPU 实测补齐。
+6. **测试清单缺口修复 [V]**：TSV 从 1042 行补录到 **1127** 行（ML backend 70 + 共享 5 + P1/P3/P4 新增 4 + 截图 spec 4 + 本阶段自产测试 2），并在最终提交 HEAD 上以双向比对证明无残余缺口；`protocol_v2`（163 passed）与`mask_utils`（41 passed）的 CPU 实测补齐。
 7. **文档 [V]**：新增 `docs-site/dev/concepts/repository-map.md`（模块归属与调用链），`docs-site/dev/testing.md` 增加分层归属与 ML/shared 未接线事实。
 
 ## 1. seed：平台身份与项目职责（缺陷修复 + 独立提交）
@@ -82,13 +82,13 @@ pnpm dev:worktree -- exec --mode test -- sh -c \
 
 ## 4. provenance 与守护脚本
 
-| 项                                                                                                                      | 改动                                                                                                                                                                                     | 验证                                                                                                                                         |
-| ----------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
-| `gpu_arbitration/ledger/{__init__,keys,store,types,validation,scripts/lua_sources}.py`                                  | 删除 6 处「Extracted verbatim from the legacy …」叙事，docstring 改述当前职责                                                                                                            | `node scripts/check_removed_service_modules.mjs` → exit 0（23 modules guarded）                                                              |
-| `scripts/check_removed_service_modules.mjs`                                                                             | `PROVENANCE_FILES` 5 项及 `isAllowed` 分支删除；`ALLOWED_FILES` 中不存在的根路径 `scripts/check_removed_service_modules.py` 改为真实 `apps/api/scripts/check_removed_service_modules.py` | 同上；`--historical-links` 模式当前**红**（15 条历史 markdown 链接指向 v0.23.2 已删模块），为**先于本阶段存在**的状态，P8 接线时必须一并处置 |
-| `CLAUDE.md`（`AGENTS.md` 符号链接保留）                                                                                 | 「Put provenance in comments or frontmatter」→「Record provenance in Git history, `CHANGELOG.md`, or ADRs — not in source comments or frontmatter」                                      | `AGENTS.md -> CLAUDE.md` 未动                                                                                                                |
-| `packages/python-sdk`                                                                                                   | `tui/ml_stats_ws.py`、`tui/app.py`、`models.py`、3 个测试文件的版本前缀与「自 vX 起接受」叙事删除；ADR-0044 引用（现行契约）保留；`pyproject.toml` 注释同步                              | `grep -rn "v0\.[0-9]" src tests pyproject.toml` = 0 命中                                                                                     |
-| `.pre-commit-config.yaml` / `.github/workflows/ci.yml` / `apps/api/tests/conftest.py` / `apps/web/playwright.config.ts` | 5 处版本前缀叙事删除（保留 ADR-0050、协议与工具版本 pin）                                                                                                                                | 见 §7 候选清单                                                                                                                               |
+| 项                                                                                                                      | 改动                                                                                                                                                                                                                                                            | 验证                                                                                                                 |
+| ----------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `gpu_arbitration/ledger/{__init__,keys,store,types,validation,scripts/lua_sources}.py`                                  | 删除 6 处「Extracted verbatim from the legacy …」叙事，docstring 改述当前职责                                                                                                                                                                                   | `node scripts/check_removed_service_modules.mjs` → exit 0（23 modules guarded）                                      |
+| `scripts/check_removed_service_modules.mjs`                                                                             | `PROVENANCE_FILES` 5 项及 `isAllowed` 分支删除；`ALLOWED_FILES` 中不存在的根路径 `scripts/check_removed_service_modules.py` 改为真实 `apps/api/scripts/check_removed_service_modules.py`；收口阶段把 7 个历史文档中 43 处指向已删模块的死链改为行内代码历史路径 | 同上；`--historical-links` **由红转绿**（原报 15 个 文件×模块 对，见 §7.1），现默认与 `--historical-links` 均 exit 0 |
+| `CLAUDE.md`（`AGENTS.md` 符号链接保留）                                                                                 | 「Put provenance in comments or frontmatter」→「Record provenance in Git history, `CHANGELOG.md`, or ADRs — not in source comments or frontmatter」                                                                                                             | `AGENTS.md -> CLAUDE.md` 未动                                                                                        |
+| `packages/python-sdk`                                                                                                   | `tui/ml_stats_ws.py`、`tui/app.py`、`models.py`、3 个测试文件的版本前缀与「自 vX 起接受」叙事删除；ADR-0044 引用（现行契约）保留；`pyproject.toml` 注释同步                                                                                                     | `grep -rn "v0\.[0-9]" src tests pyproject.toml` = 0 命中                                                             |
+| `.pre-commit-config.yaml` / `.github/workflows/ci.yml` / `apps/api/tests/conftest.py` / `apps/web/playwright.config.ts` | 5 处版本前缀叙事删除（保留 ADR-0050、协议与工具版本 pin）                                                                                                                                                                                                       | 见 §7 候选清单                                                                                                       |
 
 **保留（真实历史 / 契约）**：`scripts/eval_simplify.py` 的版本标签是评测报告对被评测变更集的描述（文档化手动工具）；`rapidocr-backend` 两处 `docs/plans/2026-06-29-v0.20.0-…md` 引用是真实归档文档指针；`docs/adr/archive`、`docs/changelogs` 的历史记录不动。
 
@@ -124,9 +124,15 @@ pnpm dev:worktree -- exec --mode test -- sh -c \
 
 ## 7. 测试清单补录与共享包 CPU 实测
 
-- TSV 1125 行（ci-wired 1021 / script-wired 15 / not-wired 89），分层计数可加和；双向比对（tracked 测试路径 ↔ 清单，显式排除 vendor / fixtures / conftest / `__init__` / generated / node_modules / checkpoints）后**无残余缺口**；[26§9] 记录了缺口成因分类。
-- 补录明细：ML backend 70（合并 2 个重复套件后的当前路径）、`backend_runtime` 下沉套件 1（`replacement` 列记录 old→new）、`protocol_v2` 4、P1/P4 新增后端测试 2、P3 新增前端测试 2、截图 spec 4。
-- 共享包 CPU 实测（本轮补齐）：`apps/_shared/protocol_v2` 163 passed / 0 skip；`apps/_shared/mask_utils` 41 passed / 0 skip（各自 `.venv`，`pytest -q`）。
+- TSV **1127** 行（ci-wired 1023 / script-wired 15 / not-wired 89），分层计数可加和；双向比对（tracked 测试路径 ↔ 清单，显式排除 vendor / fixtures / conftest / `__init__` / generated / node_modules / checkpoints）在**最终提交 HEAD** 上重跑后**无残余缺口**；[26§9] 记录了缺口成因分类。
+- 补录明细：ML backend 70（合并 2 个重复套件后的当前路径）、`backend_runtime` 下沉套件 1（`replacement` 列记录 old→new）、`protocol_v2` 4、P1/P4 新增后端测试 2、P3 新增前端测试 2、截图 spec 4、**本阶段自产测试 2**（`test_seed_demo_memberships.py`、`reviewUrlState.test.ts`，收口时回填）。
+- 收口比对同时确认清单中 5 行支持文件（`apps/api/tests/{conftest,factory,_avatar_storage,__init__}.py`、`scripts/test-orca-worktree-setup.py`）是 P0 已登记的测试基建 / CI 可执行入口，不属于发现缺口（[26§9.1]）。
+- 共享包 CPU 实测：`apps/_shared/protocol_v2` 163 passed / 0 skip；`apps/_shared/mask_utils` 41 passed / 0 skip（各自 `.venv`，`pytest -q`）。
+
+## 7.1 历史死链清理（`--historical-links` 由红转绿）
+
+`check_removed_service_modules.mjs --historical-links` 原报 15 个「历史 markdown 链接指向 v0.23.2 已删服务模块」（对应 43 处链接，扫描器按 文件×模块 去重计数）。处置：把 7 个历史文档（`docs/changelogs/0.10.x.md` 与 6 个 `docs/plans/archive/*.md`）中指向已删路径的链接全部改为**行内代码形式的历史路径**——保留「当时该模块叫什么」的事实，不再渲染成可点击死链；未改写任何历史结论、未删除事实，也未放宽扫描器或 allowlist。`docs/changelogs/0.10.x.md` 卷首补一条路径说明，指向现行的
+[服务导入切换迁移说明](../migration/2026-07-17-v0.23.2-service-import-cutover.md)（`export→exporting.service`、`export_packaging→exporting.packaging`、`export_cache→exporting.cache`、`export_video→exporting.video`、`video_tracker_runner→video_tracking.runner`、`video_tracker_adapters→video_tracking.adapters`、`video_tracker_job_service→video_tracking.jobs`）。验证：默认与 `--historical-links` 两种模式均 exit 0。
 
 ## 8. 文档
 
@@ -143,8 +149,9 @@ pnpm dev:worktree -- exec --mode test -- sh -c \
 | `ccca27993`                 | fix(api): seed 平台身份与显式项目职责 + 聚焦测试                                                                               |
 | `6bc6d5916`                 | fix(web): AdminPeople 平台身份徽章 + 回归                                                                                      |
 | `a54cd17c9`                 | refactor(web): Review 纯 URL 下沉 + UsersPage 去重桩                                                                           |
-| （紧随本行的清理提交）      | chore: 删除旧版本命名测试文件路径 `apps/api/tests/test_v0_7_6.py`                                                              |
-| `本提交`（doc 35 所在提交） | docs: repository-map、testing 分层、26/27/README/TSV 台账与本文件                                                              |
+| `bfa86247f`                 | docs: repository-map、testing 分层、26/27/README/TSV 台账与本文件                                                              |
+| `ff9fc1b88`                 | chore: 删除旧版本命名测试文件路径 `apps/api/tests/test_v0_7_6.py`                                                              |
+| `本提交`（doc 35 所在提交） | docs: TSV 收口至 1127 行（补录 2 个自产测试）+ 历史死链清理（`--historical-links` 绿）+ 本文件收口更新                         |
 
 `git diff --check` 通过；`node scripts/check-doc-version-prefix.mjs --staged` 无发现；pre-commit（trailing-whitespace / end-of-file / prettier / ruff / ruff-format）通过。
 
@@ -152,6 +159,6 @@ pnpm dev:worktree -- exec --mode test -- sh -c \
 
 - **P5（未动）**：Workbench 收敛及其 `workbench-shell.md` / `video-annotation-workbench.md` 文档；`repository-map.md` 对 Workbench 只描述当前装配路径，最终归属待 P5 交付后在台账对账。
 - **P7（未动）**：`apps/web/e2e/**`、`_test_seed*`、seed 路由测试与浏览器夹具文档；断言/超时失败家族分诊。
-- **P8（未动）**：workflow / planner / 构建变更；交接输入：89 个 not-wired 文件（含 `protocol_v2` 4 个、依赖 `numpy` 仅 mask 编解码用）与 `check_removed_service_modules.mjs --historical-links` 当前为红的 15 条历史死链。
+- **P8（未动）**：workflow / planner / 构建变更；交接输入：89 个 not-wired 文件（含 `protocol_v2` 4 个、依赖 `numpy` 仅 mask 编解码用）。历史死链已在本阶段清理：`check_removed_service_modules.mjs` 默认与 `--historical-links` 模式均 exit 0（[35§7.1]）。
 - **UsersPage 整体 MSW 化**：有据延后（§3.3）。
 - **`test_project_attribute_schema_and_batch_reset.py` 的硬编码 `display_id=T-{i}`**：该文件与 `next_display_id` 的 `T-<seq>` 命名在同一库上互斥，属既有测试脆弱性（P2 验收库当时为空库）；本轮只记录，不夹带改测试语义。

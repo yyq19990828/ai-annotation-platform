@@ -298,6 +298,7 @@ apps/api/tests/test_secondary_inference.py	backend-api	pytest apps/api (pnpm dev
 apps/api/tests/test_secondary_inference_permissions.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
 apps/api/tests/test_security_headers.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
 apps/api/tests/test_seed_assets.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
+apps/api/tests/test_seed_demo_memberships.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
 apps/api/tests/test_seed_large_images.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
 apps/api/tests/test_seed_router.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
 apps/api/tests/test_seed_screenshot_assets.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
@@ -665,6 +666,7 @@ apps/web/src/pages/Register/RegisterPage.cache.test.tsx	frontend-unit	vitest app
 apps/web/src/pages/Register/RegisterPage.test.tsx	frontend-unit	vitest apps/web	none (MSW + Konva DOM stub)	KEEP	pending-review		ci-wired
 apps/web/src/pages/Review/ReviewPage.test.tsx	frontend-unit	vitest apps/web	none (MSW + Konva DOM stub)	KEEP	pending-review		ci-wired
 apps/web/src/pages/Review/ReviewerMiniPanel.test.tsx	frontend-unit	vitest apps/web	none (MSW + Konva DOM stub)	KEEP	pending-review		ci-wired
+apps/web/src/pages/Review/reviewUrlState.test.ts	frontend-unit	vitest (pnpm --filter @anno/web test)	none (pure URL state rules)	KEEP	pending-review		ci-wired
 apps/web/src/pages/Settings/SettingsPage.test.tsx	frontend-unit	vitest apps/web	none (MSW + Konva DOM stub)	KEEP	pending-review		ci-wired
 apps/web/src/pages/Settings/SystemSettingsSection.test.tsx	frontend-unit	vitest apps/web	none (MSW + Konva DOM stub)	KEEP	pending-review		ci-wired
 apps/web/src/pages/Storage/StoragePage.test.tsx	frontend-unit	vitest apps/web	none (MSW + Konva DOM stub)	KEEP	pending-review		ci-wired
