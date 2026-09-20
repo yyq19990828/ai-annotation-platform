@@ -1,4 +1,4 @@
-import type { DataManagerEntityScope, TaskSortItem } from "@/api/taskViews";
+import type { DataManagerEntityScope, ProjectTaskView, TaskSortItem } from "@/api/taskViews";
 import type { UrlStateCodec } from "@/hooks/useUrlFilterState";
 
 export interface UrlStateIssue {
@@ -168,6 +168,60 @@ export function hasFilterUrlOverrides(search: string | URLSearchParams) {
   const params = typeof search === "string" ? new URLSearchParams(search) : search;
   return ["q", "filter", "sort", "columns", "selected_tasks", "layout"].some((key) =>
     params.has(key),
+  );
+}
+
+/**
+ * Stable key for a saved/builtin task view. A saved view is identified by its
+ * id, a builtin one by its key; the two never collide because of the prefix.
+ */
+export function dataManagerViewKey(view: Pick<ProjectTaskView, "id" | "key">): string {
+  return view.id ? `saved:${view.id}` : `builtin:${view.key}`;
+}
+
+/** The task view named by the URL; anything else falls back to the builtin all view. */
+export function requestedDataManagerViewKey(
+  state: Pick<DataManagerUrlState, "lens" | "view">,
+): string {
+  return state.lens === "tasks" && state.view ? state.view : "builtin:all";
+}
+
+/** Find the view whose key the URL requested, or null when it no longer exists. */
+export function findDataManagerView(
+  views: readonly ProjectTaskView[],
+  requestedKey: string,
+): ProjectTaskView | null {
+  return views.find((view) => dataManagerViewKey(view) === requestedKey) ?? null;
+}
+
+/**
+ * The first view a caller should select when the URL names a view that is gone.
+ * Null when the project has no views yet, so callers must keep their requested
+ * key until the list arrives instead of inventing a builtin that may not exist.
+ */
+export function resolveDataManagerViewKey(
+  requestedKey: string,
+  views: readonly ProjectTaskView[],
+): string | null {
+  if (views.some((view) => dataManagerViewKey(view) === requestedKey)) return requestedKey;
+  return views.length ? dataManagerViewKey(views[0]) : null;
+}
+
+/**
+ * Whether per-URL filter overrides (keyword, filter, sort, columns, selection,
+ * layout) outrank a saved view's stored query. The URL only wins for the task
+ * lens and the currently selected view; another view's stale overrides must not
+ * leak into the freshly selected one.
+ */
+export function shouldUseDataManagerUrlOverrides(
+  state: Pick<DataManagerUrlState, "lens" | "view">,
+  search: string | URLSearchParams,
+  selectedKey: string,
+): boolean {
+  return (
+    state.lens === "tasks" &&
+    (!state.view || state.view === selectedKey) &&
+    hasFilterUrlOverrides(search)
   );
 }
 
