@@ -52,7 +52,7 @@
 
 ## 7. 复现确认与修复（本通道最终结果）
 
-**复现 [V]**：在全新自有 e2e 模式（一次性库、共享产物 `253b54a0`、预览配置）上以 `--repeat-each=3 --retries=0` 运行单测用例，**3 次中 1 次失败**（第 3 次，18.2s）；失败时的 error-context DOM 快照**直接证明**机制：`img "表格重试.png"` 确实存在（alt 已正确解析），但位于目标表格行/单元格**之外**——即重试落入「取消并重插」分支后，anchor 缺失导致占位符被追加到文档末尾，而不是留在单元格内。此前单测与整文件运行各 1 次通过，说明该缺陷是**间歇性时序缺陷**（表格单元格 250ms 导出 debounce 与错误/重试时序竞争），而非稳定复现。
+**复现 [V]**：在全新自有 e2e 模式（一次性库、共享产物 `253b54a0`、预览配置）上以 `--repeat-each=3 --retries=0` 运行单测用例，**3 次中 1 次失败**（第 3 次，18.2s）；失败时的 error-context DOM 快照**直接证明**：`img "表格重试.png"` 确实存在（alt 已正确解析），但位于目标表格行/单元格**之外**。当时把该现象归因为「重试落入『取消并重插』分支后 anchor 缺失、占位符被追加到文档末尾」；该归因在 §9 被探针证据推翻（图片在重试之前就已经落在表格之外）。此前单测与整文件运行各 1 次通过，说明该缺陷是**间歇性时序缺陷**，而非稳定复现。
 
 **最小修复 [V]**（仅 `apps/web/src/components/markdown/MarkdownEditor.tsx` 的 `retryUpload`）：在判定「原位重试」之前调用既有的 `flushActiveTableCell()`，先把活动表格单元格的待定 ImageNode 导出/可见化，使重试能命中现有节点并走原位调和路径；不改变任何断言、超时或重试策略，不新增 sleep。该改动只影响重试的归属判定顺序，不改变成功/失败语义。
 
@@ -64,10 +64,23 @@
 
 **边界 [GAP]**：修复后的**预览产物**（preview-artifact）E2E 需针对修正代码**重新构建** e2e 产物后运行；本通道未把旧产物 `253b54a0` 的结果当作修复证据。未改动 skip/retry、未放宽断言、未触碰其他 worker 路径。
 
-## 9. 生产路径修复与最终验证 [V]
+## 9. 生产路径复核：真实根因是「粘贴归属」而非重试判定 [V]
 
-**生产路径根因**：`flushActiveTableCell()` 只依赖「活动编辑器」订阅，在生产构建的时序下无法保证重试时 `pending.editor/nodeKey` 是活体；于是重试落入「取消并重插」分支，且当锚点不可得时把图片追加到表格之外——与 §7 的 DOM 证据一致（dev 下 StrictMode 的额外刷新掩盖了该路径）。
+**复核动机**：§7 的 flush 修复在重现生产预览产物后仍失败 3/3；此后 `f5b5bf049` 记录曾在生产预览 3/3 通过，但其中的「无可用锚点即原位重试」分支被 root 以「无锚点不等于活体节点，可能重传已删除节点」为由拒绝。为确认真实原因，本次在**最终源码上加入临时诊断探针**并针对新构建的预览产物重复运行取证；结论与 §7 / 旧 §9 的假设均不同。
 
-**最终修复**（`retryUpload`，仍仅在 `MarkdownEditor.tsx`）：在决定取消重插之前，若现有 pending 的标记仍能在当前文档中定位，**或该 pending 没有可用锚点**，则复用现有 pending 原位重试，绝不按锚点重新插入。这样图片始终留在原表格单元格内，周围文字保持不变；未改动断言、超时或重试策略。
+**真实根因 [V]**：图片粘贴 / 拖放发生在表格单元格刚获得焦点、但浏览器 `selectionchange` 尚未把「活动编辑器」归属给嵌套单元格的窗口内。MDXEditor 的 PASTE / DROP 处理器注册在「最近一次发布 `SELECTION_CHANGE_COMMAND` 的编辑器」上；此刻它仍是根编辑器，于是 `ImageNode` 被插入根编辑器，直接渲染在表格之外。失败 run 的探针为 `MD_BEGIN_UPLOAD {activeIsCell:false}` → `MD_RECONCILE_OWNER {isCell:false, parentTag:"DIV"}`；通过 run 为 `MD_BEGIN_UPLOAD {activeIsCell:true}` → `MD_RECONCILE_OWNER {isCell:true, parentTag:"TD"}`。也就是说 `retryUpload` 的重试判定一直正确（三组探针均为 `retryInPlace:true`），越界在**粘贴落点**时已经确定；旧 §9 把根因归到重试分支的说法不成立。
 
-**生产构建验证 [V]**：源码状态 `46a0a7867` + 本修复；`pnpm build --mode e2e`（OPENAPI_URL 为当前快照，`BUILD_EXIT=0`），新产物指纹 `94727c15…`、tar sha256 `99dd7541…`（与 `253b54a0`/`8f20a72d` 明确不同）；经 `playwright.preview.e2e.config.ts`、`--retries=0`、`--repeat-each=3` 运行 `markdown-authoring.spec.ts:777`：**3 passed，退出码 0**。历史证据链：初始失败 2/3（旧产物）→ dev 9/9（非验收）→ 生产 3/3 失败（旧修复）→ **生产 3/3 通过（本修复）**。
+**最终修复**（`apps/web/src/components/markdown/MarkdownEditor.tsx`，不再改动其他文件）：
+
+1. 在根容器**捕获阶段**监听 `paste` / `drop`，用 Lexical 的 `getNearestEditorFromDOMNode(event.target)` 找到事件目标真正所属的编辑器；若它是本编辑器内、且尚未成为活动编辑器的嵌套表格单元格，则 `dispatchCommand(SELECTION_CHANGE_COMMAND)`，让 MDXEditor 的 active-editor 订阅在它处理粘贴 / 拖放之前先完成归属。仅 `focus()` 不会对未变更的 range selection 重新派发该命令，这正是归属缺失的原因。
+2. 保留一处最小重试稳健性：当记录的 `editor/nodeKey` 已失效、但当前文档仍含该上传标记时，原位复用现有 pending，而不是按锚点重插。
+
+未新增 sleep、未放宽断言、未改动跳过 / 超时 / 重试策略。
+
+**负向对照 [V]**：临时停用上述 `SELECTION_CHANGE_COMMAND` 归属（仅源码一处改动）后重新构建，新增回归用例 `markdown-authoring.spec.ts:837`（同一任务内 `focus()` + 派发粘贴，强制制造归属竞态）以 `--retries=0 --repeat-each=3` 运行 → **3 failed**；恢复该行后同一用例 → **3 passed**。证明该用例确实覆盖此缺陷。
+
+**生产构建验证 [V]**：最终源码（HEAD `f5b5bf049` + 本次修复）经 `OPENAPI_URL=apps/api/openapi.snapshot.json` 执行 `pnpm build --mode e2e`（`BUILD_EXIT=0`），产物指纹 `f425d402…`、tar sha256 `35cf2671…`（与旧 `8f20a72d…` / `94727c15…` 明确不同；恢复修复后重建指纹可复现为同一 `f425d402…`）；`pnpm openapi:check` 通过（快照与当前路由一致）；经 `playwright.preview.e2e.config.ts`、`--retries=0`、`--repeat-each=3` 运行 `markdown-authoring.spec.ts:777`：**3 passed，退出码 0**；同一产物运行整份 `markdown-authoring.spec.ts`（19 用例）：**19 passed，退出码 0**（含失败保存重试、源码模式重试、撤销 / 取消上传、表格粘贴，以及本次新增的「同一任务内 focus + 粘贴归属」与「删除失败待重试图片后不再重传」用例）。
+
+**负向语义保持 [V]**：新增 `markdown-authoring.spec.ts:889`「删除失败的表格图片后取消重试且不再重传」：`--retries=0 --repeat-each=3` → **3 passed**，确认删除待重试节点的取消路径未被本次修复破坏（未新增 sleep / 超时 / 重试放宽）。
+
+**证据链（保留原始失败，不追认早期通过）**：初始预览 2/3 失败 → dev 9/9（非验收）→ flush 修复生产预览 3/3 失败 → `f5b5bf049` 记录预览 3/3 通过（含已被拒绝的无锚点捷径；本次以相同产物时机重复观察到 1/3~2/3 失败，说明该次通过具有偶然性）→ 本次复核证实粘贴归属竞态 → 修复后生产预览 3/3 通过，且负向对照 3/3 失败。

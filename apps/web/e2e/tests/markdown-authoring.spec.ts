@@ -834,6 +834,109 @@ test.describe("shared Markdown authoring", () => {
     });
   });
 
+  test("a paste that races table-cell activation still lands in the cell", async ({
+    page,
+    request,
+    seed,
+  }) => {
+    const fixture = await prepareGuide(
+      page,
+      request,
+      seed,
+      "| 类别 | 反例 |\n| --- | --- |\n| 车辆 | 前后 |\n",
+    );
+    const editor = await openGuide(page, fixture.project_id);
+    const targetRow = editor.getByRole("row").filter({ hasText: "车辆" });
+    const targetCell = targetRow.locator("td").nth(2).locator('[contenteditable="true"]');
+
+    // Focus and dispatch the paste in the same task: the browser's deferred
+    // selectionchange (which attributes the nested editor) has not run yet.
+    // MDXEditor would otherwise keep the root editor active and insert the
+    // image outside the table.
+    await targetCell.evaluate((element, bytes) => {
+      (element as HTMLElement).focus();
+      const transfer = new DataTransfer();
+      transfer.items.add(new File([new Uint8Array(bytes)], "表格竞态.png", { type: "image/png" }));
+      element.dispatchEvent(
+        new ClipboardEvent("paste", {
+          bubbles: true,
+          cancelable: true,
+          clipboardData: transfer,
+        }),
+      );
+    }, Array.from(PNG));
+
+    await expect(targetCell.getByRole("img", { name: "表格竞态.png" })).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(targetCell).toContainText("前后");
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await expect
+      .poll(async () => (await fixture.read()).annotation_guide)
+      .toContain("guide-asset:");
+    const saved = await fixture.read();
+    expect(saved.annotation_guide).toContain("前后");
+    expect(saved.annotation_guide).toMatch(/\|\s*车辆\s*\|[^\n]*guide-asset:[^)]+[^\n]*\|/);
+    expect(saved.annotation_guide).not.toContain("markdown-upload-pending:");
+    expect(saved.guide_assets).toHaveLength(1);
+
+    await page.reload();
+    await expect(
+      page.getByTestId("markdown-editor").getByRole("img", { name: "表格竞态.png" }),
+    ).toBeVisible({ timeout: 30_000 });
+  });
+
+  test("deleting a failed table-cell image cancels retry without re-uploading", async ({
+    page,
+    request,
+    seed,
+  }) => {
+    const fixture = await prepareGuide(
+      page,
+      request,
+      seed,
+      "| 类别 | 反例 |\n| --- | --- |\n| 车辆 | 前后 |\n",
+    );
+    const editor = await openGuide(page, fixture.project_id);
+    let uploadInitCount = 0;
+    await page.route("**/guide-assets/upload-init", (route) => {
+      uploadInitCount += 1;
+      return route.fulfill({
+        status: 503,
+        contentType: "application/json",
+        body: '{"detail":"test nested upload unavailable"}',
+      });
+    });
+
+    const targetCell = editor
+      .getByRole("row")
+      .filter({ hasText: "车辆" })
+      .locator("td")
+      .nth(2)
+      .locator('[contenteditable="true"]');
+    await targetCell.click();
+    await page.keyboard.press("End");
+    await pasteImage(targetCell, "待删图片.png");
+    const errors = editor.getByTestId("markdown-upload-errors");
+    await expect(errors).toBeVisible();
+    const initsAfterFailure = uploadInitCount;
+
+    // Remove the failed placeholder; the editor must drop the pending upload
+    // rather than keep a retry that could re-upload a deleted node. The paste
+    // leaves the selection immediately after the inserted node.
+    await page.keyboard.press("Backspace");
+    await expect(errors).toHaveCount(0);
+    await expect(targetCell).toContainText("前后");
+
+    await page.waitForTimeout(300);
+    expect(uploadInitCount).toBe(initsAfterFailure);
+    await page.getByRole("button", { name: "保存", exact: true }).click();
+    await expect(page.getByTestId("guide-save-status")).toHaveText("已保存");
+    const saved = await fixture.read();
+    expect(saved.annotation_guide).not.toContain("markdown-upload-pending:");
+    expect(saved.guide_assets).toHaveLength(0);
+  });
+
   test("a 100 KB guide with repeated images stays responsive without repeated signing", async ({
     page,
     request,
