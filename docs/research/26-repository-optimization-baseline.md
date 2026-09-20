@@ -357,7 +357,7 @@ repo-scripts 4 / screenshots-tooling 12 / worktree-runtime 8；
   - 4 个 `apps/api/tests` 测试支撑模块维持 `test-support` / `ci-wired`（随后端 pytest job）；不声称它们是可执行测试，发现侧仍显式排除。
 - **最终分层计数（可加和）**：backend-api 360 / frontend-unit 558 / repo-scripts 7 / test-support 4 / docs-tooling 2 / e2e-browser 67 / frontend-tooling 5 / mask-utils-shared 5 / ml-backend 70 / ml-backend-shared 13 / ml-examples 2 / python-sdk 25 / screenshots-tooling 12 / worktree-runtime 8 = **1138**。
 - **接线状态（静态读取）**：**ci-wired 1123 / script-wired 15 / not-wired 0**。
-- **边界**：`ci-wired` 仍为**静态接线**判定（workflow/命令引用），不是执行证据；各 suite 的实际本地执行证据见 [34]/[37]/[40]，远程 CI 未运行（无 push，如实记录）。`reason` 列的 `pending-review` 是 P0 占位符（未记录逐文件决定），语义与审计见 §14。
+- **边界**：`ci-wired` 仍为**静态接线**判定（workflow/命令引用），不是执行证据；各 suite 的实际本地执行证据见 [34]/[37]/[40]，远程 CI 未运行（无 push，如实记录）。`reason` 列的具名/区域级保守保留口径与历史决定映射见 §14。
 - **决定/理由保留**：既有行的 `decision`（KEEP）与 `reason`（`pending-review` 或具名证据）均未改动；新增行给出具名 P8 理由。
 
 ## 13. P9 补录：mask-slice 生命周期守卫回归文件（2026-09-20）
@@ -376,35 +376,67 @@ repo-scripts 4 / screenshots-tooling 12 / worktree-runtime 8；
 - **口径区分（不把聚焦结果当全量）**：上述 **14 例**是 P9 的**聚焦守卫回归**；P9 相关聚焦结果还包括 `apps/api/tests/test_seed_owned.py` **22 passed**（种子清理竞争修复 [47]，含 3 例新增回归）与 `test_conftest_db_url.py` 13 例（[29]）。它们都**不是**全量后端套件证据：全量后端快照仍是 [40] 的 **4428 collected / 4413 passed / 0 failures / 0 errors / 15 skipped**（`9e34dfafb`），前端全量仍是 [41] 的 **562 文件 / 5626 用例**。本节不声称全量覆盖，也不声称任何性能/耗时/覆盖率收益。
 - **边界**：`ci-wired` 仍为静态接线判定；本节未运行远程 CI，未运行全量后端/前端套件。
 
-## 14. P9/P10 台账复核：`pending-review` 占位符审计（2026-09-20）
+## 14. P9/P10 台账复核：reason 列口径与历史决定映射（2026-09-20）
 
-> 本节回答“TSV 中大量 `reason='pending-review'` 是刻意保留的 P0 占位符，还是过期的最终理由”，并统一该列的口径。属台账准备复核；不关闭计划 §10 复选框，不声称 P9/P10 完成。
+> 本节回答“TSV 中大量 `reason='pending-review'` 是刻意保留的 P0 占位符，还是过期的最终理由”，并把保留理由落到真实区域报告。属文档准备收尾（协调方已授权）；不关闭计划 §10 复选框，不声称 P9/P10 完成，UI/最终 E2E 验收仍开放。
 
-### 14.1 结论
+### 14.1 结论与处置
 
-1. 这些行是**刻意的 P0 基线占位符**，不是过期的逐文件结论。依据 [26§3]：P0 对全部行一律 `decision=KEEP` + `reason=pending-review`；`reason` 列从未做过全量逐文件回填。
-2. 已接受的 P1–P8/P10 报告提供的是**区域/约束级**复核与少数**具名文件**的决定，不是 1,124 行的逐文件语义复核；把绿色套件当作“无重复/已逐文件复核”的证据不成立。
-3. 该列的**一致口径**：`decision` 为处置（当前全部 `KEEP`）；`reason` 为已记录的理由，或 P0 占位符 `pending-review`（含义：**未记录逐文件决定**；`KEEP` 表示**在既定去重范围之外保留现有契约**）；`status` 为静态接线状态。TSV 的“收口”指**路径集合/分层计数/接线状态**的确定性，不含逐文件理由。
+1. 审计发现这些行是**刻意的 P0 基线占位符**（[26§3]：P0 对全部行一律 `decision=KEEP` + `reason=pending-review`），不是过期的逐文件结论。
+2. 本轮已为**当前清单**补齐保留理由并**移除 `pending-review`**：
+   - **34 行具名理由**：由已接受报告明确点名的文件，引用具体阶段/证据（如 `test_managed_pool_concurrency.py` 下沉后唯一副本 [34]、`test_seed_owned.py` [31]/[44]/[47]、P5/P8 新增回归等）。
+   - **1,105 行区域级保守保留理由**：按层次绑定真实域报告，统一表述为“在 <域报告> 范围内，本轮未确立有证据的等价替代或安全删除，保留既有回归覆盖；此为区域级保守保留，**非唯一性结论或逐文件语义审计**”。
+3. 列口径：`decision` 为处置；`reason` 为具名理由或上述区域级保守保留理由；`status` 为静态接线状态。不使用含糊的“reviewed”，当前清单**不再出现 `pending-review`**。
 
-### 14.2 本次审计的数量与证据映射
+### 14.2 区域级保守保留映射（逐层 → 真实报告）
 
-- 审计前：`pending-review` **1,124** 行（frontend-unit 552、backend-api 359、其余层次 213）。
-- 本次据已接受报告为**具名文件**补记理由：**19** 行，使 `pending-review` 降至 **1,105**，具名理由行 34（含既有 15）。
-- **区域级证据映射（用于解释 KEEP，不冒充逐文件复核）**：
+| 层次（本轮转换行数）      | `reason` 绑定的区域报告                                      |
+| ------------------------- | ------------------------------------------------------------ |
+| backend-api（354）        | P1/P2/P4 后端复核与 P10 后端验收 [28]/[29]/[32]/[40]         |
+| frontend-unit（550）      | P3 前端测试边界、P5 工作台收敛与 P10 前端验收 [30]/[33]/[41] |
+| e2e-browser（61）         | P7 E2E 隔离与 P9 影子验证 [31]/[43]                          |
+| ml-backend（69）          | P6 ML 运行时复核 [34]/[35]                                   |
+| ml-backend-shared（12）   | P6 ML 共享内核复核 [34]/[35]                                 |
+| mask-utils-shared（5）    | P6 共享 mask 工具复核 [35]                                   |
+| python-sdk（25）          | P10 SDK 验收 [40]                                            |
+| ml-examples（2）          | P10 ML 示例验收 [40]                                         |
+| repo-scripts（2）         | P0 台账与 P8 脚本/迁移验证接线 [26]/[36]/[37]/[39]           |
+| worktree-runtime（7）     | P0 台账与 P6 工作树运行时 [26]/[35]                          |
+| frontend-tooling（4）     | P3 前端工具与 P8 构建接线 [30]/[36]                          |
+| docs-tooling（2）         | P0 台账与 P6 文档工具 [26]/[35]                              |
+| screenshots-tooling（12） | P1 截图域与 P6 文档媒体 [28]/[35]                            |
 
-| 层次（`pending-review` 行数）                                                                                 | 已接受报告（区域级依据）                                |
-| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
-| backend-api（359）                                                                                            | P1 [28]、P2 [29]、P4 [32]、迁移 [39]、P10 后端验收 [40] |
-| frontend-unit（552）                                                                                          | P3 [30]、P5 [33]、P10 前端验收 [41]                     |
-| e2e-browser（67）                                                                                             | P7 [31]、P9 [43]/[46]/[47]、点云消费方 [44]             |
-| ml-backend（70）/ ml-backend-shared（13）/ mask-utils-shared（5）                                             | P6 [34]/[35]、P10 ML 验收 [40]                          |
-| python-sdk（25）/ ml-examples（2）                                                                            | P10 SDK/ML 验收 [40]                                    |
-| repo-scripts（4）/ worktree-runtime（8）/ frontend-tooling（5）/ docs-tooling（2）/ screenshots-tooling（12） | P0 [26]、P6 [35]、P8 [36]/[37]/[39]                     |
+合计 354+550+61+69+12+5+25+2+2+7+4+2+12 = **1,105**。
 
-- 19 行具名补记的来源（示例，完整理由见 TSV）：`test_managed_pool_concurrency.py`（[34] 下沉后唯一副本）、`test_seed_owned.py`（[31]/[44]/[47]）、`test_screenshot_seed_catalog.py`（[28]/[35]）、`manager`/Workbench 前端回归（[30]/[31]）、P8 脚本测试（[36]/[37]）、P9 e2e 消费方（[43]/[44]/[47]）。
+### 14.3 当前清单 ≠ 历史决定（更正）
 
-### 14.3 明示的未收口项（不隐藏）
+- 当前清单 1,139 行 `decision` 全为 `KEEP`，只说明**当前文件**没有删除决定，**不能**据此推断历史上没有 `DELETE`/`MERGE`/`MOVE_DOWN`/`REWRITE`。历史决定记录在各阶段报告与计划 §5.4，不体现为当前行。
+- 计划 §5.1 要求 `DELETE`/`MERGE` 决定的理由；对**历史**此类决定，其理由/替代落在对应阶段报告（见 §14.4），当前清单不复制它们。
 
-- 计划 §5.1 的 `删除/合并理由` 只对 `DELETE`/`MERGE` 决定强制；本清单 `decision` 全为 `KEEP`，**不存在**欠理由的删除/合并。
-- 计划 §10「保留项有理由」对这些行目前是**区域/阶段级**满足，**不是**逐文件语义理由；其余 1,105 行的逐文件 KEEP 理由仍未记录。若 P10 将 §10 严格解读为逐行理由，则该项**未完成**——本审计如实标记，交由 P10 决定是接受区域级口径还是补记。
-- 本审计未运行任何测试；“无重复规则”的结论只来自各阶段报告中**明确的合并/删除动作**，不来自绿色套件。
+### 14.4 历史具名变更 → 既有证据映射
+
+`9cec9751a..HEAD` 实测的**测试文件级**变更（只读 `git diff`）：
+
+| 变更                                                                                                                               | 决定                   | 理由/替代（既有报告）                                   |
+| ---------------------------------------------------------------------------------------------------------------------------------- | ---------------------- | ------------------------------------------------------- |
+| `apps/sam3-backend/tests/test_managed_pool_concurrency.py` → `apps/_shared/backend_runtime/tests/test_managed_pool_concurrency.py` | MOVE_DOWN（R099）      | 两份逐字节副本下沉共享包，保留唯一副本并做负向变异 [34] |
+| `apps/grounded-sam2-backend/tests/test_managed_pool_concurrency.py`                                                                | DELETE                 | 与上一行同源，合并为共享唯一副本 [34]                   |
+| `apps/api/tests/test_v0_7_6.py` → `apps/api/tests/test_project_attribute_schema_and_batch_reset.py`                                | REWRITE/重命名（R094） | 内容改用现行 fixture/模型，删除版本叙事 [35]            |
+
+报告记录的其它具名合并/删除（不体现为当前行）：
+
+| 变更                                                                                              | 决定                  | 证据                                                                     |
+| ------------------------------------------------------------------------------------------------- | --------------------- | ------------------------------------------------------------------------ |
+| 测试专用 ORM shim `_install_legacy_class_kwargs_shim()`、`httpx_client_bound` 别名                | DELETE                | 43 处旧 kwargs 迁 `tool_bindings`、70 文件归一后删除 [29]                |
+| `apps/web/src/pages/Projects/ProjectDataManagerPage.flow.test.tsx`                                | REWRITE/MOVE_DOWN     | 纯 URL 规则下沉；页面流程保留代表性进入/切换/恢复/拒绝 [30]（计划 §5.4） |
+| `apps/web/e2e/helpers/video-request-errors.ts`                                                    | MERGE                 | 取消判定集中一处，HTTP/写入失败仍明确失败 [31]（计划 §5.4）              |
+| `apps/web/e2e/tests/mask-advanced-operations.spec.ts`                                             | MOVE_DOWN + 核心 KEEP | 算法/组合下沉，真实编辑→提交→刷新链路保留 [31]（计划 §5.4）              |
+| `apps/web/scripts/video-request-errors.test.ts`                                                   | KEEP/扩展             | 允许与禁止双侧边界 [31]（计划 §5.4）                                     |
+| Workbench `…helpers.ts`/装配 model 与死导出                                                       | 收敛/删除             | P5 纯策略下沉与收敛 [33]                                                 |
+| P8 新增 `audit-e2e-requirements.test.mjs`、`summarize-e2e-results.test.mjs`，89 个 not-wired 接线 | 新增/接线             | [36]/[37]                                                                |
+
+### 14.5 未收口边界
+
+- 计划 §10「保留项有理由」现以**区域级**证据满足并明示其保守性质；不构成逐文件语义审计，也不做唯一性结论。
+- 实际 UI/最终 E2E 验收仍开放（P9 未收口；最终候选失败 suite 关闭与他处 UI/Markdown 修复合并后进行）。
+- `ci-wired` 仍为静态接线判定；本节未运行测试；“无重复规则”的结论只来自各阶段报告**明确的合并/删除动作**。
