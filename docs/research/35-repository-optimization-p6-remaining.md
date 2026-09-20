@@ -10,7 +10,7 @@
 
 1. **seed 缺陷修复 [V]**：`apps/api/scripts/seed.py` 的开发账号从已废弃的平台 `annotator` / `reviewer` 改为 `employee`（`viewer` 保持只读），并新增幂等的显式项目成员职责；`seed_scale.py` 改经 `project_members` 解析标注员并为其压测项目写职责；截图种子 persona 键不变、平台角色同步为 `employee`。在一次性 `aap_wt_*_test` 库上完成播种 / 复跑 / 访问解析实测。
 2. **AdminPeople 徽章修复 [V]**：卡片徽章改为按平台身份呈现（含中文标签），删除「平台角色 === `annotator`」这一恒为假的比较；行为以组件测试固定。
-3. **ReviewPage 纯 URL 规则下沉 [V]**：新增 `reviewUrlState.ts`（读取 / 比较作用域、选批次、清 assignee、回概览、开合任务抽屉），页面只保留装配；保留 P3 已论证的异步迟到响应 mock 边界。UsersPage 去掉重复的 `ApiError` 假类；其 MSW 化为**有据延后**（§3.3）。
+3. **ReviewPage 纯 URL 规则下沉 [V]**：新增 `reviewUrlState.ts`（读取 / 比较作用域、选批次、清 assignee、回概览、开合任务抽屉），页面只保留装配；保留 P3 已论证的异步迟到响应 mock 边界。UsersPage 去掉重复的 `ApiError` 假类；其整体 MSW 化已在后续 P6 子任务完成（§3.2）。
 4. **provenance 清理 [V]**：`gpu_arbitration/ledger` 6 处「Extracted verbatim from legacy …」叙事删除，`check_removed_service_modules.mjs` 的 5 项 `PROVENANCE_FILES` 白名单同步删除（扫描器保持绿）；该扫描器 allowlist 里不存在的根路径改为真实路径 `apps/api/scripts/check_removed_service_modules.py`。SDK / scripts / config / instruction 的版本叙事按「当前契约保留、历史叙事删除」清理。
 5. **两条 P4 复核候选均为有据 KEEP [V]**：通知「列表 vs 投递」谓词差异被请求期认证挡住（停用账号无法到达列表路径）；`mask_repair_rollback` 的信号取消不回填领域行是有意契约。均未改语义。
 6. **测试清单缺口修复 [V]**：TSV 从 1042 行补录到 **1128** 行（ML backend 70 + 共享 5 + P1/P3/P4 新增 4 + 截图 spec 4 + 本阶段自产测试 2），并在最终提交 HEAD 上以双向比对证明无残余缺口；`protocol_v2`（163 passed）与`mask_utils`（41 passed）的 CPU 实测补齐。
@@ -70,14 +70,15 @@ pnpm dev:worktree -- exec --mode test -- sh -c \
 - `reviewUrlState.test.ts` 7 个用例覆盖：读取容错、作用域键五维变化、选批次保留 assignee 与无关参数、清 assignee/概览、抽屉开合。
 - **保留** P3 已论证的异步守卫 mock 边界（`queueScopeKeyRef` / `checkedIdsKeyRef` 快照复查）：那是页面自有编排规则，hook mock 是正确层级。`Review` 目录 34 用例全绿。
 
-### 3.2 UsersPage（本轮完成的部分）
+### 3.2 UsersPage 整体 MSW 化（已完成）
 
-- 删除 `@/api/users` mock 中的第二个 `ApiError` 假类（页面只从 `@/api/client` 导入），保留导出请求塑形、弹窗 / 权限 / 错误契约用例；`Users` 目录 25 用例全绿。
-- 页面级 URL 用例（防抖恢复、浏览器前进/后退、历史分条）经逐条比对**不是** `usersUrlState.test.ts` 已覆盖的纯规则重复，而是页面集成契约，因此保留（修正 preaudit「页面 URL 断言重复纯覆盖」的判断）。
+- 移除 `@/hooks/useUsers`、`@/hooks/useProjects`、`@/hooks/useGroups`、`@/hooks/usePermissions`、`@/stores/authStore`、`@/api/users`、`@/api/client` 七处耦合假桩（含在假 hook 内按 role/search 过滤用户的 `useUserPage`）；页面改跑真实 query hooks / 权限表 / auth store，数据经 MSW 在 HTTP 边界描述（新增 `src/test/usersApi.ts`：`/users/query`、`/users/stats`、`/users`、`DELETE /users/:id`、`/users/:id/admin-reset-password`、`/users/export`、`/projects`、`/groups`），每个用例使用独立 QueryClient / MemoryRouter / 播种 auth。
+- 保留（有据 KEEP）：7 个重弹窗组件的窄替身——保护的是页面路由/装配契约，弹窗各自有专测；`@/components/ui/Toast` 的 `push` 窄探针——真实 store 委托 sonner 且不持有列表，这是页面 toast 契约的可观察面。
+- 契约映射（全部实测）：防抖恢复 + 浏览器前进/后退 + 历史分条（真实 URL→请求）；项目/角色/状态/搜索请求塑形（`/users/query`、`/users/stats` 同参）；分页（page/page_size）；导出（`/users/export?format=csv&…`）；确认删除（真实 `DELETE` + 成功 toast）；403 无权限文案（真实 `ApiError.status` 映射）；已停用账号的继续交接/恢复入口；project_admin 可操作范围与超管只读；跨项目 `is_lifecycle_managed=false` 隐藏生命周期写入口；离线暂停两态（`onlineManager`）。
+- 结果：`Users` 目录 27 用例（UsersPage 22 + usersUrlState 5）全绿；`tsc --noEmit`、改动文件 eslint 通过；未发现产品缺陷（无需产品改动）。防抖边界用「先让真实初始查询落地，再窄开假时钟 249ms/1ms，随后恢复真实时钟」的方式复现，避免假时钟冻结 MSW 网络调度。
 
 ### 3.3 明确延后（有据，非静默）
 
-- **UsersPage 整体 MSW 化**：需要新建 `users` / `users/stats` / `projects` / `groups` / `permissions` 的 MSW 夹具面（现只有 data-manager 样板），并重排 20+ 用例的等待与断言；本轮已消除其中确定无争议的重复桩，其余改动在剩余窗口内无法达到「保留契约且不放宽断言」的标准，归属后续 P6/P3 样板推广，不在台账里记为完成。
 - **Dashboard / ProjectDetailPanel / Datasets / Annotate**：KEEP。P3 [30§2.1] 已逐文件记录「各自 mock 是不同关注点的明确契约，未替换整页 query+权限+store 栈」，preaudit §5.4 复核同结论（12/11/7/7 个 mock，各有归属），无新证据推翻。
 
 ## 4. provenance 与守护脚本
@@ -163,5 +164,5 @@ pnpm dev:worktree -- exec --mode test -- sh -c \
 - **P5（未动）**：Workbench 收敛及其 `workbench-shell.md` / `video-annotation-workbench.md` 文档；`repository-map.md` 对 Workbench 只描述当前装配路径，最终归属待 P5 交付后在台账对账。
 - **P7（已接受并 rebase）**：P6 分支已 rebase 到 P7 root `b8b45797e`，双方改动无冲突；P7 的 `_test_seed*`、`apps/web/e2e/**` 与新增 `test_seed_owned.py` 保持 P7 语义，P6 未改其文件（仅把 `test_seed_owned.py` 回填进共享测试清单）。
 - **P8（未动）**：workflow / planner / 构建变更；交接输入：89 个 not-wired 文件（含 `protocol_v2` 4 个、依赖 `numpy` 仅 mask 编解码用）。历史死链已在本阶段清理：`check_removed_service_modules.mjs` 默认与 `--historical-links` 模式均 exit 0（[35§7.1]）。
-- **UsersPage 整体 MSW 化**：有据延后（§3.3）。
+- **UsersPage 整体 MSW 化**：已完成（§3.2）。
 - **`test_project_attribute_schema_and_batch_reset.py` 的硬编码 `display_id=T-{i}`**：该文件与 `next_display_id` 的 `T-<seq>` 命名在同一库上互斥，属既有测试脆弱性（P2 验收库当时为空库）；本轮只记录，不夹带改测试语义。
