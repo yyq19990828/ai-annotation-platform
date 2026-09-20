@@ -63,3 +63,11 @@
 - `MarkdownEditor.test.tsx` 7 passed；`tsc --noEmit` 干净。
 
 **边界 [GAP]**：修复后的**预览产物**（preview-artifact）E2E 需针对修正代码**重新构建** e2e 产物后运行；本通道未把旧产物 `253b54a0` 的结果当作修复证据。未改动 skip/retry、未放宽断言、未触碰其他 worker 路径。
+
+## 9. 生产路径修复与最终验证 [V]
+
+**生产路径根因**：`flushActiveTableCell()` 只依赖「活动编辑器」订阅，在生产构建的时序下无法保证重试时 `pending.editor/nodeKey` 是活体；于是重试落入「取消并重插」分支，且当锚点不可得时把图片追加到表格之外——与 §7 的 DOM 证据一致（dev 下 StrictMode 的额外刷新掩盖了该路径）。
+
+**最终修复**（`retryUpload`，仍仅在 `MarkdownEditor.tsx`）：在决定取消重插之前，若现有 pending 的标记仍能在当前文档中定位，**或该 pending 没有可用锚点**，则复用现有 pending 原位重试，绝不按锚点重新插入。这样图片始终留在原表格单元格内，周围文字保持不变；未改动断言、超时或重试策略。
+
+**生产构建验证 [V]**：源码状态 `46a0a7867` + 本修复；`pnpm build --mode e2e`（OPENAPI_URL 为当前快照，`BUILD_EXIT=0`），新产物指纹 `94727c15…`、tar sha256 `99dd7541…`（与 `253b54a0`/`8f20a72d` 明确不同）；经 `playwright.preview.e2e.config.ts`、`--retries=0`、`--repeat-each=3` 运行 `markdown-authoring.spec.ts:777`：**3 passed，退出码 0**。历史证据链：初始失败 2/3（旧产物）→ dev 9/9（非验收）→ 生产 3/3 失败（旧修复）→ **生产 3/3 通过（本修复）**。

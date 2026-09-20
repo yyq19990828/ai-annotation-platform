@@ -985,6 +985,17 @@ function MarkdownEditorDocument({
         });
       }
 
+      // Reuse the existing pending upload whenever its marker can be located
+      // in the live document, even if the recorded editor/nodeKey went stale
+      // (nested table cells can be recreated). Re-inserting by anchor instead
+      // would append the image outside the table when the cell's export has
+      // not landed yet, so a missing anchor must retry the existing node
+      // rather than relocate the image.
+      if (existing && !retryInPlace) {
+        const current = currentEditorMarkdown();
+        if (pendingImageBounds(current, existing.source) || !existing.anchor) retryInPlace = true;
+      }
+
       if (existing && retryInPlace) {
         existing.error = undefined;
         existing.result = undefined;
