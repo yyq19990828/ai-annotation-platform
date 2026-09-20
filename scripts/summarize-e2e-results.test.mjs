@@ -1,66 +1,93 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { buildSummary, main } from "./summarize-e2e-results.mjs";
 
-const report = {
-  stats: { expected: 9, unexpected: 1, flaky: 1, skipped: 2, duration: 42_000 },
-  errors: [{ message: "page error" }],
-  suites: [
-    {
-      specs: [],
-      suites: [
-        {
-          specs: [
-            {
-              tests: [
-                { ok: true, expectedStatus: "passed", results: [{ status: "passed" }] },
-                {
-                  ok: true,
-                  expectedStatus: "passed",
-                  results: [{ status: "failed" }, { status: "passed" }],
-                },
-                { ok: false, expectedStatus: "passed", results: [{ status: "timedOut" }] },
-                { ok: false, expectedStatus: "passed", results: [{ status: "interrupted" }] },
-                { ok: false, expectedStatus: "passed", results: [] },
-              ],
-            },
-          ],
-          suites: [
-            {
-              specs: [
-                {
-                  tests: [
-                    { ok: true, expectedStatus: "skipped", results: [{ status: "skipped" }] },
-                    { ok: true, expectedStatus: "passed", results: [{ status: "passed" }] },
-                  ],
-                },
-              ],
-              suites: [],
-            },
-          ],
-        },
-      ],
-    },
-  ],
-};
+// Fixtures are REAL Playwright JSON reports (locked 1.59.1 contract), generated
+// from tiny controlled runs: scripts/fixtures/e2e-summary/*.json. See the
+// generation commands in docs/research/36 §3.
+const fixtureDir = new URL("./fixtures/e2e-summary/", import.meta.url);
+const loadFixture = (name) => JSON.parse(readFileSync(new URL(`${name}.json`, fixtureDir), "utf8"));
 
-test("summary classifies first-attempt, retry, timeout, interruption and not-run", () => {
-  const { text, requiredMissing } = buildSummary({
+test("passed fixture: one first-attempt pass, no retries or failures", () => {
+  const { text } = buildSummary({
+    suite: "smoke",
+    outcome: "success",
+    report: loadFixture("passed"),
+  });
+  assert.match(text, /\| 1 \| 0 \| 0 \| 0 \| 0 \|/);
+  assert.match(text, /First-attempt passed \| Retry-then-passed/);
+  assert.doesNotMatch(text, /First failure:/);
+});
+
+test("failed fixture: unexpected status, timeout-free failure and a recorded first failure with id and reason", () => {
+  const { text } = buildSummary({
     suite: "default-one",
     outcome: "failure",
-    report,
-    prepSeconds: 210,
-    runSeconds: 95,
+    report: loadFixture("failed"),
   });
-  assert.equal(requiredMissing, false);
-  assert.match(text, /\| 9 \| 1 \| 1 \| 2 \| 1 \| 42\.0s |/);
+  assert.match(text, /\| 0 \| 1 \| 0 \| 0 \|/);
   assert.match(
     text,
-    /First-attempt passed \| Retry-then-passed \| Timed out \| Interrupted \| Not run /,
+    /First failure: failed\.spec\.ts › fails with a stable reason \(project chromium, attempt 1\)/,
   );
-  assert.match(text, /\| 2 \| 1 \| 1 \| 1 \| 1 |$/m);
-  assert.match(text, /Prep: 210s · Execution: 95s/);
+  assert.match(text, /Object\.is equality/);
+});
+
+test("flaky fixture: retry-then-passed is counted separately from first-attempt", () => {
+  const { text } = buildSummary({
+    suite: "smoke",
+    outcome: "success",
+    report: loadFixture("flaky"),
+  });
+  assert.match(text, /First-attempt passed \| Retry-then-passed/);
+  assert.match(text, /\| 0 \| 1 \|/);
+});
+
+test("expected-failure fixture counts as expected, not as a failure", () => {
+  const { text } = buildSummary({
+    suite: "smoke",
+    outcome: "success",
+    report: loadFixture("expected-failure"),
+  });
+  assert.match(text, /\| 1 \| 0 \| 0 \| 0 \|/);
+});
+
+test("skipped fixture is intentional (executed skip result), not not-run", () => {
+  const { text } = buildSummary({
+    suite: "smoke",
+    outcome: "success",
+    report: loadFixture("skipped"),
+  });
+  assert.match(text, /\| 0 \| 0 \| 0 \| 1 \|/);
+  assert.match(text, /\| 0 \| 0 \| 0 \| 0 \| 1 \| 0 \|/);
+});
+
+test("max-failures fixture keeps per-test accounting without fabricating not-run entries", () => {
+  // Real 1.59 runs with --max-failures still execute and report the queued
+  // test (worker already started), so notRun stays 0 and the interruption is
+  // attributed by status; missing suites are covered by the audit instead.
+  const { text } = buildSummary({
+    suite: "default-one",
+    outcome: "failure",
+    report: loadFixture("maxfailures"),
+  });
+  assert.match(text, /\| 1 \| 1 \|/);
+  assert.match(text, /Not run \|/);
+});
+
+test("timing rows render prep/execution/build seconds when supplied", () => {
+  const { text } = buildSummary({
+    suite: "smoke",
+    outcome: "success",
+    report: loadFixture("passed"),
+    prepSeconds: "210",
+    runSeconds: "95",
+    buildSeconds: "77",
+  });
+  assert.match(text, /Prep: 210s · Execution: 95s · Build: 77s/);
 });
 
 test("a missing report with a success outcome fails closed", () => {
@@ -101,7 +128,6 @@ test("a missing report with a failed outcome is reported without failing the ste
     },
   );
   assert.equal(code, 0);
-  assert.ok(stderr.join("").length === 0);
 });
 
 test("usage error exits 2", () => {

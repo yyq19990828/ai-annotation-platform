@@ -17,46 +17,87 @@
 
 import { appendFileSync, existsSync, readFileSync } from "node:fs";
 
-function attemptStats(report) {
+// Classification contract (locked Playwright 1.59 JSON report,
+// playwright/types/testReporter.d.ts): JSONReportTest.status is
+// 'skipped' | 'expected' | 'unexpected' | 'flaky' and JSONReportSpec carries
+// `ok` — JSONReportTest has NO `ok`. Results carry TestStatus
+// 'passed' | 'failed' | 'timedout' | 'skipped' | 'interrupted' (lowercase).
+// Verified against real generated runs: scripts/fixtures/e2e-summary/*.json.
+function summarizeTests(report) {
   let firstAttemptPassed = 0;
   let retriedPassed = 0;
   let failed = 0;
   let timeout = 0;
   let interrupted = 0;
+  let intentionalSkipped = 0;
   let notRun = 0;
-  let skipped = 0;
+  let firstFailure = null;
 
   const visit = (suite) => {
     for (const spec of suite.specs ?? []) {
       for (const test of spec.tests ?? []) {
-        const results = test.results ?? [];
-        const statuses = results.map((result) => result.status);
-        const last = statuses[statuses.length - 1];
-        if (last === "skipped") {
-          skipped += 1;
+        const attempts = test.results ?? [];
+        const last = attempts[attempts.length - 1];
+        // An intentional skip executes a skipped result; a test the runner
+        // never attempted has an empty results array.
+        if (test.status === "skipped" && attempts.some((result) => result.status === "skipped")) {
+          intentionalSkipped += 1;
           continue;
         }
-        if (test.ok) {
-          if (statuses.filter((status) => status !== "skipped").length > 1) retriedPassed += 1;
-          else firstAttemptPassed += 1;
-        } else {
-          failed += 1;
-          if (last === "timedOut") timeout += 1;
-          if (last === "interrupted") interrupted += 1;
+        if (attempts.length === 0) {
+          notRun += 1;
+          continue;
         }
-        // Expected-but-never-attempted leaves (maxFailures early stop).
-        notRun +=
-          Math.max(0, (test.expectedStatus === "passed" ? 1 : 0) * 0) +
-          (results.length === 0 && !test.ok ? 1 : 0);
+        switch (test.status) {
+          case "expected":
+            firstAttemptPassed += 1;
+            break;
+          case "flaky":
+            retriedPassed += 1;
+            break;
+          case "unexpected": {
+            failed += 1;
+            const lastStatus = last?.status;
+            if (lastStatus === "timedout") timeout += 1;
+            if (lastStatus === "interrupted") interrupted += 1;
+            if (!firstFailure)
+              firstFailure = {
+                file: spec.file,
+                title: spec.title,
+                projectId: test.projectId,
+                reason:
+                  (last?.error?.message ?? "")
+                    .replace(/\x1b\[[0-9;]*m/g, "")
+                    .split("\n")
+                    .find((line) => line.trim())
+                    ?.trim() ??
+                  last?.status ??
+                  "unknown",
+                retry: last?.retry ?? 0,
+              };
+            break;
+          }
+          default:
+            break;
+        }
       }
     }
     for (const child of suite.suites ?? []) visit(child);
   };
   for (const suite of report.suites ?? []) visit(suite);
-  return { firstAttemptPassed, retriedPassed, failed, timeout, interrupted, skipped, notRun };
+  return {
+    firstAttemptPassed,
+    retriedPassed,
+    failed,
+    timeout,
+    interrupted,
+    intentionalSkipped,
+    notRun,
+    firstFailure,
+  };
 }
 
-export function buildSummary({ suite, outcome, report, prepSeconds, runSeconds }) {
+export function buildSummary({ suite, outcome, report, prepSeconds, runSeconds, buildSeconds }) {
   const heading = `### ${suite}\n\nOutcome: ${outcome}\n\n`;
   if (!report) {
     return {
@@ -67,18 +108,37 @@ export function buildSummary({ suite, outcome, report, prepSeconds, runSeconds }
     };
   }
   const { stats, errors } = report;
-  const attempts = attemptStats(report);
+  const attempts = summarizeTests(report);
   const duration = (stats.duration / 1000).toFixed(1);
   const timing =
     prepSeconds !== undefined && runSeconds !== undefined
-      ? `\nPrep: ${Number(prepSeconds).toFixed(0)}s · Execution: ${Number(runSeconds).toFixed(0)}s\n`
+      ? `\nPrep: ${Number(prepSeconds).toFixed(0)}s · Execution: ${Number(runSeconds).toFixed(0)}s${buildSeconds !== undefined ? ` · Build: ${Number(buildSeconds).toFixed(0)}s` : ""}\n`
       : "";
+  const firstFailureLine = attempts.firstFailure
+    ? `\nFirst failure: ${attempts.firstFailure.file} › ${attempts.firstFailure.title} (project ${attempts.firstFailure.projectId}, attempt ${attempts.firstFailure.retry}) — ${attempts.firstFailure.reason}\n`
+    : "";
   const text =
     heading +
     `| Passed | Failed | Flaky | Skipped | Global errors | Duration |\n| --- | --- | --- | --- | --- | --- |\n| ${stats.expected} | ${stats.unexpected} | ${stats.flaky} | ${stats.skipped} | ${errors.length} | ${duration} |\n` +
-    `| First-attempt passed | Retry-then-passed | Timed out | Interrupted | Not run |\n| --- | --- | --- | --- | --- |\n| ${attempts.firstAttemptPassed} | ${attempts.retriedPassed} | ${attempts.timeout} | ${attempts.interrupted} | ${attempts.notRun} |\n` +
+    `| First-attempt passed | Retry-then-passed | Timed out | Interrupted | Intentionally skipped | Not run |\n| --- | --- | --- | --- | --- | --- |\n| ${attempts.firstAttemptPassed} | ${attempts.retriedPassed} | ${attempts.timeout} | ${attempts.interrupted} | ${attempts.intentionalSkipped} | ${attempts.notRun} |\n` +
+    firstFailureLine +
     timing;
-  return { text, requiredMissing: false };
+  return {
+    text,
+    requiredMissing: false,
+    status: {
+      suite,
+      outcome,
+      attempts,
+      stats: {
+        expected: stats.expected,
+        unexpected: stats.unexpected,
+        flaky: stats.flaky,
+        skipped: stats.skipped,
+      },
+      firstFailure: attempts.firstFailure ?? null,
+    },
+  };
 }
 
 export function main(argv, env, io) {
@@ -88,14 +148,18 @@ export function main(argv, env, io) {
     return 2;
   }
   const reportPath = argv[2] ?? "apps/web/e2e-results.json";
+  const statusOut = env.E2E_STATUS_OUT;
   const report = existsSync(reportPath) ? JSON.parse(io.readFileSync(reportPath, "utf8")) : null;
-  const { text, requiredMissing } = buildSummary({
+  const { text, requiredMissing, status } = buildSummary({
     suite,
     outcome,
     report,
     prepSeconds: env.E2E_PREP_SECONDS,
     runSeconds: env.E2E_RUN_SECONDS,
+    buildSeconds: env.E2E_BUILD_SECONDS,
   });
+  if (statusOut && status)
+    io.writeFileSync(statusOut, JSON.stringify({ suite, outcome, ...status }, null, 1));
   if (io.summaryPath) io.appendFileSync(io.summaryPath, text);
   else io.stdout.write(text);
   // Fail-closed: a planned suite that claims success without a report must
@@ -114,6 +178,7 @@ export function cli() {
     appendFileSync,
     readFileSync,
     existsSync,
+    writeFileSync: (...args) => import("node:fs").then((fs) => fs.writeFileSync(...args)),
     summaryPath: process.env.GITHUB_STEP_SUMMARY,
   };
   return main(process.argv.slice(2), process.env, io);

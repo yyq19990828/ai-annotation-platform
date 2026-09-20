@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync, writeFileSync, mkdirSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync, mkdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -28,6 +28,17 @@ test("every PR retains all four functional shards and three Mask suites", () => 
 
 const core = ["default-one", "default-two", "default-three", "default-four"];
 const specialties = ["mask-readonly", "mask-native", "mask-ai-native"];
+// Broadened §6.3 selection: smoke + full shards + every dedicated contract +
+// extended, because the default shards never execute dedicated matrices.
+const broadened = [
+  "smoke",
+  ...core,
+  ...specialties,
+  "video-pipeline",
+  "pointcloud",
+  "visual",
+  "layout-stress",
+];
 
 test("runtime, dependencies and the routing mechanism select both extended checks", () => {
   for (const path of [
@@ -91,20 +102,24 @@ test("executable docs examples and docs build config are app code, not docs-only
   ]) {
     const shadow = shadowPlan("pull_request", [path]);
     assert.equal(shadow.classification.docsOnly, false, path);
-    // §6 shadow: app-code changes run the bounded smoke plus triggered
-    // specialties; whole functional shards belong to the full scope.
-    assert.deepEqual(shadow.planned, ["smoke"], path);
+    // Executable content (examples, VitePress build) is unmapped app code and
+    // therefore broadens to the full conservative selection.
+    assert.deepEqual(shadow.planned, broadened, path);
+    assert.ok(
+      shadow.classification.unmappedAppPaths.length > 0 || shadow.classification.multiDomain,
+      path,
+    );
   }
 });
 
 test("empty diffs and unrecognized paths fail closed to the conservative selection", () => {
   const empty = shadowPlan("pull_request", []);
-  assert.deepEqual(empty.planned, ["smoke", ...core, "visual", "layout-stress"]);
+  assert.deepEqual(empty.planned, broadened);
   assert.equal(empty.classification.emptyDiff, true);
   assert.ok(empty.warnings.some((warning) => /empty diff/.test(warning)));
 
   const unknown = shadowPlan("pull_request", ["model-configs/weights.yaml"]);
-  assert.deepEqual(unknown.planned, ["smoke", ...core, "visual", "layout-stress"]);
+  assert.deepEqual(unknown.planned, broadened);
   assert.ok(unknown.classification.unknownPaths.includes("model-configs/weights.yaml"));
   assert.ok(unknown.warnings.some((warning) => /unrecognized top-level paths/.test(warning)));
 });
@@ -116,15 +131,7 @@ test("multi-domain changes broaden to the extended checks with recorded reasons"
   ]);
   // Broadening selects every dedicated contract, because the full shards do
   // not execute the Mask/video/pointcloud matrices at runtime.
-  assert.deepEqual(shadow.planned, [
-    "smoke",
-    ...specialties,
-    "video-pipeline",
-    "pointcloud",
-    ...core,
-    "visual",
-    "layout-stress",
-  ]);
+  assert.deepEqual(shadow.planned, broadened);
   assert.equal(shadow.classification.multiDomain, true);
   assert.ok(shadow.reasons.some((reason) => /multi-domain/.test(reason.because)));
 });
@@ -222,6 +229,77 @@ test("app-code changes can never produce an empty shadow selection", () => {
   assert.ok(shadow.planned.length > 0);
 });
 
+test("CLI stdout carries exactly the outputs the workflow consumers read", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "e2e-cli-contract-"));
+  const script = fileURLToPath(new URL("./plan-e2e-suites.mjs", import.meta.url));
+  const ciYml = readFileSync(
+    fileURLToPath(new URL("../.github/workflows/ci.yml", import.meta.url)),
+    "utf8",
+  );
+  try {
+    const run = (env) =>
+      spawnSync(process.execPath, [script], {
+        cwd,
+        encoding: "utf8",
+        env: { ...process.env, ...env },
+      });
+    const pr = run({ GITHUB_EVENT_NAME: "pull_request", E2E_BASE_SHA: "0".repeat(40) });
+    // An invalid base fails closed regardless of the shadow report.
+    assert.notEqual(pr.status, 0);
+
+    const dispatched = run({ GITHUB_EVENT_NAME: "workflow_dispatch", E2E_DISPATCH_SCOPE: "full" });
+    assert.equal(dispatched.status, 0, dispatched.stderr);
+    const outputs = Object.fromEntries(
+      dispatched.stdout
+        .trim()
+        .split("\n")
+        .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
+    );
+    // The workflow consumes exactly these step outputs.
+    assert.ok(ciYml.includes("steps.plan.outputs.matrix"));
+    assert.ok(
+      ciYml.includes("steps.plan.outputs.ml-cpu") || ciYml.includes("steps.plan.outputs.ml_cpu"),
+    );
+    assert.ok(ciYml.includes("steps.plan.outputs.required"));
+    assert.ok("matrix" in outputs, "CLI must emit matrix=");
+    assert.ok("shadow" in outputs, "CLI must emit shadow=");
+    assert.ok(
+      "ml_cpu" in outputs,
+      "ci.yml reads steps.plan.outputs.ml_cpu; the CLI must emit the same key",
+    );
+    assert.ok(
+      "required" in outputs,
+      "ci.yml reads steps.plan.outputs.required; the CLI must emit the same key",
+    );
+    assert.equal(outputs.ml_cpu, "true");
+    assert.equal(
+      JSON.parse(outputs.required).every((entry) => entry.planned === true),
+      true,
+    );
+
+    const extended = run({
+      GITHUB_EVENT_NAME: "workflow_dispatch",
+      E2E_DISPATCH_SCOPE: "extended",
+    });
+    assert.equal(extended.status, 0, extended.stderr);
+    const extOutputs = Object.fromEntries(
+      extended.stdout
+        .trim()
+        .split("\n")
+        .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
+    );
+    assert.equal(extOutputs.ml_cpu, "false");
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("unknown/multi-domain PRs run the delegated ml-cpu contracts, never silently off", () => {
+  assert.equal(planE2ESuites("push").include.length > 0, true);
+  const unknown = shadowPlan("pull_request", ["model-configs/weights.yaml"]);
+  assert.equal(unknown.planned, undefined ? [] : unknown.planned);
+  assert.ok(unknown.planned.length >= [...functional].length + 2);
+});
 test("CLI handles deleted and renamed paths, and fails on an unavailable base", () => {
   const cwd = mkdtempSync(join(tmpdir(), "e2e-routing-"));
   const script = fileURLToPath(new URL("./plan-e2e-suites.mjs", import.meta.url));
@@ -254,14 +332,17 @@ test("CLI handles deleted and renamed paths, and fails on an unavailable base", 
     );
     const result = run(base);
     assert.equal(result.status, 0, result.stderr);
-    const [matrixLine, shadowLine] = result.stdout.trim().split("\n");
+    const lines = result.stdout.trim().split("\n");
+    const matrixLine = lines.find((line) => line.startsWith("matrix="));
+    const shadowLine = lines.find((line) => line.startsWith("shadow="));
+    assert.ok(matrixLine && shadowLine, "CLI must emit matrix= and shadow= lines");
     assert.deepEqual(
-      JSON.parse(matrixLine.trim().slice("matrix=".length)).include.map(({ suite }) => suite),
+      JSON.parse(matrixLine.slice("matrix=".length)).include.map(({ suite }) => suite),
       [...functional, "visual", "layout-stress"],
     );
     // The shadow report must ride along on every planning invocation without
     // changing the gate selection.
-    const shadow = JSON.parse(shadowLine.trim().slice("shadow=".length));
+    const shadow = JSON.parse(shadowLine.slice("shadow=".length));
     assert.deepEqual(shadow.legacy, [...functional, "visual", "layout-stress"]);
     assert.ok(Array.isArray(shadow.added) && Array.isArray(shadow.removed));
     assert.notEqual(run("0".repeat(40)).status, 0);

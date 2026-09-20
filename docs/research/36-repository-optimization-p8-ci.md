@@ -7,8 +7,8 @@
 
 ## 0. 结论
 
-1. **影子选择先行 [V]**：`scripts/plan-e2e-suites.mjs` 在冻结的 legacy 门禁输出（`matrix=`，逐字节不变）之外，新增 `shadow=` JSON 与 `shared_contracts=` 布尔输出。影子选择实现 §6.2/§6.3：有界真实 smoke（登录、工作台进入+保存/刷新、提交→审核、权限拒绝、切换守卫，显式 spec 成员）、按路径触发的领域专项（Mask×3、video-pipeline、pointcloud、shared 契约×2）、显式 full 范围（push/nightly = smoke + 全部分片 + extended）。
-2. **fail-closed 分类 [V]**：docs-only 走白名单（可执行示例、`.vitepress/config` 等一律算 app 代码）；空 diff/未知顶层路径 → 保守放大到全量；多域 → 加 extended 并记录原因；未知事件/缺 paths 抛错；app 代码变化而选择为空 → 抛错（非法选择不可能通过）。
+1. **影子选择先行 [V]**：`scripts/plan-e2e-suites.mjs` 在冻结的 legacy 门禁输出（`matrix=`，逐字节不变）之外，新增 `shadow=`、`required=`、`ml_cpu=` 三个输出。影子选择实现 §6.2/§6.3：有界真实 smoke（成员由评审方发布：4 个既有文件 9 例，命令含 `--grep`，其实测 9/9 首过 57.5s 见 root `3891c550e` research38）、按路径触发的领域专项（Mask×3、video-pipeline、pointcloud）、显式 full 范围（push/nightly = smoke + 全部分片 + extended）。`ml_cpu` 语义按事件显式：PR=共享/ML 路径（含 ml-cpu 自身 workflow/runner/deps 与共享消费方）触发；push/schedule=始终；manual full=是、manual extended=否。
+2. **fail-closed 分类 [V]**：docs-only 收窄为「真实文档」白名单——根级 README/CHANGELOG/CONTRIBUTING/SECURITY/CODE_OF_CONDUCT/LICENSE、`docs/**/*.md`、`docs-site/**/*.md`（排除 `docs-site/dev/examples/**`、`.vitepress/**`、docs-site 内可执行扩展名），并显式排除 apps/packages/scripts 下的一切 markdown；`.github` 仅 `*.md`（模板）可判 docs，workflows 一律 app 代码。空 diff/未知顶层路径/多域/未映射 app 行为路径/共享依赖与运行时文件 → 保守放大并选择全部专项契约（Mask×3、video-pipeline、pointcloud，因为 default 分片运行时不执行这些专用矩阵）；未知事件/缺 paths 抛错；app 代码变化而选择为空 → 抛错。
 3. **门禁不变 [V]**：`planE2ESuites` 由唯一权威 SUITE_CONTRACT 表的 `legacyGate` 标志派生，PR/push/schedule 输出与 P7 之前逐字节一致；shadow 差异（added/removed/原因/警告）由 planning job 记入 step summary，仅告警，不切门禁（P9 执行）。docs-only 白名单收窄为真实文档（根级 README/CHANGELOG 等、docs/**、docs-site/**），显式排除 `docs-site/dev/examples/**`、`docs-site/.vitepress/**`、docs-site 内可执行扩展名与 apps/packages/scripts 下的一切 .md（回归用例覆盖）。保守放大（空 diff/未知路径/多域）会额外选择**全部专项契约**（Mask×3、video-pipeline、pointcloud），因为 default 分片在运行时并不执行这些专用矩阵；共享 UI/API 依赖路径（`apps/web/src/{api,lib,stores,hooks}`、`apps/api/app/{api,services,core}`、deps.py）显式扇出到全部领域专项。
 4. **指纹构建复用 [V]**：`e2e-run.yml` 新增 build job，指纹覆盖真实构建输入（commit、e2e mode、pnpm-lock sha、openapi.snapshot sha、node22、全部 VITE\_\* 构建环境值、仓库根 .env——vite `envDir` 指向根目录）；artifact 以指纹命名并附构建时生成的 SHA256SUMS（真实 archive 字节哈希）。built 矩阵条目下载后：`grep -F <指纹 archive> SHA256SUMS | sha256sum -c -` 校验真实字节，diff 断言 manifest 不含其他 archive（对抗性多 archive 拒绝），再解包；共享构建失败时所有条目拒绝运行。prep 计时从 job 首步开始（含安装与 MinIO 启动），与执行时间分开。本地已完成：archive 建/验往返、篡改拒绝、额外 archive 拒绝三组探针；actionlint 对 e2e-run/ci/ml-cpu-test 全部通过。每 job 自带独立 services/数据库，不共享数据。`workflow_dispatch` 新增显式 `e2e_scope` 输入（extended | full），影子报告按输入区分，legacy 门禁不变。
 5. **运行诊断 [V]**：`scripts/summarize-e2e-results.mjs`（4 例单测）替代内联 heredoc：新增首过/重试后过/超时/中断/未运行分类、准备与执行秒数、以及「required 套件报成功但无报告 → 步骤失败」的 fail-closed 检查。门禁语义不变。
@@ -50,5 +50,5 @@
 - `backend_runtime`（torch 仅 sys.modules stub）与 gs2/sam3 的 CPU-torch 子集按审计事实登记，均可在 CPU 执行；不保留任何「需要 GPU/真实权重」的不实标签。
 - 无取消白名单/重试/超时/覆盖率的任何放宽；e2e-run 的失败即失败语义未变。
 - [GAP] 影子与 legacy 的实际对比执行（同 SHA 双跑）属 P9；本阶段只有影子输出记录。
-- [GAP] `ML CPU contract tests` caller 引用的 `ml-cpu-test.yml` 来自独立 CPU 接线工作者的分支，需其先并入 root（协调方负责集成顺序），本分支 rebase 后生效。
-- [GAP] CI 上 ml-cpu 首跑需在集成后观察（本地审计实测：163/41/99/224/83/70+3 全部通过）。
+- [GAP] `ML CPU contract tests` caller 已可解析（`ml-cpu-test.yml` 已并入 root `361af6bf8`），但其首次真实 runner 执行需在集成后的 CI 观察记录；本地/审计证据为各套件 163/41/99/224/83/70+3 全部通过。
+- [标注] smoke 链路的浏览器执行证据来自评审方（research38，root `3891c550e`，9/9 首过 57.5s）；本工作树未重复执行该链路。

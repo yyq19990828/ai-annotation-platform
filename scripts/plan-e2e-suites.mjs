@@ -52,7 +52,12 @@ const SHARED_CONTRACT_SUITES = {
     scope: "specialty",
     built: false,
     wired: false,
-    triggers: ["apps/_shared/protocol_v2/"],
+    triggers: [
+      "apps/_shared/protocol_v2/",
+      "scripts/run-ml-cpu-tests.sh",
+      "scripts/ml-cpu-deps/",
+      ".github/workflows/ml-cpu-test.yml",
+    ],
     reason: "protocol v2 schema/vocab/mask-codec contracts; 163 tests",
     dependencies: "pytest + cryptography/fastapi/pydantic/PyJWT + numpy (test extra); CPU only",
   },
@@ -115,11 +120,11 @@ const smoke = [
     suite: "smoke",
     legacyGate: false,
     command:
-      "test:e2e e2e/tests/auth.spec.ts e2e/tests/workbench-image-konva-smoke.spec.ts e2e/tests/review-approve-loop.spec.ts e2e/tests/workbench-secondary-permissions.spec.ts e2e/tests/mask-session-guard.spec.ts",
+      "test:e2e e2e/tests/auth.spec.ts e2e/tests/annotation.spec.ts e2e/tests/employee-project-roles.spec.ts e2e/tests/mask-session-guard.spec.ts --grep '健康检查|正确凭证|错密码|未登录访问|annotator 登录|bbox 真实绘制、选类、落库并刷新恢复|same employee annotates A|opposite project actions are denied|切工具离开 dirty session'",
     built: true,
     scope: "smoke",
     reason:
-      "bounded real chain: UI login, workbench entry with canvas save+refresh, annotation submit→review approve, permission denial, workbench switch guard",
+      "bounded real chain (reviewer-owned membership: 9 tests / 4 existing files): UI login, real canvas save+refresh, annotator submit→review→complete across two projects, permission denial, dirty-session switch guard",
   },
 ];
 
@@ -322,6 +327,17 @@ function classifyPaths(paths) {
       return "unknown";
     }),
   );
+  const unknownPaths = appCode.filter((path) => {
+    const topLevel = path.split("/")[0];
+    return (
+      !["apps", "packages", "scripts", ".github", "docs-site", "docker-compose.yml"].includes(
+        topLevel,
+      ) &&
+      !["package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".npmrc", ".env.example"].includes(
+        path,
+      )
+    );
+  });
   return {
     docsOnly: appCode.length === 0 && paths.length > 0,
     emptyDiff: paths.length === 0,
@@ -424,6 +440,28 @@ export function selectSuites(eventName, paths, options = {}) {
     };
   }
   if (eventName === "workflow_dispatch") {
+    // Plan §6.7-5: manual entry states its scope explicitly. The legacy gate
+    // stays extended-only until P9; the shadow honours the requested scope.
+    const scope = options.dispatchScope ?? "extended";
+    if (!["extended", "full"].includes(scope))
+      throw new Error(`Invalid manual E2E scope: ${scope} (expected extended or full)`);
+    if (scope === "full")
+      return {
+        planned: allSuites.map(({ suite }) => suite),
+        classification: {
+          event: "workflow_dispatch",
+          note: "manual full run explicitly requested via the e2e_scope input",
+        },
+        reasons: [
+          {
+            suite: "all",
+            selected: true,
+            because:
+              "manual dispatch explicitly selected the full matrix (smoke + full shards + extended)",
+          },
+        ],
+        warnings: [],
+      };
     return {
       planned: extended.map(({ suite }) => suite),
       classification: {
@@ -447,6 +485,19 @@ export function selectSuites(eventName, paths, options = {}) {
   const planned = [];
   const reasons = [];
   const warnings = [];
+  // App behaviour paths that no domain specialty maps to (§6.3: recognized
+  // apps/ prefixes alone never prove coverage).
+  classification.unmappedAppPaths = (() => {
+    const specialtyPrefixes = allSuites
+      .filter(({ scope, triggers }) => scope === "specialty" && triggers)
+      .flatMap(({ triggers }) => triggers);
+    const sharedPrefixes = SHARED_DEPENDENCY_TRIGGERS;
+    return classification.appCode.filter(
+      (path) =>
+        !specialtyPrefixes.some((prefix) => path.startsWith(prefix)) &&
+        !sharedPrefixes.some((prefix) => path.startsWith(prefix)),
+    );
+  })();
 
   if (classification.docsOnly) {
     reasons.push({
@@ -470,10 +521,44 @@ export function selectSuites(eventName, paths, options = {}) {
         `multiple domains touched (${classification.domains.join(", ")}); broadening the selection`,
       );
 
+    const triggered = triggeredSpecialties(classification.appCode);
+    const sharedDepHit = SHARED_DEPENDENCY_TRIGGERS.find((prefix) =>
+      classification.appCode.some((path) => path.startsWith(prefix)),
+    );
+    const runtimeLike = classification.appCode.some(
+      (path) =>
+        [
+          "package.json",
+          "pnpm-lock.yaml",
+          "pnpm-workspace.yaml",
+          ".npmrc",
+          ".env.example",
+          "docker-compose.yml",
+        ].includes(path) || /^docker-compose[^/]*\.ya?ml$/.test(path),
+    );
+    // Fail-closed (§6.3): unmapped app behaviour paths, shared
+    // dependencies/runtime and empty or unrecognized diffs broaden to the
+    // full selection with every dedicated contract; a recognized apps/ prefix
+    // alone never proves coverage.
     const broaden =
       classification.emptyDiff ||
       classification.unknownPaths.length > 0 ||
-      classification.multiDomain;
+      classification.multiDomain ||
+      classification.unmappedAppPaths.length > 0 ||
+      sharedDepHit !== undefined ||
+      runtimeLike;
+    if (classification.unmappedAppPaths.length)
+      warnings.push(
+        `app paths without a domain specialty mapping broaden to full: ${classification.unmappedAppPaths.join(", ")}`,
+      );
+    if (sharedDepHit !== undefined)
+      warnings.push(
+        `shared dependency path ${sharedDepHit} selects full functional plus dedicated configs`,
+      );
+    if (runtimeLike)
+      warnings.push(
+        "shared runtime/dependency change selects full functional plus dedicated configs",
+      );
     const addPlanned = (suite, because) => {
       if (!planned.includes(suite)) {
         planned.push(suite);
@@ -482,14 +567,21 @@ export function selectSuites(eventName, paths, options = {}) {
     };
     for (const suite of allSuites.filter(({ scope }) => scope === "smoke"))
       addPlanned(suite.suite, suite.reason);
-    for (const { suite, because } of triggeredSpecialties(classification.appCode))
-      addPlanned(suite, because);
     if (broaden) {
+      // The default shards never execute the dedicated Mask/video/pointcloud
+      // matrices at runtime, so broadening selects every dedicated contract.
       for (const suite of allSuites.filter(({ scope }) => scope === "full"))
         addPlanned(
           suite.suite,
-          "multi-domain/unknown change broadens to the full functional shards",
+          "unmapped/multi-domain/shared-runtime change broadens to the full functional shards",
         );
+    }
+    for (const { suite, because } of triggered) addPlanned(suite, because);
+    if (broaden) {
+      for (const entry of allSuites.filter(
+        (candidate) => candidate.scope === "specialty" && candidate.triggers,
+      ))
+        addPlanned(entry.suite, "broadened selection runs every dedicated domain contract");
     }
     if (broaden || classification.appCode.some(affectsExtendedShadow)) {
       for (const suite of extended) {
@@ -574,17 +666,29 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   }
   const dispatchScope = process.env.E2E_DISPATCH_SCOPE;
   const shadow = shadowPlan(eventName, paths, { dispatchScope });
-  console.log(`matrix=${JSON.stringify(planE2ESuites(eventName, paths))}`);
+  const gate = planE2ESuites(eventName, paths);
+  console.log(`matrix=${JSON.stringify(gate)}`);
+  console.log(
+    `required=${JSON.stringify(gate.include.map((entry) => ({ suite: entry.suite, planned: true })))}`,
+  );
   // Shadow report for P9: recorded by the planning job, never drives the gate.
   console.log(`shadow=${JSON.stringify(shadow)}`);
-  // Real wiring for the P6-handoff CPU contract suites (own check, not the
-  // Frontend E2E gate): run when their trigger paths changed.
-  const sharedContracts =
-    eventName === "pull_request" &&
-    paths.some((path) =>
-      Object.values(SHARED_CONTRACT_SUITES).some(
-        (suite) => suite.wired && suite.triggers.some((prefix) => path.startsWith(prefix)),
-      ),
-    );
-  console.log(`shared_contracts=${sharedContracts}`);
+  // P6 handoff wiring: the ml-cpu workflow owns execution; this flag triggers
+  // the ci.yml caller. Semantics are explicit per event — never silently off:
+  //   pull_request: run when shared/ML paths (or their workflow/runner/deps)
+  //   changed; push: always (post-merge full verification); workflow_dispatch:
+  //   full scope runs them, extended-only does not; schedule: always.
+  const mlCpuTriggers = [
+    ...Object.values(SHARED_CONTRACT_SUITES).flatMap((suite) => suite.triggers),
+    "scripts/run-ml-cpu-tests.sh",
+    "scripts/ml-cpu-deps/",
+    ".github/workflows/ml-cpu-test.yml",
+  ];
+  let mlCpu;
+  if (eventName === "push" || eventName === "schedule") mlCpu = true;
+  else if (eventName === "workflow_dispatch")
+    mlCpu = (process.env.E2E_DISPATCH_SCOPE ?? "extended") === "full";
+  else
+    mlCpu = (paths ?? []).some((path) => mlCpuTriggers.some((prefix) => path.startsWith(prefix)));
+  console.log(`ml_cpu=${mlCpu}`);
 }

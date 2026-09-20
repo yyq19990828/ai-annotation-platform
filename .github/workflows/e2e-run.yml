@@ -23,6 +23,7 @@ jobs:
     outputs:
       needed: ${{ steps.needed.outputs.needed }}
       fingerprint: ${{ steps.fingerprint.outputs.fingerprint }}
+      build-seconds: ${{ steps.build.outputs.build-seconds }}
     env:
       MATRIX: ${{ inputs.matrix }}
     steps:
@@ -42,18 +43,22 @@ jobs:
         run: |
           vite_env=$(printenv | grep '^VITE_' | sort | sha256sum | cut -d' ' -f1)
           dot_env=$([ -f .env ] && sha256sum .env | cut -d' ' -f1 || echo absent)
-          fingerprint=$(printf '%s' "$GITHUB_SHA-e2e-$(sha256sum pnpm-lock.yaml | cut -d' ' -f1)-$(sha256sum apps/api/openapi.snapshot.json | cut -d' ' -f1)-node22-$vite_env-$dot_env" | sha256sum | cut -d' ' -f1)
+          fingerprint=$(printf '%s' "$GITHUB_SHA-e2e-$(sha256sum pnpm-lock.yaml | cut -d' ' -f1)-$(sha256sum apps/api/openapi.snapshot.json | cut -d' ' -f1)-$(node --version)-$vite_env-$dot_env" | sha256sum | cut -d' ' -f1)
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
       - name: pnpm install
         if: steps.needed.outputs.needed == 'true'
         working-directory: apps/web
         run: pnpm install --frozen-lockfile
-      - name: Build frontend
+      - id: build
+        name: Build frontend
         if: steps.needed.outputs.needed == 'true'
         working-directory: apps/web
         env:
           OPENAPI_URL: ${{ github.workspace }}/apps/api/openapi.snapshot.json
-        run: pnpm build --mode e2e
+        run: |
+          start=$(date +%s)
+          pnpm build --mode e2e
+          echo "build-seconds=$(( $(date +%s) - start ))" >> "$GITHUB_OUTPUT"
       - name: Upload dist artifact
         if: steps.needed.outputs.needed == 'true'
         env:
@@ -242,7 +247,11 @@ jobs:
         env:
           E2E_SUITE: ${{ matrix.suite }}
           E2E_OUTCOME: ${{ steps.e2e.outcome }}
-        run: node scripts/summarize-e2e-results.mjs "$E2E_SUITE" "$E2E_OUTCOME" apps/web/e2e-results.json
+          E2E_BUILD_SECONDS: ${{ needs.build.outputs.build-seconds }}
+          E2E_STATUS_OUT: apps/web/suite-status/${{ matrix.suite }}.json
+        run: |
+          mkdir -p apps/web/suite-status
+          node scripts/summarize-e2e-results.mjs "$E2E_SUITE" "$E2E_OUTCOME" apps/web/e2e-results.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
@@ -251,5 +260,6 @@ jobs:
             apps/web/playwright-report/
             apps/web/test-results/
             apps/web/e2e-results.json
+            apps/web/suite-status/
             apps/web/e2e-api.log
           retention-days: 7

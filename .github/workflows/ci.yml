@@ -285,6 +285,7 @@ jobs:
       contents: read
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      required: ${{ steps.plan.outputs.required }}
       ml-cpu: ${{ steps.plan.outputs.ml_cpu }}
     steps:
       - uses: actions/checkout@v4
@@ -311,13 +312,13 @@ jobs:
           node --input-type=module <<'NODE'
           import { appendFileSync } from 'node:fs';
           const shadow = JSON.parse(process.env.SHADOW);
+          const plannedSet = new Set(shadow.planned);
+          const legacySet = new Set(shadow.legacy);
           const rows = [
-            '| Scope | Legacy gate | Shadow proposal |',
+            '| Suite | Legacy gate | §6 shadow proposal |',
             '| --- | --- | --- |',
-            ...['smoke', 'specialty', 'full', 'extended'].map((scope) => {
-              const inLegacy = shadow.legacy.length > 0;
-              return `| ${scope} | n/a (legacy list below) | ${shadow.planned.length} planned suites |`;
-            }),
+            ...shadow.legacy.filter((suite) => !plannedSet.has(suite)).map((suite) => `| ${suite} | runs | proposed removal |`),
+            ...shadow.planned.map((suite) => `| ${suite} | ${legacySet.has(suite) ? "runs" : "absent"} | runs |`),
           ];
           const lines = [
             '### E2E shadow selection (plan §6, warn-only — gate unchanged)',
@@ -329,12 +330,14 @@ jobs:
             `removed: ${shadow.removed.join(', ') || '(none)'}`,
             '```',
             '',
+            ...rows,
+            '',
             'Reasons:',
             ...shadow.reasons.map((reason) => `- ${reason.suite}: ${reason.because}`),
             ...shadow.warnings.map((warning) => `- warning: ${warning}`),
             '',
-            `Shared CPU contract suites wired this run: ${shadow.sharedContracts.wired.map((s) => s.suite).join(', ') || '(none triggered)'}`,
-            `Qualification-only (never scheduled): ${shadow.sharedContracts.qualification.map((s) => s.suite).join(', ') || '(none)'}`,
+            `ML CPU contract caller triggered: ${shadow.mlCpu === true}`,
+            `Delegated ml-cpu suites (execution via ml-cpu-test.yml): ${shadow.sharedContracts.qualification.map((s) => s.suite).join(', ') || '(none)'}`,
             '',
           ];
           appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n'));
@@ -364,6 +367,21 @@ jobs:
     needs: [e2e-plan, e2e-suites]
     if: always()
     steps:
+      - uses: actions/checkout@v4
+      - name: Collect per-suite status artifacts
+        if: github.event_name != 'workflow_dispatch'
+        uses: actions/download-artifact@v4
+        with:
+          pattern: playwright-report-*
+          path: suite-status-raw
+          merge-multiple: true
+      - name: Audit planned suites against actual results
+        if: github.event_name != 'workflow_dispatch' && needs.e2e-plan.outputs.required != ''
+        env:
+          E2E_REQUIRED: ${{ needs.e2e-plan.outputs.required }}
+        run: |
+          printf '%s' "$E2E_REQUIRED" > required-suites.json
+          node scripts/audit-e2e-requirements.mjs required-suites.json suite-status-raw/suite-status
       - name: Require every E2E suite to pass
         env:
           E2E_PLAN_RESULT: ${{ needs.e2e-plan.result }}
