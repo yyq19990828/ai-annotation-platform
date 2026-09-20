@@ -114,6 +114,21 @@
 
 `apps/web/e2e/fixtures/mask-slice-lifecycle.py` 当前以桶名后缀（`-e2e/_e2e/-test/_test`）判定“独占一次性桶”，但工作树模式的自有桶命名为 `aap-wt-<id>-<mode>-<purpose>`（含 `-e2e-`、不以 `-e2e` 结尾），导致 `mask-slice.spec.ts:682/716` 失败。修复方向：改用**既有的工作树资源所有权机制**（`.worktree/<mode>/resources.json` 的声明桶 + 所有者 + `scripts/worktree_runtime.require_owner` 的标签语义），在无工作树清单时保留旧的 CI 后缀回退；负向校验覆盖共享桶（无所有者标签）、他人所有、未声明桶。保留 GC/版本丢失断言，仅重跑这两个用例。新增回归模块 `apps/api/tests/test_mask_slice_fixture_guard.py`（由既有后端 pytest job 自动发现）只做守卫函数的多正/负例验证；按协调方划分，共享测试清单 TSV 与 research 26/27/45 由最终 P10 集成方回填该文件与计数，P9 不在共享清单内改动。CI 条件差异审计：全仓 e2e 仅 `mask-advanced-operations.spec.ts:334` 一处依赖 `process.env.CI`。
 
+## 6.3 定向修复与后续验证（与原失败明确区分）
+
+四处已授权 fixture/消费方修复已实施，并按原装置做定向复跑（原始失败证据保留，不覆盖）：
+
+| 修复                  | 文件                                                                                                       | 定向结果                                                                                                                                                   |
+| --------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| visual 队列显示 id    | `apps/web/e2e/tests/workbench-layout.spec.ts`                                                              | 原装置（preview-visual，构建产物）**1 passed**（原 1 failed）                                                                                              |
+| dashboard 项目名      | `apps/web/e2e/tests/employee-project-roles.spec.ts`                                                        | 目标用例 **passed**（原 1 failed），保留角色卡/负向断言                                                                                                    |
+| context-toolbars 助手 | `apps/web/e2e/tests/workbench-context-toolbars.spec.ts`                                                    | 目标用例 **1 passed**（原 1 failed）；替换 PNG 现位于同一 owned 前缀，由 owned-cleanup 回收                                                                |
+| mask-slice 桶守卫     | `apps/web/e2e/fixtures/mask-slice-lifecycle.py` + 新回归 `apps/api/tests/test_mask_slice_fixture_guard.py` | 目标用例 **4 passed**（H4b-4 + H4b-5×3，原 failed）；守卫回归 9 passed（正例 + 共享/他方/缺标签/错槽位/库不匹配/他 checkout/未声明/无模式 aap-wt-\* 负例） |
+
+CI 条件差异证明：`mask-advanced-operations.spec.ts` 的 1080p Worker 用例在 `CI=true` 且未选 Mask 矩阵时实测 **1 skipped**（预期语义），native 矩阵已实际执行并通过（mask-native 20 passed / 2 skipped）。
+
+附注：上述定向运行的进程退出码仍为 1，原因是全局 `seed/cleanup` 报 `users=3` 残留——这是已知的清理缺陷（归属清理所有者诊断），与本次四处修复无关；测试级结果取自各自 JSON 报告。
+
 ## 7. 保留与限制
 
 - workers 1、重试/超时/覆盖率预算未放宽；核心不依赖重试。

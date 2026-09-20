@@ -21,7 +21,7 @@ function prepareRasterImage(taskId: string) {
       "python",
       "-c",
       `
-import asyncio, io, os, sys, uuid
+import asyncio, io, os, re, sys, uuid
 from PIL import Image
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
@@ -35,11 +35,15 @@ async def prepare():
     try:
         async with engine.begin() as connection:
             row = (await connection.execute(text("SELECT dataset_item_id, file_path FROM tasks WHERE id=:id FOR UPDATE"), {"id": task_id})).one()
-            assert row.file_path.startswith("e2e/image/task-")
+            # Owned fixtures name the seed SVG after their namespace; derive the
+            # directory from the task itself so the replacement PNG stays inside
+            # the same owned prefix and owned-cleanup removes it.
+            owned = re.fullmatch(r"e2e/owned/([a-z0-9]{4,12})/image/task-[0-9]+[.]svg", row.file_path or "")
+            assert owned, f"expected an owned image fixture task path, got {row.file_path!r}"
             storage = StorageService()
             buffer = io.BytesIO()
             Image.new("RGB", (256, 256), "#d7e4ee").save(buffer, format="PNG")
-            key = f"e2e/context-toolbar/{task_id}.png"
+            key = f"e2e/owned/{owned.group(1)}/image/context-toolbar-{task_id}.png"
             storage.client.put_object(Bucket=storage.datasets_bucket, Key=key, Body=buffer.getvalue(), ContentType="image/png")
             await connection.execute(text("UPDATE tasks SET file_path=:key, file_name='context-toolbar.png' WHERE id=:id"), {"id": task_id, "key": key})
             await connection.execute(text("UPDATE dataset_items SET file_path=:key, file_name='context-toolbar.png', width=256, height=256, file_size=:size WHERE id=:id"), {"id": row.dataset_item_id, "key": key, "size": buffer.tell()})
@@ -63,17 +67,30 @@ function removeTestImages(taskId: string, annotationId?: string) {
       "python",
       "-c",
       `
-import sys, uuid
+import asyncio, os, sys, uuid
+from sqlalchemy import text
+from sqlalchemy.engine import make_url
+from sqlalchemy.ext.asyncio import create_async_engine
 from app.services.storage import StorageService
 task_id = str(uuid.UUID(sys.argv[1]))
-storage = StorageService()
-keys = [(storage.datasets_bucket, f"e2e/context-toolbar/{task_id}.png")]
+url = make_url(os.environ["PLAYWRIGHT_E2E_DATABASE_URL"])
+assert (url.database or "").endswith(("_e2e", "_test"))
+async def cleanup():
+    engine = create_async_engine(url)
+    try:
+        async with engine.begin() as connection:
+            file_path = await connection.scalar(text("SELECT file_path FROM tasks WHERE id=:id"), {"id": task_id})
+        storage = StorageService()
+        # Only this test's replacement PNG (inside the task's owned prefix) is
+        # removed; the seed SVG itself is left to fixture teardown.
+        if file_path and os.path.basename(file_path).startswith("context-toolbar-"):
+            storage.client.delete_object(Bucket=storage.datasets_bucket, Key=file_path)
+    finally:
+        await engine.dispose()
 if len(sys.argv) > 2:
     annotation_id = str(uuid.UUID(sys.argv[2]))
-    keys.append((storage.import_bucket, f"roi-crops/secondary/{annotation_id}/0.jpg"))
-for bucket, key in keys:
-    storage.client.delete_object(Bucket=bucket, Key=key)
-    assert not storage.client.list_objects_v2(Bucket=bucket, Prefix=key).get("Contents")
+    StorageService().client.delete_object(Bucket=StorageService().import_bucket, Key=f"roi-crops/secondary/{annotation_id}/0.jpg")
+asyncio.run(cleanup())
 `,
       taskId,
       ...(annotationId ? [annotationId] : []),
