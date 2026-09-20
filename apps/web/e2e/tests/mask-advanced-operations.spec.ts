@@ -247,7 +247,11 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     expect(await maskContent(request, fixture.annotation_id, token)).toEqual(saved);
   });
 
-  test("2. 4/8 邻域与 flood fill 只修改命中的连通区域", async ({ page, request, seed }) => {
+  test("2. flood fill 保留命中组件：预览提交后逐像素一致（4/8 邻域与擦除排列已下沉单测）", async ({
+    page,
+    request,
+    seed,
+  }) => {
     const data = await seed.owned();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({
@@ -260,6 +264,8 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await beginEdit(page, fixture.annotation_id);
     const toolbar = page.getByTestId("mask-toolbar");
 
+    // 真实用户链路保留代表性组合；擦除命中排列由 maskOperations.test.ts 的
+    // 连通性用例在低层穷举，8 邻域选择器接线仍需一条真实 UI 断言。
     await chooseAdvanced(page, "保留命中组件");
     await clickPixel(page, 20, 20);
     await expect(toolbar).toContainText("面积 32→16");
@@ -269,13 +275,11 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await chooseAdvancedRadio(page, "8 邻域");
     await chooseAdvanced(page, "保留命中组件");
     await clickPixel(page, 20, 20);
-    await expect(toolbar).toContainText("变化 0 px");
-    await expect(toolbar).toContainText("面积 32→32");
     await expect(toolbar).toContainText("组件 1→1");
     await toolbar.getByTestId("mask-secondary-action").click();
 
     await chooseAdvancedRadio(page, "4 邻域");
-    await chooseAdvanced(page, "擦除命中区域");
+    await chooseAdvanced(page, "保留命中组件");
     await clickPixel(page, 20, 20);
     await expect(toolbar).toContainText("面积 32→16");
     await applyPreview(page);
@@ -290,7 +294,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     expect(foregroundArea(await maskContent(request, fixture.annotation_id, token))).toBe(16);
   });
 
-  test("3. donut 与小岛的 hole、去小组件、keep 预览准确且取消不改持久内容", async ({
+  test("3. donut 填孔预览准确，丢弃离开不改持久内容（去小组件/keep 排列已下沉单测）", async ({
     page,
     request,
     seed,
@@ -308,24 +312,13 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     await beginEdit(page, fixture.annotation_id);
     const toolbar = page.getByTestId("mask-toolbar");
 
+    // 真实用户链路：填孔预览 → 离开守卫 → 丢弃 → 持久内容不变。
+    // 「去小组件阈值」「保留命中组件」的多组件排列由 maskOperations.test.ts
+    // 的 donut-and-islands 用例在低层穷举。
     await chooseAdvanced(page, "填充命中孔洞");
     await clickPixel(page, 10, 10);
     await expect(toolbar).toContainText("面积 612→676");
     await expect(toolbar).toContainText("孔洞 1→0");
-    await toolbar.getByTestId("mask-secondary-action").click();
-    expect(await maskContent(request, fixture.annotation_id, token)).toEqual(persisted);
-
-    await openAdvanced(page);
-    await page.getByLabel("组件与孔洞面积阈值").fill("180");
-    await page.getByRole("menuitem", { name: /去除小组件/ }).click();
-    await expect(toolbar).toContainText("面积 612→456");
-    await expect(toolbar).toContainText("组件 3→2");
-    await toolbar.getByTestId("mask-secondary-action").click();
-
-    await chooseAdvanced(page, "保留命中组件");
-    await clickPixel(page, 5, 5);
-    await expect(toolbar).toContainText("面积 612→260");
-    await expect(toolbar).toContainText("组件 3→1");
     await applyPreview(page);
     await expect(toolbar).toContainText("未保存");
     await toolbar.getByTestId("mask-secondary-action").click();
