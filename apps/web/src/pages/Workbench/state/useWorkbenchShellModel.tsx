@@ -55,7 +55,6 @@ import {
   type MaskMutation,
   type MaskMutationCommitRequest,
   type MaskMutationGeometry,
-  type MaskMutationOperation,
   type MaskMutationScope,
 } from "@/api/maskMutations";
 import { ApiError } from "@/api/client";
@@ -308,86 +307,16 @@ import type {
   WorkbenchWorkspaceState,
 } from "../layout/workbenchPanelRegistry";
 import { useConflictResolution } from "./useConflictResolution";
+import type { PendingMaskAtomicDraft } from "./maskMutationPolicy";
+import {
+  maskMutationErrorMessage,
+  maskMutationRecovery,
+  type MaskMutationRecovery,
+} from "./maskMutationPolicy";
 
 type WorkbenchShellMode = "annotate" | "review";
 
 const TASK_NAVIGATION_SETTLE_MS = 160;
-
-type PendingMaskAtomicDraft = {
-  kind: MaskMutationOperation;
-  sourceIds: string[];
-  scope: MaskMutationScope;
-  /** 预览时的范围快照；提交/重试不得改用后续刷新的版本。 */
-  members: AnnotationResponse[];
-  operationSpec?: MaskInstanceOperationSpec;
-  joinMode?: "replace_sources" | "preserve_sources";
-  destructiveConfirmed?: boolean;
-  overlapPolicy?: "erase_same_class" | "erase_all";
-  overlapResults?: Array<{
-    annotationId: string;
-    alpha: Uint8Array;
-    changedPixels: number;
-    area: number;
-    unresolved: boolean;
-  }>;
-  copyKeyframe?: VideoMaskClipboardEntry;
-  copyTargetId?: string;
-};
-
-type MaskMutationRecovery = {
-  retry: boolean;
-  refresh: boolean;
-};
-
-function maskMutationRecovery(error: unknown): MaskMutationRecovery {
-  if (!(error instanceof ApiError)) return { retry: true, refresh: true };
-  const detail =
-    error.detailRaw && typeof error.detailRaw === "object"
-      ? (error.detailRaw as { reason?: string })
-      : null;
-  const reason = detail?.reason ?? "";
-  if (
-    [
-      "expected_versions_missing",
-      "version_mismatch",
-      "scope_stale",
-      "task_lock_conflict",
-      "annotation_locked",
-      "segment_lock_conflict",
-      "overlap_conflict",
-    ].includes(reason)
-  ) {
-    return { retry: false, refresh: true };
-  }
-  if (reason === "idempotency_conflict") {
-    return { retry: false, refresh: true };
-  }
-  if (error.status === 422) {
-    return { retry: false, refresh: false };
-  }
-  return {
-    retry: error.status >= 500 || error.status === 408 || error.status === 429,
-    refresh: error.status === 409 || error.status === 423 || error.status === 428,
-  };
-}
-
-function maskMutationErrorMessage(error: unknown): string {
-  if (error instanceof ApiError && error.detailRaw && typeof error.detailRaw === "object") {
-    const detail = error.detailRaw as { reason?: string; message?: string };
-    const labels: Record<string, string> = {
-      expected_versions_missing: "缺少范围版本，请刷新后重算",
-      version_mismatch: "来源 Mask 已变更，草稿已保留",
-      scope_stale: "Mask 范围已变更，草稿已保留",
-      task_lock_conflict: "任务正由其他用户编辑",
-      annotation_locked: "锁定对象阻止了原子提交",
-      segment_lock_conflict: "当前视频分段锁已失效",
-      idempotency_conflict: "幂等 key 与本次请求不一致",
-      overlap_conflict: "范围内仍有重叠 Mask",
-    };
-    return labels[detail.reason ?? ""] ?? detail.message ?? detail.reason ?? error.message;
-  }
-  return error instanceof Error ? error.message : String(error);
-}
 
 export interface UseWorkbenchShellModelParams {
   mode?: WorkbenchShellMode;
