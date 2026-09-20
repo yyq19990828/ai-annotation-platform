@@ -42,7 +42,7 @@
 | 指纹                 | `b3fe3e8ca069357eff583944dbafedba177a143ce02eb307aef0ffa7e86face3`（按 `e2e-run.yml` 公式：SHA + lockfile + openapi snapshot + node + 排序 `VITE_*` + `.env`）                                                                              |
 | 构建产物             | `/tmp/opencode/web-e2e-dist-b3fe3e8c….tar.gz`，sha256 `b5dbe24fc4bd8bf2e616e72ef6a209d8b89846f50c5289dd8119c2eadc7ed7da`；`dist/index.html` sha256 `aa91e1e95f020186c51b96adcdc7957696f6f732eada4b3b0783cedaf27e8515`；270 个 dist 文件 [V] |
 | 字节一致性           | B/C 与 A 均解压同一 archive 并校验：archive sha256、`dist/index.html`、270 个逐文件 sha256 与 `diff -rq` 全部一致（未重建）[V]                                                                                                              |
-| 证据目录（自有副本） | `/tmp/opencode/p9-final-evidence/`（35 文件 + `EVIDENCE-SHA256SUMS`），含两候选 archive 之外的最终 manifest、12 套件 raw JSON/log/status 与 lane handoff [V]                                                                                |
+| 证据目录（自有副本） | `/tmp/opencode/p9-final-evidence/`（35 文件 + `EVIDENCE-SHA256SUMS`），含两候选 archive 之外的最终 manifest、12 套件 raw JSON/log/status 与 lane handoff [V]（该目录已在 P10 收尾时移除）                                                   |
 
 **构建产物观测方式**：worktree 模式下 `playwright.config.ts` 判定 `useIsolatedServers=true`，即使 `CI=1` 也会启动 `pnpm dev`，因此普通本地 E2E **不消费**指纹构建产物。P9 使用临时配置 `apps/web/playwright.preview.e2e.config.ts`（只覆盖 webServer：同一自有 API 命令 + `vite preview` 指定的 `--mode e2e` dist；projects/testDir/testMatch/grepInvert/retries/reporter 全部沿用真实配置），并派生 `playwright.preview-visual.config.ts` / `playwright.preview-stress.config.ts` 复用同一 webServer。**历史装置**：这三个临时配置已在 P10 收尾时从最终树移除，本节仅记录当时的采集方式，不代表当前树仍提供这些文件。
 
@@ -137,7 +137,7 @@
 
 - 合计 **11 绿 / 1 失败**（`default-four`）；全部套件无 `e2e_seed_cleanup_incomplete`、运行后 `@e2e.test` users/projects=0。
 - `default-two` 的 20 个跳过 = `mask-advanced-operations.spec.ts:334` 的**有意 CI 跳过**（`CI=true` 且未选 Mask 矩阵，源码 `import "/src/..."` 无法由构建 preview 提供）+ 19 个矩阵门控的 raster-mask 跳过；该 Worker 路径的 native 覆盖由 `mask-native` 套件承担。这与旧候选未设 `CI` 的失败形成明确对照。
-- 证据文件：`/tmp/opencode/p9-final-status/<suite>.json`（规范 ID）、`/tmp/opencode/p9-final-<suite>.json`、`/tmp/opencode/p9-final-<suite>.log`；自有副本与校验见 `/tmp/opencode/p9-final-evidence/`（`EVIDENCE-SHA256SUMS`）。
+- 证据文件：`/tmp/opencode/p9-final-status/<suite>.json`（规范 ID）、`/tmp/opencode/p9-final-<suite>.json`、`/tmp/opencode/p9-final-<suite>.log`；自有副本与校验见 `/tmp/opencode/p9-final-evidence/`（`EVIDENCE-SHA256SUMS`）。**上述路径已在 P10 收尾时全部移除**；结论与计数以本报告 §5.1 与 [45] 为准。
 - 未采用“从旧候选字节一致复用”的说法：root 复核认定四个 Mask/stress 套件的相关输入（共享 Topbar 与 owned-seed 清理）已变化，不能主张逐字节复用，故在最终候选上**重跑为 raw 结果**。
 
 ## 6. 分支保护核查与失败归属
@@ -174,13 +174,13 @@
 - **fail-closed 审计实证（历史）[V]**：对冻结 `898` 的 12 个规范状态运行真实审计，实测 **退出 1**，唯一阻塞 `default-four | failed`，其余 11 `passed`，无 `missing`/`cancelled`/`setup-failure`/`suite-mismatch`/`unknown-outcome`/`malformed-success`/`core-flaky`；证据 `/tmp/opencode/p9-failed-campaign-audit/`。这不是从计数推断，而是稳定聚合的实际 fail-closed 结果。
 - **根因与修复 [V]**：DIAG10 证实 root-edge 停靠会用 **100px 真实 DOM 范围**重建保留的 parking grid leaf（尽管 `group.api.isVisible=false`：期望 taskqueue 288 / canvas 1344 / inspector 288 over 1920，实际 taskqueue 256），严格 1px 校验抛错并触发标准 `failRestore`。修复（产品提交 `13115f71f`）：既有 owner 在 strict restore 前把保留分组的 native 停靠做**零空间再折叠**，并移除 rawSnapshot normalization；未新增 dock 菜单/超时/重试，未改容差或测试坐标。
 - **修正构建重跑 [V]**：`layout-stress` **6/0/0/0**（203.3s）、`default-four` **68/0/0/0**（603.1s），均在修正构建（fingerprint `dabedc89`，`dist/index` `449aac28`）上以 `CI=true`/`--retries=0` 运行；冻结 `898` 的旧 53 not-run 全部执行（§6.3）。
-- **composed 必需套件审计 [V]**：集成根 `13d274326` 上，`required-suites.json`（planner full 12 套件）+ 冻结 `898` 复用状态 + 上述两个替换状态，真实运行 `node scripts/audit-e2e-requirements.mjs required-suites.json suite-status` → **退出 0**（"all required suites accounted for"）；证据 `/tmp/opencode/p9-followup-provenance/final-gate/`（`suite-status/`、`audit-output.log`、`audit-exit.txt`、`PROVENANCE.json`，逐套件记录 `frozen898-reuse` / `followup-replaced`）。
+- **composed 必需套件审计 [V]**：集成根 `13d274326` 上，`required-suites.json`（planner full 12 套件）+ 冻结 `898` 复用状态 + 上述两个替换状态，真实运行 `node scripts/audit-e2e-requirements.mjs required-suites.json suite-status` → **退出 0**（"all required suites accounted for"）；证据 `/tmp/opencode/p9-followup-provenance/final-gate/`（`suite-status/`、`audit-output.log`、`audit-exit.txt`、`PROVENANCE.json`，逐套件记录 `frozen898-reuse` / `followup-replaced`）。（该目录已在 P10 收尾时移除）
 
 ### 6.3 成员与执行覆盖证明 + post-68 supplement
 
-- **分片成员证明（只读）[V]**：B 新增 1 个 `workbench-layout.spec.ts` 测试后，用 `--list --shard=n/4` 对比修正工作树集合与冻结 `898`。`default-one/two/three` 身份集合**完全一致**（83/73/88，`only898=0`/`onlyCorrected=0`），故复用有效；修正 `default-four` = 冻结 shard4 的**全部 67** 身份 **+ 恰好 1 个新测试**（`workbench-layout.spec.ts › a root-edge queue dock keeps the reserved group collapsed and the saved tree`），无成员跨分片迁移。证明：`/tmp/opencode/p9-followup-provenance/shard-membership-proof.md`。
-- **执行覆盖回读 [V]**：修正 `default-four` 报告 68 expected / 0 unexpected / 0 flaky / 0 skipped；冻结 shard4 的 **1 failed + 53 not-run** 身份 **54/54** 均在新报告中以 **expected** 执行；新总数 68。custody `/tmp/opencode/p9-final-evidence/followup-affected/`。
-- **相关单测 [V]**：`/tmp/opencode/p9-followup-unit.log` = **2 files / 97 tests，UNIT_EXIT=0**（只触达两个既有文件，无新增全套测试）。
+- **分片成员证明（只读）[V]**：B 新增 1 个 `workbench-layout.spec.ts` 测试后，用 `--list --shard=n/4` 对比修正工作树集合与冻结 `898`。`default-one/two/three` 身份集合**完全一致**（83/73/88，`only898=0`/`onlyCorrected=0`），故复用有效；修正 `default-four` = 冻结 shard4 的**全部 67** 身份 **+ 恰好 1 个新测试**（`workbench-layout.spec.ts › a root-edge queue dock keeps the reserved group collapsed and the saved tree`），无成员跨分片迁移。证明：`/tmp/opencode/p9-followup-provenance/shard-membership-proof.md`（该路径已在 P10 收尾时移除）。
+- **执行覆盖回读 [V]**：修正 `default-four` 报告 68 expected / 0 unexpected / 0 flaky / 0 skipped；冻结 shard4 的 **1 failed + 53 not-run** 身份 **54/54** 均在新报告中以 **expected** 执行；新总数 68。custody `/tmp/opencode/p9-final-evidence/followup-affected/`（已在 P10 收尾时移除）。
+- **相关单测 [V]**：`/tmp/opencode/p9-followup-unit.log` = **2 files / 97 tests，UNIT_EXIT=0**（只触达两个既有文件，无新增全套测试；该路径已在 P10 收尾时移除）。
 - **post-68 supplement [V]**：`workbench-layout.spec.ts:366`（同一测试身份，body 扩展为真实鼠标拖拽 → passthrough active → Escape/up → class gone → stage click）→ **1 passed (23.8s)**，日志 `/tmp/opencode/p9-layout-regress6.log`；测试文件 sha256 `9a001fd3d97807bbd79c40458ba972f0be2c29d498561d082333e4c6ada31481`（root `13d274326`）。按规则未重跑整套 68，也未为 body-only 变更重复静态列表。
 
 ## 7. 保留与限制

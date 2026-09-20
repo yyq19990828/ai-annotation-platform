@@ -88,12 +88,12 @@
 
 ## 3. P9 composed 门禁与证据分层（EXEC / STATIC / REMOTE-CI）
 
-> 以下 `/tmp/opencode/...` 为**历史 custody**；其摘要已持久化到本文件与 [43]，原始中间 artifacts 在 P10 收尾时按 custody 保留目录后清理（本节只保留结论与来源映射）。
+> 以下 `/tmp/opencode/...` 为**历史**证据路径；其摘要已持久化到本文件与 [43]。这些 task-owned 原始 custody（含目录、archive 与日志）已在 P10 收尾时**全部移除**；本节只保留结论与来源映射，路径本身不再存在。
 
-- **冻结 `898505469` full-12（历史，失败）**：`default-four` 13P/1F/53 not-run；对该 12 个规范状态实跑审计 **exit 1**，唯一阻塞 `default-four`；证据 `/tmp/opencode/p9-final-evidence/failed-campaign-audit/`。
-- **集成根 `13d274326` composed（最终）**：`layout-stress` 6/0/0/0、`default-four` 68/0/0/0（修正构建 `dabedc89`/`449aac28`），其余 10 套件按变更影响范围复用冻结 `898` 状态；`node scripts/audit-e2e-requirements.mjs required-suites.json suite-status` → **exit 0**；逐套件来源 `frozen898-reuse` / `followup-replaced` 见 `/tmp/opencode/p9-followup-provenance/final-gate/PROVENANCE.json`。
-- **成员/执行覆盖**：shards 1–3 身份集合不变（83/73/88）；修正 shard 4 = 冻结 67 身份 + 1 新回归；冻结的 1F + 53 not-run 共 54 个身份均在新报告以 expected 执行（`/tmp/opencode/p9-followup-provenance/shard-membership-proof.md`）。
-- **相关单测**：`/tmp/opencode/p9-followup-unit.log` 2 files / 97 tests，exit 0；post-68 原生取消补充 `workbench-layout.spec.ts:366` 1 passed（23.8s）。
+- **冻结 `898505469` full-12（历史，失败）**：`default-four` 13P/1F/53 not-run；对该 12 个规范状态实跑审计 **exit 1**，唯一阻塞 `default-four`；证据 `/tmp/opencode/p9-final-evidence/failed-campaign-audit/`（已移除）。
+- **集成根 `13d274326` composed（最终）**：`layout-stress` 6/0/0/0、`default-four` 68/0/0/0（修正构建 `dabedc89`/`449aac28`），其余 10 套件按变更影响范围复用冻结 `898` 状态；`node scripts/audit-e2e-requirements.mjs required-suites.json suite-status` → **exit 0**；逐套件来源 `frozen898-reuse` / `followup-replaced` 见 `/tmp/opencode/p9-followup-provenance/final-gate/PROVENANCE.json`（已移除）。
+- **成员/执行覆盖**：shards 1–3 身份集合不变（83/73/88）；修正 shard 4 = 冻结 67 身份 + 1 新回归；冻结的 1F + 53 not-run 共 54 个身份均在新报告以 expected 执行（`/tmp/opencode/p9-followup-provenance/shard-membership-proof.md`，已移除）。
+- **相关单测**：`/tmp/opencode/p9-followup-unit.log`（已移除）2 files / 97 tests，exit 0；post-68 原生取消补充 `workbench-layout.spec.ts:366` 1 passed（23.8s）。
 - **STATIC**：全仓台账/TSV、阈值与排除口径、planner/审计/报告脚本契约、本文件的差异比对。
 - **REMOTE-CI**：**未运行**（无 push）。P0 校准的 60 次历史运行属基线，不是候选证据。
 
@@ -131,24 +131,18 @@ P0–P10 全部工作包完成；计划 §10 的 22 项按实际证据勾选（�
 
 ## 8. P10 收尾清理回执（2026-09-21）
 
-> 在执行本节前，P9/P10 的结论、命令、指纹与计数已持久化到本文件、[43] 与 [27]。清理只删除本 campaign 的**原始中间产物**；授权的 custody 与简洁 handoff 保留。
+> 在执行本节前，P9/P10 的结论、命令、指纹与计数已持久化到本文件、[43] 与 [27]；root 已独立核对接受的 raw 报告与校验和。清理删除本 campaign 的**全部 task-owned 原始产物**（包括先前的 custody 目录与日志）；仅保留简洁 English handoff 摘要。
 
-**删除（原始中间产物）**
+**已删除（全部 task-owned 原始产物）**
 
-- 顶层 `p9-*` 原始文件（套件 JSON/log、探针、campaign 驱动脚本等）除 `p9-followup-unit.log` 外全部删除（约 165 个文件）。
-- 临时目录：`p9-dist-check`、`p9-injection`、`p9-status`、`p9-visual-failure`、`p9-final-dist-extract`、`p9-failed-campaign-audit`（其内容已镜像在 custody 的对应路径）。
+- 顶层 `p9-*` 原始文件（套件 JSON/log、探针、campaign 驱动脚本等，约 165 个）。
+- 临时目录：`p9-dist-check`、`p9-injection`、`p9-status`、`p9-visual-failure`、`p9-final-dist-extract`、`p9-failed-campaign-audit`。
 - 构建产物归档与顶层校验和：全部 `web-e2e-dist-*.tar.gz` 与顶层 `SHA256SUMS*`。
-- 本任务 scratch：`p10-docs-build.log`、`p10-docs-build-final.log`、`p10-format-check.log`。
+- **原始 custody（本轮更正为全部移除）**：`/tmp/opencode/p9-final-evidence/`（含已复制的最终 archive 与 `EVIDENCE-SHA256SUMS`）、`/tmp/opencode/p9-followup-provenance/`、`/tmp/opencode/p9-followup-status/`、`/tmp/opencode/p9-final-status/`、`/tmp/opencode/p9-followup-unit.log`。
+- 本任务 scratch：`p10-docs-build*.log`、`p10-format-check.log`。
 
-**保留（授权 custody 与简洁 handoff）**
+**保留**
 
-- `/tmp/opencode/p9-final-evidence/`（`EVIDENCE-SHA256SUMS`，`sha256sum -c --quiet` → 通过；含 failed-campaign 审计与 final-summary）。
-- `/tmp/opencode/p9-followup-provenance/`（final-gate、`PROVENANCE.json`、成员证明、compose 脚本）。
-- `/tmp/opencode/p9-followup-status/`（canonical 状态）。
-- `/tmp/opencode/p9-followup-unit.log`（相关单测 2 files / 97 tests）。
-- `/tmp/opencode/p9-final-status/`（共享 gate-audit 状态输入，按 P9 约定保留）。
-- `/tmp/aap-opt-*.md` 简洁 English handoff。
+- `/tmp/aap-opt-*.md` 简洁 English handoff 摘要（非原始产物）。
 
-**产物字节custody**：将修正后的最终构建 `web-e2e-dist-dabedc89….tar.gz`（sha256 `371cc6a7aa727989b8ee257ace6ffe1e98775c736cdfce54cd97d56a2b39f4ea`）复制进 `/tmp/opencode/p9-final-evidence/artifact/`，连同记录其校验和的 `SHA256SUMS-dabedc89`。
-
-**结果**：本任务拥有的原始中间产物已归零；剩余节点仅为上述 custody 目录/日志与简洁 handoff。未删除无关 `/tmp` 文件或其他活动运行时。
+**结果（absence checks）**：上述五个 task-owned raw custody 路径均已确认不存在；`/tmp/opencode` 下已无 `p9*` 条目；未触碰无关 `/tmp` 文件、普通数据库或用户 `.orca-dag.config.json`。构建产物字节不再保留，最终产物的身份以本文件与 [50] 记录的 fingerprint `dabedc89…` / `dist/index` `449aac28…` 为准。

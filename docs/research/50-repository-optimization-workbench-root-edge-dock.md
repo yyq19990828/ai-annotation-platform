@@ -48,7 +48,7 @@
 ## 5. 产物与来源映射 **[V]**
 
 - 修正产物：dist 内容指纹 `dabedc89cc1da5a25e6bffc18f9a74196e58f04e5ec8846a4f9038453c426a42`，`dist/index.html` `449aac28b78036c270cb1f35884403401dccc25457868d202c94908aced446c0`，`BUILD_EXIT=0`；归档 `/tmp/opencode/web-e2e-dist-dabedc89….tar.gz`。
-- 后续状态产物（供 P9 组合最终门）：`/tmp/opencode/p9-followup-status/layout-stress.json`、`/tmp/opencode/p9-followup-status/default-four.json`，原始 JSON/日志在 `/tmp/opencode/p9-followup-*`。
+- 后续状态产物（供 P9 组合最终门）：`/tmp/opencode/p9-followup-status/layout-stress.json`、`/tmp/opencode/p9-followup-status/default-four.json`，原始 JSON/日志在 `/tmp/opencode/p9-followup-*`（上述路径已在 P10 收尾时移除；结果计数见 [43]/[45]）。
 - 该产物是基于冻结 `898505469` + 本修复的**本 lane 构建**（非共享冻结产物）；冻结 898 的原始失败 campaign 不变。
 
 ## 6. 边界

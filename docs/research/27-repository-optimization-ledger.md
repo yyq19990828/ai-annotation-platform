@@ -75,6 +75,6 @@
 
 - **P9 完成**：最终 composed required-suite 审计在集成根 `13d274326` 上实际**退出 0**（10 套件按**变更影响范围**复用 + `layout-stress`/`default-four` 在修正构建 `dabedc89`/`449aac28` 上重跑替换）；冻结 `898505469` 的 12 套件 campaign 保持**失败历史**（default-four 13P/1F/53 not-run，实跑审计 exit 1）；修正产品提交 `13115f71f`，文档修正 `9e11103ab`/`13d274326`，P9 报告 `8c4276297` [43]。
 - **P10 完成（台账关闭）**：最终验收记录 [45]；计划 §10 的 22 项按实际证据勾选。复用依据是**变更影响范围**（共享 Workbench 源码在修正构建中确有变化），不是全应用逐字节等价；唯一跨项限制为**远端 CI 未运行**（无 push）。
-- **P10 收尾清理**：移除三个临时 preview 配置（`apps/web/playwright.preview.e2e.config.ts` / `playwright.preview-visual.config.ts` / `playwright.preview-stress.config.ts`，历史装置）；报告文档引用改为 `apps/web/e2e/helpers/request-errors.ts`；campaign 原始中间产物在 custody（`/tmp/opencode/p9-final-evidence`、`p9-followup-provenance`、`p9-followup-status`、`p9-followup-unit.log`）保留摘要后清理。
+- **P10 收尾清理**：移除三个临时 preview 配置（`apps/web/playwright.preview.e2e.config.ts` / `playwright.preview-visual.config.ts` / `playwright.preview-stress.config.ts`，历史装置）；报告文档引用改为 `apps/web/e2e/helpers/request-errors.ts`；campaign 的**全部 task-owned 原始产物**（含 custody：`p9-final-evidence`、`p9-followup-provenance`、`p9-followup-status`、`p9-final-status`、`p9-followup-unit.log` 及全部 dist archive）已全部移除，仅保留简洁 English handoff 摘要；产物与结果身份以 [45] §3/§8 与 [50] 记录的 fingerprint/计数为准。
 - **清单**：TSV **1139 行 = 1135 可执行 + 4 测试支撑**，采用保守 KEEP 语义（区域级保留理由），不是逐文件唯一性/等价性声明。
 - **仍未运行**：远端 CI；渲染器通道 [42] 已接受严格 WebGPU 21 / 严格 WebCodecs 9（浏览器自报 adapter nvidia/ampere、Chromium 147），硬件视频解码未测量，不构成硬件资格主张。
