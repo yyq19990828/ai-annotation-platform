@@ -705,7 +705,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     `required=${JSON.stringify(gate.include.map((entry) => ({ suite: entry.suite, planned: true })))}`,
   );
   // Shadow report for P9: recorded by the planning job, never drives the gate.
-  console.error(`DBG paths=${JSON.stringify(paths)} mlCpu=${mlCpu}`);
   console.log(`shadow=${JSON.stringify(shadow)}`);
   console.log(`ml_cpu=${mlCpu}`);
 }

@@ -205,3 +205,56 @@ test("audit rejects malformed completion artifacts fail-closed", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("array manifest cannot smuggle a docs-allowed skip (exact negative probe)", () => {
+  const dir = mkdtempSync(join(tmpdir(), "e2e-audit-array-bypass-"));
+  try {
+    const audit = auditE2ERequirements({
+      requiredSuites: [{ suite: "x", planned: false, docsAllowedSkip: true }],
+      statusDir: dir,
+    });
+    assert.equal(audit.ok, false);
+    assert.ok(audit.blockers.every((row) => row.state === "invalid-manifest"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("duplicate suite names and blank docs-only reasons fail closed", () => {
+  const dir = mkdtempSync(join(tmpdir(), "e2e-audit-dup-"));
+  try {
+    const duplicate = auditE2ERequirements({
+      requiredSuites: [
+        { suite: "smoke", planned: true },
+        { suite: "smoke", planned: true },
+      ],
+      statusDir: dir,
+    });
+    assert.equal(duplicate.ok, false);
+    assert.ok(duplicate.blockers.some((row) => /duplicate suite: smoke/.test(row.detail)));
+
+    const blankReason = auditE2ERequirements({
+      requiredSuites: {
+        classification: "docs-only",
+        reason: "   ",
+        suites: [{ suite: "smoke", planned: false, docsAllowedSkip: true, reason: "skip" }],
+      },
+      statusDir: dir,
+    });
+    assert.equal(blankReason.ok, false);
+    assert.ok(blankReason.blockers.some((row) => /nonblank reason/.test(row.detail)));
+
+    const blankName = auditE2ERequirements({
+      requiredSuites: {
+        classification: "app-code",
+        reason: "gate",
+        suites: [{ suite: "  ", planned: true }],
+      },
+      statusDir: dir,
+    });
+    assert.equal(blankName.ok, false);
+    assert.ok(blankName.blockers.some((row) => /suite name missing or blank/.test(row.detail)));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

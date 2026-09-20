@@ -61,7 +61,7 @@ export function validateRequiredManifest(manifest) {
   const suites = [];
   const seen = new Set();
   for (const raw of rawSuites) {
-    const suite = typeof raw.suite === "string" ? raw.suite : "";
+    const suite = typeof raw.suite === "string" ? raw.suite.trim() : "";
     if (!suite) {
       errors.push("suite name missing or blank");
       continue;
