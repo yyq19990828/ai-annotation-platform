@@ -35,12 +35,11 @@ last_reviewed: 2026-07-23
 
 两条当前事实：
 
-- `apps/_shared` 的 CPU 契约套件（`protocol_v2`、`mask_utils`）已由 P8 接入 CI：PR 触及
-  `apps/_shared/protocol_v2|mask_utils` 或 `apps/sam3-backend|grounded-sam2-backend|yolo-backend`
-  路径时，`shared-contracts` 检查会以 `uv run --extra test pytest -q` 运行两者（纯 CPU，
-  无数据库、无 GPU）。`backend_runtime` 与五个 ML backend 的 `tests/` 仍未接入 PR 选择
-  （需要 torch 工具链与部分真实权重，属硬件/模型资格验证），本地运行方式：
-  在 `apps/<backend>` 下 `uv run --extra dev pytest -q`（`backend_runtime` 需 CPU torch）。
+- 全部 8 个 ML CPU 契约套件已接入 CI：PR 触及 `apps/_shared/**`（`backend_runtime` /
+  `mask_utils` / `protocol_v2`）或任一 `apps/*-backend/` 路径时，`ML CPU contract tests`
+  检查（`.github/workflows/ml-cpu-test.yml`，`suites: "all"`）会在每套件独立的一次性 venv 中
+  运行对应 pytest（纯 CPU：`grounded-sam2` 与 `sam3` 需 CPU torch wheel，其余 torch-free；
+  `onnxtools` 额外补装 `opencv-python-headless`，3 个上游 `importorskip` 跳过为预期）。
   各 backend 的 `pyproject.toml` 通过 `pythonpath` 注入 `../_shared/*/src`，共享包无需 editable
   安装；注意各 backend 可解析的共享包**并不相同**（图像/视频 backend 含 `mask_utils`）。
 - 页面测试优先在 MSW API 边界描述响应（`src/test/renderWithProviders.tsx` 与

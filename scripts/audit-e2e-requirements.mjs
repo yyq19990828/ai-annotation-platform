@@ -29,47 +29,63 @@ import { join } from "node:path";
  * bypass a required suite. Entries with `planned: true` are always required.
  */
 export function validateRequiredManifest(manifest) {
-  if (Array.isArray(manifest))
-    return {
-      classification: "app-code",
-      reason: "legacy frozen gate membership",
-      suites: manifest.map((entry) =>
-        typeof entry === "string"
-          ? { suite: entry, planned: true }
-          : { ...entry, planned: entry.planned ?? true },
-      ),
-      errors: [],
-    };
-  if (!manifest || typeof manifest !== "object" || Array.isArray(manifest.suites) === false)
+  const errors = [];
+  // Normalize BOTH shapes (array = legacy frozen gate, object = §6 manifest)
+  // into one internal form, then run the SAME validation over every entry.
+  let classification = "app-code";
+  let reason = "";
+  let rawSuites;
+  if (Array.isArray(manifest)) {
+    rawSuites = manifest.map((entry) =>
+      typeof entry === "string" ? { suite: entry, planned: true } : { planned: true, ...entry },
+    );
+  } else if (manifest && typeof manifest === "object" && Array.isArray(manifest.suites)) {
+    classification = manifest.classification ?? "app-code";
+    reason = manifest.reason ?? "";
+    rawSuites = manifest.suites.map((entry) =>
+      typeof entry === "string" ? { suite: entry, planned: true } : { planned: true, ...entry },
+    );
+    if (rawSuites.length === 0 && classification === "docs-only" && !String(reason).trim())
+      errors.push("docs-only manifest with an empty required list requires a nonblank reason");
+    if (classification === "docs-only" && !String(reason).trim())
+      errors.push("docs-only manifest requires a nonblank reason");
+  } else {
     return {
       classification: "invalid",
-      reason: "manifest must be a suite array or {classification, reason, suites}",
+      reason: "",
       suites: [],
-      errors: ["invalid manifest shape"],
+      errors: ["manifest must be a suite array or {classification, reason, suites}"],
     };
-  const classification = manifest.classification ?? "app-code";
-  const errors = [];
-  if (classification === "docs-only" && manifest.suites.length > 0 && !manifest.reason)
-    errors.push("docs-only manifest requires an explicit reason");
-  const suites = manifest.suites.map((entry) =>
-    typeof entry === "string"
-      ? { suite: entry, planned: true }
-      : {
-          suite: entry.suite,
-          planned: entry.planned ?? true,
-          docsAllowedSkip: entry.docsAllowedSkip === true,
-          reason: entry.reason,
-        },
-  );
-  for (const entry of suites) {
-    if (entry.docsAllowedSkip === true && classification !== "docs-only")
-      errors.push(`${entry.suite}: docsAllowedSkip is only valid in a docs-only manifest`);
-    if (entry.docsAllowedSkip === true && entry.planned !== false)
-      errors.push(`${entry.suite}: docsAllowedSkip requires planned:false`);
-    if (entry.docsAllowedSkip === true && !entry.reason)
-      errors.push(`${entry.suite}: docs-allowed skip requires an explicit reason`);
   }
-  return { classification, reason: manifest.reason, suites, errors };
+
+  const suites = [];
+  const seen = new Set();
+  for (const raw of rawSuites) {
+    const suite = typeof raw.suite === "string" ? raw.suite : "";
+    if (!suite) {
+      errors.push("suite name missing or blank");
+      continue;
+    }
+    if (seen.has(suite)) {
+      errors.push(`duplicate suite: ${suite}`);
+      continue;
+    }
+    seen.add(suite);
+    const docsAllowedSkip = raw.docsAllowedSkip === true;
+    if (docsAllowedSkip && classification !== "docs-only")
+      errors.push(`${suite}: docsAllowedSkip is only valid in a docs-only manifest`);
+    if (docsAllowedSkip && raw.planned !== false)
+      errors.push(`${suite}: docsAllowedSkip requires planned:false`);
+    if (docsAllowedSkip && !String(raw.reason ?? "").trim())
+      errors.push(`${suite}: docs-allowed skip requires an explicit reason`);
+    suites.push({
+      suite,
+      planned: raw.planned ?? true,
+      docsAllowedSkip: docsAllowedSkip && classification === "docs-only",
+      reason: raw.reason,
+    });
+  }
+  return { classification, reason, suites, errors };
 }
 
 export function auditE2ERequirements({ requiredSuites: requiredInput, statusDir }) {

@@ -666,14 +666,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       .filter(Boolean);
   }
   const dispatchScope = process.env.E2E_DISPATCH_SCOPE;
-  const shadow = shadowPlan(eventName, paths, { dispatchScope });
-  const gate = planE2ESuites(eventName, paths);
-  console.log(`matrix=${JSON.stringify(gate)}`);
-  console.log(
-    `required=${JSON.stringify(gate.include.map((entry) => ({ suite: entry.suite, planned: true })))}`,
-  );
-  // Shadow report for P9: recorded by the planning job, never drives the gate.
-  console.log(`shadow=${JSON.stringify(shadow)}`);
   // P6 handoff wiring: the ml-cpu workflow owns execution; this flag triggers
   // the ci.yml caller. Semantics are explicit per event — never silently off:
   //   pull_request: run when shared/ML paths (or their workflow/runner/deps)
@@ -689,7 +681,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   if (eventName === "push" || eventName === "schedule") mlCpu = true;
   else if (eventName === "workflow_dispatch")
     mlCpu = (process.env.E2E_DISPATCH_SCOPE ?? "extended") === "full";
-  else
+  else if (eventName === "pull_request")
     mlCpu = (paths ?? []).some((path) => mlCpuTriggers.some((prefix) => path.startsWith(prefix)));
+  else throw new Error(`Unsupported E2E event for ml-cpu wiring: ${eventName}`);
+  const shadow = { ...shadowPlan(eventName, paths, { dispatchScope }), mlCpu };
+  const gate = planE2ESuites(eventName, paths);
+  console.log(`matrix=${JSON.stringify(gate)}`);
+  console.log(
+    `required=${JSON.stringify(gate.include.map((entry) => ({ suite: entry.suite, planned: true })))}`,
+  );
+  // Shadow report for P9: recorded by the planning job, never drives the gate.
+  console.error(`DBG paths=${JSON.stringify(paths)} mlCpu=${mlCpu}`);
+  console.log(`shadow=${JSON.stringify(shadow)}`);
   console.log(`ml_cpu=${mlCpu}`);
 }

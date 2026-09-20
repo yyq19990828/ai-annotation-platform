@@ -79,7 +79,11 @@ jobs:
     name: Frontend E2E suites
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # Fail-closed via the needs dependency: a failed shared build skips every
+    # suite (the aggregate Frontend E2E then fails on the skipped result);
+    # `skipped` is only legitimate when no built suite was selected at all.
     needs: [build]
+    if: always() && (needs.build.result == 'success' || needs.build.result == 'skipped')
     # Each runner owns its services; never parallelize workers against shared fixtures.
     strategy:
       fail-fast: false
@@ -127,32 +131,15 @@ jobs:
         run: echo "E2E_PREP_START=$(date +%s)" >> "$GITHUB_ENV"
       # Fail-closed: a built entry never runs without its fingerprinted build,
       # and a build failure skips the suites instead of testing stale code.
-      - name: Gate on shared build
-        id: build-gate
-        run: |
-          if [ "${{ matrix.built }}" = "true" ] && [ "${{ needs.build.result }}" != "success" ]; then
-            echo "::error::built suite selected but the shared build did not succeed"
-            exit 1
-          fi
-          if [ "${{ matrix.built }}" != "true" ] && [ "${{ needs.build.result }}" == "failure" ]; then
-            echo "::error::shared build failed; refusing to run non-built suites against an unverified tree"
-            exit 1
-          fi
-          echo "run=true" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
-        if: steps.build-gate.outputs.run == 'true'
       - uses: actions/setup-python@v5
-        if: steps.build-gate.outputs.run == 'true'
         with:
           python-version: "3.11"
       - name: Install video fixture tools
-        if: steps.build-gate.outputs.run == 'true'
         run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - name: Install uv
-        if: steps.build-gate.outputs.run == 'true'
         run: pip install uv
       - name: Sync API deps
-        if: steps.build-gate.outputs.run == 'true'
         working-directory: apps/api
         run: uv sync --extra test
       # services 没法给 MinIO 镜像传 server 子命令；bitnami/minio 与 Docker Hub 的
@@ -174,7 +161,6 @@ jobs:
           docker logs minio
           exit 1
       - name: alembic upgrade head
-        if: steps.build-gate.outputs.run == 'true'
         working-directory: apps/api
         run: uv run alembic upgrade head
       - name: Start FastAPI in background
@@ -189,17 +175,14 @@ jobs:
           cat "$GITHUB_WORKSPACE/apps/web/e2e-api.log"
           exit 1
       - uses: actions/setup-node@v4
-        if: steps.build-gate.outputs.run == 'true'
         with:
           node-version: "22"
       - uses: pnpm/action-setup@v4
-        if: steps.build-gate.outputs.run == 'true'
       - name: pnpm install
-        if: steps.build-gate.outputs.run == 'true'
         working-directory: apps/web
         run: pnpm install --frozen-lockfile
       - name: Generate API types for Mask suites
-        if: matrix.built != true && steps.build-gate.outputs.run == 'true'
+        if: matrix.built != true
         working-directory: apps/web
         env:
           OPENAPI_URL: ${{ github.workspace }}/apps/api/openapi.snapshot.json
@@ -207,12 +190,12 @@ jobs:
       # Fail-closed: the download only succeeds for the exact fingerprint
       # because the artifact name embeds it.
       - uses: actions/download-artifact@v4
-        if: matrix.built == true && steps.build-gate.outputs.run == 'true'
+        if: matrix.built == true
         with:
           name: web-e2e-dist-${{ needs.build.outputs.fingerprint }}
           path: shared-build
       - name: Verify and unpack shared build
-        if: matrix.built == true && steps.build-gate.outputs.run == 'true'
+        if: matrix.built == true
         working-directory: shared-build
         env:
           FINGERPRINT: ${{ needs.build.outputs.fingerprint }}
@@ -228,7 +211,6 @@ jobs:
           fi
           tar -xzf "web-e2e-dist-$FINGERPRINT.tar.gz" -C "$GITHUB_WORKSPACE/apps/web"
       - name: Install Playwright browsers
-        if: steps.build-gate.outputs.run == 'true'
         working-directory: apps/web
         run: pnpm exec playwright install --with-deps chromium
       - name: Run E2E suite
@@ -243,7 +225,7 @@ jobs:
         if: always() && steps.e2e.outcome != 'skipped'
         run: echo "E2E_RUN_SECONDS=$(( $(date +%s) - E2E_RUN_START ))" >> "$GITHUB_ENV"
       - name: Summarize E2E results
-        if: always() && steps.build-gate.outputs.run == 'true'
+        if: always()
         env:
           E2E_SUITE: ${{ matrix.suite }}
           E2E_OUTCOME: ${{ steps.e2e.outcome }}

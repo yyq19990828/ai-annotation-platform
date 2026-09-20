@@ -245,15 +245,25 @@ test("CLI stdout carries exactly the outputs the workflow consumers read", () =>
     fileURLToPath(new URL("../.github/workflows/ci.yml", import.meta.url)),
     "utf8",
   );
+  const git = (...args) =>
+    execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const run = (env) =>
+    spawnSync(process.execPath, [script], {
+      cwd,
+      encoding: "utf8",
+      env: { ...process.env, ...env },
+    });
   try {
-    const run = (env) =>
-      spawnSync(process.execPath, [script], {
-        cwd,
-        encoding: "utf8",
-        env: { ...process.env, ...env },
-      });
-    const pr = run({ GITHUB_EVENT_NAME: "pull_request", E2E_BASE_SHA: "0".repeat(40) });
+    git("init");
+    git("config", "user.name", "E2E routing test");
+    git("config", "user.email", "test@example.invalid");
+    mkdirSync(join(cwd, "placeholder"), { recursive: true });
+    writeFileSync(join(cwd, "placeholder", "seed.txt"), "seed\n");
+    git("add", ".");
+    git("-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "commit", "-m", "seed");
+
     // An invalid base fails closed regardless of the shadow report.
+    const pr = run({ GITHUB_EVENT_NAME: "pull_request", E2E_BASE_SHA: "0".repeat(40) });
     assert.notEqual(pr.status, 0);
 
     const dispatched = run({ GITHUB_EVENT_NAME: "workflow_dispatch", E2E_DISPATCH_SCOPE: "full" });
@@ -280,7 +290,10 @@ test("CLI stdout carries exactly the outputs the workflow consumers read", () =>
       "required" in outputs,
       "ci.yml reads steps.plan.outputs.required; the CLI must emit the same key",
     );
+    // Manual full dispatch triggers the delegated CPU contracts; the frozen
+    // legacy required list is all planned:true.
     assert.equal(outputs.ml_cpu, "true");
+    assert.equal(JSON.parse(outputs.shadow).mlCpu, true);
     assert.equal(
       JSON.parse(outputs.required).every((entry) => entry.planned === true),
       true,
@@ -298,16 +311,55 @@ test("CLI stdout carries exactly the outputs the workflow consumers read", () =>
         .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
     );
     assert.equal(extOutputs.ml_cpu, "false");
+
+    // W1: the shadow report carries the same real ml_cpu boolean (push always
+    // triggers the delegated CPU contract suites).
+    const push = run({ GITHUB_EVENT_NAME: "push" });
+    assert.equal(push.status, 0, push.stderr);
+    const pushOutputs = Object.fromEntries(
+      push.stdout
+        .trim()
+        .split("\n")
+        .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
+    );
+    const pushShadow = JSON.parse(pushOutputs.shadow);
+    assert.equal(pushOutputs.ml_cpu, "true");
+    assert.equal(pushShadow.mlCpu, true);
+    assert.equal(JSON.parse(pushOutputs.required).length, 9); // frozen legacy gate: 4 shards + 3 mask + 2 extended
+
+    // A PR touching a shared consumer/runner path triggers the CPU caller in
+    // both outputs. The fixture keeps base != HEAD: the base is captured
+    // BEFORE the shared path is added, so the diff is nonempty.
+    const sharedBase = git("rev-parse", "HEAD");
+    mkdirSync(join(cwd, "apps/_shared/mask_utils/src"), { recursive: true });
+    writeFileSync(join(cwd, "apps/_shared/mask_utils/src/polygon.ts"), "export {}\n");
+    git("add", ".");
+    git(
+      "-c",
+      "core.hooksPath=/dev/null",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "-m",
+      "shared change",
+    );
+    const sharedPr = spawnSync(process.execPath, [script, sharedBase], {
+      cwd,
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_EVENT_NAME: "pull_request" },
+    });
+    assert.equal(sharedPr.status, 0, sharedPr.stderr);
+    const sharedOutputs = Object.fromEntries(
+      sharedPr.stdout
+        .trim()
+        .split("\n")
+        .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
+    );
+    assert.equal(sharedOutputs.ml_cpu, "true");
+    assert.equal(JSON.parse(sharedOutputs.shadow).mlCpu, true);
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
-});
-
-test("unknown/multi-domain PRs run the delegated ml-cpu contracts, never silently off", () => {
-  assert.equal(planE2ESuites("push").include.length > 0, true);
-  const unknown = shadowPlan("pull_request", ["model-configs/weights.yaml"]);
-  assert.equal(unknown.planned, undefined ? [] : unknown.planned);
-  assert.ok(unknown.planned.length >= [...functional].length + 2);
 });
 test("CLI handles deleted and renamed paths, and fails on an unavailable base", () => {
   const cwd = mkdtempSync(join(tmpdir(), "e2e-routing-"));
@@ -359,4 +411,11 @@ test("CLI handles deleted and renamed paths, and fails on an unavailable base", 
   } finally {
     rmSync(cwd, { recursive: true, force: true });
   }
+});
+
+test("unknown/multi-domain PRs run the delegated ml-cpu contracts, never silently off", () => {
+  assert.equal(planE2ESuites("push").include.length > 0, true);
+  const unknown = shadowPlan("pull_request", ["model-configs/weights.yaml"]);
+  assert.equal(unknown.planned, undefined ? [] : unknown.planned);
+  assert.ok(unknown.planned.length >= [...functional].length + 2);
 });
