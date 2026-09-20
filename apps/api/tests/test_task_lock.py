@@ -48,7 +48,16 @@ async def _seed_project_and_task(
     db.add(project)
     await db.flush()
 
-    if reviewer_id is not None:
+    # Literal employees; authority comes only from these explicit membership rows.
+    db.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=assignee_id,
+            role="annotator",
+            assigned_by=owner_id,
+        )
+    )
+    if reviewer_id is not None and reviewer_id != assignee_id:
         db.add(
             ProjectMember(
                 project_id=project.id,

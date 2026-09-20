@@ -2,6 +2,7 @@ import { useCallback, useState } from "react";
 import { useMutation } from "@tanstack/react-query";
 import { apiClient } from "@/api/client";
 import { useReconnectingWebSocket, type ReconnectState } from "@/hooks/useReconnectingWebSocket";
+import { useAuthStore } from "@/stores/authStore";
 import { buildWsUrl } from "@/lib/wsHost";
 
 /** v0.18.6 · 逐阶段实时统计项 (worker _stage_totals_snapshot 的形态)。源阶段=detected; 下游=targeted/ok/failed/skipped_geometry。 */
@@ -29,8 +30,12 @@ export function usePreannotationProgress(projectId: string | undefined): {
   retries: number;
 } {
   const [progress, setProgress] = useState<PreannotationProgress | null>(null);
+  const token = useAuthStore((s) => s.token);
 
-  const url = projectId ? buildWsUrl(`/ws/projects/${projectId}/preannotate`) : null;
+  // Root WS URL carries the current account token; wait for auth hydration and
+  // reconnect on token/account change instead of connecting unauthenticated.
+  const url =
+    projectId && token ? buildWsUrl(`/ws/projects/${projectId}/preannotate`, { token }) : null;
 
   const onMessage = useCallback((e: MessageEvent) => {
     try {
@@ -45,7 +50,7 @@ export function usePreannotationProgress(projectId: string | undefined): {
     }
   }, []);
 
-  const { state, retries } = useReconnectingWebSocket(url, { onMessage, enabled: !!projectId });
+  const { state, retries } = useReconnectingWebSocket(url, { onMessage, enabled: !!url });
 
   return { progress, connection: state, retries };
 }

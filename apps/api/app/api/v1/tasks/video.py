@@ -9,7 +9,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.deps import (
     get_db,
     get_current_user,
-    require_roles,
     require_scopes,
 )
 from app.db.models.user import User
@@ -97,13 +96,14 @@ from app.api.v1.tasks._shared import (
     _load_task_or_404,
     _assert_task_visible,
     _attach_dimensions,
-    _ANNOTATORS,
-    _REVIEWERS,
     _capture_first_review_contributor_snapshot,
     _task_contributor_snapshot,
+    require_task_annotation_write,
+    require_task_review_write,
     VIDEO_MANIFEST_URL_EXPIRES_IN,
     logger,
 )
+from app.services.project_access import ProjectAccess
 
 router = APIRouter()
 
@@ -523,7 +523,8 @@ async def claim_video_segment(
     segment_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write),
 ):
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
@@ -556,7 +557,8 @@ async def heartbeat_video_segment(
     segment_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write),
 ):
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
@@ -591,7 +593,8 @@ async def release_video_segment(
     segment_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write),
 ):
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
@@ -640,7 +643,8 @@ async def submit_video_segment(
     segment_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write),
 ):
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
@@ -743,7 +747,8 @@ async def reopen_video_segment(
     task_id: uuid.UUID,
     segment_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_review_write),
 ):
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
@@ -764,7 +769,8 @@ async def unassign_video_segment(
     task_id: uuid.UUID,
     segment_id: uuid.UUID,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_review_write),
 ):
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
@@ -815,7 +821,8 @@ async def run_video_track_quality_now(
     task_id: uuid.UUID,
     body: VideoTrackQualityRunRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_review_write),
 ):
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
@@ -893,7 +900,8 @@ async def accept_video_track_quality(
     run_id: uuid.UUID,
     body: VideoTrackQualityAcceptRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_review_write),
 ):
     from app.db.models.video_track_quality import VideoTrackQualityRun
 
@@ -1005,7 +1013,8 @@ async def retry_video_frame_assets(
     task_id: uuid.UUID,
     payload: VideoFrameRetryRequest,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write),
 ):
     task = await _load_task_or_404(db, task_id)
     await _assert_task_visible(db, task, current_user)
@@ -1033,7 +1042,8 @@ async def save_video_mask_correction_keyframe(
     request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write),
 ):
     task = (
         await db.execute(
@@ -1045,8 +1055,8 @@ async def save_video_mask_correction_keyframe(
     ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    await _assert_task_visible(db, task, current_user)
-    _assert_task_editable(task, current_user)
+    await _assert_task_visible(db, task, current_user, access=access)
+    _assert_task_editable(task, current_user, access=access)
     raw_if_match = request.headers.get("If-Match", "").strip()
     if not raw_if_match:
         raise HTTPException(status_code=428, detail={"reason": "if_match_required"})
@@ -1095,7 +1105,8 @@ async def operate_video_mask_correction_keyframe(
     request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write),
 ):
     task = (
         await db.execute(
@@ -1107,8 +1118,8 @@ async def operate_video_mask_correction_keyframe(
     ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    await _assert_task_visible(db, task, current_user)
-    _assert_task_editable(task, current_user)
+    await _assert_task_visible(db, task, current_user, access=access)
+    _assert_task_editable(task, current_user, access=access)
     raw_if_match = request.headers.get("If-Match", "").strip()
     if not raw_if_match:
         raise HTTPException(status_code=428, detail={"reason": "if_match_required"})
@@ -1163,11 +1174,12 @@ async def create_video_mask_correction(
     payload: VideoMaskCorrectionRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write),
 ):
     task = await _load_task_or_404(db, task_id)
-    await _assert_task_visible(db, task, current_user)
-    _assert_task_editable(task, current_user)
+    await _assert_task_visible(db, task, current_user, access=access)
+    _assert_task_editable(task, current_user, access=access)
     ctx = await build_context_from_task(db, task)
     commit_started = time.monotonic()
     try:
@@ -1290,11 +1302,12 @@ async def propagate_video_track(
     payload: VideoTrackerPropagateRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write),
 ):
     task = await _load_task_or_404(db, task_id)
-    await _assert_task_visible(db, task, current_user)
-    _assert_task_editable(task, current_user)
+    await _assert_task_visible(db, task, current_user, access=access)
+    _assert_task_editable(task, current_user, access=access)
     ctx = await build_context_from_task(db, task)
     body = await create_tracker_job(
         db,
@@ -1337,14 +1350,15 @@ async def track_video(
     payload: VideoTrackerPropagateRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write),
 ):
     """v0.22.1 · B · 任务级追踪 (画布级入口): source_annotation_id 可选——给出即延展该轨迹,
     缺省则为无源检测 (文本/种子), 新建轨迹类别由 target_class_name 指定。旧的
     /tracks/{annotation_id}:propagate 仍保留 (延展快捷路径)。"""
     task = await _load_task_or_404(db, task_id)
-    await _assert_task_visible(db, task, current_user)
-    _assert_task_editable(task, current_user)
+    await _assert_task_visible(db, task, current_user, access=access)
+    _assert_task_editable(task, current_user, access=access)
     ctx = await build_context_from_task(db, task)
     body = await create_tracker_job(
         db,

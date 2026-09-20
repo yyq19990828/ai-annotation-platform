@@ -494,6 +494,12 @@ async def test_claimed_reviewer_can_decide_job_created_by_annotator(
     task.status = "review"
     task.reviewer_id = reviewer_user.id
     task.reviewer_claimed_at = datetime.now(timezone.utc)
+    # Frozen review evidence: the reviewer is not a contributor, so the
+    # self-review guard admits a legitimate claimed-reviewer decision.
+    task.annotation_contributor_ids = [str(owner.id)]
+    task.review_round_id = uuid.uuid4()
+    task.review_contributor_ids = [str(owner.id)]
+    task.review_submitter_id = str(owner.id)
     await db_session.commit()
 
     payload = {
@@ -526,7 +532,7 @@ async def test_claimed_reviewer_can_decide_job_created_by_annotator(
         json=payload,
         headers=_bearer(reviewer_token),
     )
-    assert response.status_code == 409
+    assert response.status_code == 409, response.text
     assert response.json()["detail"]["reason"] == "task_review_not_claimed_by_user"
 
     task.status = "completed"
@@ -537,8 +543,11 @@ async def test_claimed_reviewer_can_decide_job_created_by_annotator(
         json=payload,
         headers=_bearer(reviewer_token),
     )
-    assert response.status_code == 409
-    assert response.json()["detail"]["reason"] == "task_locked"
+    # The entry route's phase capability guard rejects a completed task before
+    # the service status guard, so the response is 403 with the canonical
+    # missing-capability detail (annotation.write).
+    assert response.status_code == 403, response.text
+    assert "annotation.write" in str(response.json()["detail"]), response.text
 
 
 async def test_migration_0145_has_review_scope_guards(db_session):

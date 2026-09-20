@@ -139,6 +139,9 @@ async def test_upload_init_forbidden_to_non_owner(
     super_user, _ = super_admin
     pm_user, pm_token = project_admin
     proj = await _seed_project(db_session, super_user.id)
+    # Visible work member: a non-owner project administrator is denied management
+    # with 403 instead of an invisible-project 404.
+    _add_member(db_session, proj, pm_user.id, "annotator")
     await db_session.commit()
 
     headers = {"Authorization": f"Bearer {pm_token}"}

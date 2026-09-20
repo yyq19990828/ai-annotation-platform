@@ -26,7 +26,7 @@ import {
   EMPTY_DASHBOARD_URL_STATE,
   type DashboardStatus,
 } from "./dashboardUrlState";
-import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import { buildProjectEntryUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { projectDisplayType } from "@/utils/projectDisplay";
 import { statSeriesHint, statSparkValues, statTrendFromSeries } from "@/utils/projectStatsSeries";
 import { PageContainer } from "@/components/layout/PageContainer";
@@ -324,7 +324,11 @@ export function AdminProjectsDashboard() {
 
   const onOpenProject = (p: ProjectResponse) => {
     if (p.data_type && WORKBENCH_DATA_TYPES.has(p.data_type)) {
-      navigate(buildWorkbenchUrl(p.id, { returnTo: currentWorkbenchReturnTo(location) }));
+      navigate(
+        buildProjectEntryUrl(p.id, p.my_project_role, {
+          returnTo: currentWorkbenchReturnTo(location),
+        }),
+      );
     } else {
       pushToast({
         msg: `项目 "${p.name}" 已打开`,

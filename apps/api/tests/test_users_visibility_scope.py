@@ -49,9 +49,9 @@ async def _seed_scope_world(db: AsyncSession, project_admin, super_admin):
     admin, _ = super_admin
 
     own_project = await create_project(db, owner_id=manager.id, name="PA Own")
-    member = await create_user(db, "annotator", "own-member@e.test", "Own Member")
+    member = await create_user(db, "employee", "own-member@e.test", "Own Member")
     inactive_member = await create_user(
-        db, "reviewer", "own-inactive@e.test", "Own Inactive"
+        db, "employee", "own-inactive@e.test", "Own Inactive"
     )
     inactive_member.is_active = False
     viewer_member = await create_user(db, "viewer", "own-viewer@e.test", "Own Viewer")
@@ -79,17 +79,17 @@ async def _seed_scope_world(db: AsyncSession, project_admin, super_admin):
     )
 
     unassigned_annotator = await create_user(
-        db, "annotator", "free-annotator@e.test", "Free Annotator"
+        db, "employee", "free-annotator@e.test", "Free Annotator"
     )
     unassigned_reviewer = await create_user(
-        db, "reviewer", "free-reviewer@e.test", "Free Reviewer"
+        db, "employee", "free-reviewer@e.test", "Free Reviewer"
     )
     unassigned_viewer = await create_user(
         db, "viewer", "free-viewer@e.test", "Free Viewer"
     )
     other_pa = await create_user(db, "project_admin", "other-pa@e.test", "Other PA")
     inactive_annotator = await create_user(
-        db, "annotator", "inactive-annotator@e.test", "Inactive Annotator"
+        db, "employee", "inactive-annotator@e.test", "Inactive Annotator"
     )
     inactive_annotator.is_active = False
     inactive_super_admin = await create_user(
@@ -99,7 +99,7 @@ async def _seed_scope_world(db: AsyncSession, project_admin, super_admin):
 
     foreign_project = await create_project(db, owner_id=admin.id, name="Foreign")
     foreign_member = await create_user(
-        db, "annotator", "foreign-member@e.test", "Foreign Member"
+        db, "employee", "foreign-member@e.test", "Foreign Member"
     )
     db.add(
         ProjectMember(
@@ -308,14 +308,14 @@ async def test_pa_query_flags_is_managed(
     assert all(row["is_managed"] for row in sa_response.json()["items"])
 
 
-async def test_pa_writes_allowed_on_unassigned_annotator(
+async def test_pa_account_writes_but_platform_role_change_is_super_admin_only(
     httpx_client: httpx.AsyncClient, project_admin, super_admin, db_session
 ):
-    """Account-level writes now succeed on unassigned enabled workers.
+    """Account-level writes succeed on unassigned enabled workers.
 
-    Order matters: the read-only preview comes first, then role switch /
-    password reset / group preview, then the lifecycle writes (deactivate,
-    delete) that each flip the target inactive.
+    Platform-role preview/change is super-administrator only (plan AUTH-04);
+    the remaining account writes (password reset, group preview, lifecycle
+    deactivate/delete) stay available to the project administrator.
     """
 
     world = await _seed_scope_world(db_session, project_admin, super_admin)
@@ -323,18 +323,16 @@ async def test_pa_writes_allowed_on_unassigned_annotator(
     headers = _headers(project_admin)
 
     preview = await httpx_client.get(
-        f"/api/v1/users/{target.id}/role/preview?role=reviewer", headers=headers
+        f"/api/v1/users/{target.id}/role/preview?role=employee", headers=headers
     )
-    assert preview.status_code == 200, preview.text
-    assert "该用户不在你管理的项目内" not in preview.text
+    assert preview.status_code == 403, preview.text
 
     role = await httpx_client.patch(
         f"/api/v1/users/{target.id}/role",
-        json={"role": "reviewer"},
+        json={"role": "employee"},
         headers=headers,
     )
-    assert role.status_code == 200, role.text
-    assert role.json()["role"] == "reviewer"
+    assert role.status_code == 403, role.text
 
     reset = await httpx_client.post(
         f"/api/v1/users/{target.id}/admin-reset-password", headers=headers
@@ -397,10 +395,10 @@ async def test_pa_account_writes_on_foreign_member_but_lifecycle_gated(
 
     role = await httpx_client.patch(
         f"/api/v1/users/{target.id}/role",
-        json={"role": "reviewer"},
+        json={"role": "employee"},
         headers=headers,
     )
-    assert role.status_code == 200, role.text
+    assert role.status_code == 403, role.text
 
     reset = await httpx_client.post(
         f"/api/v1/users/{target.id}/admin-reset-password", headers=headers
@@ -477,7 +475,7 @@ async def test_pa_lifecycle_blocked_for_task_straddling_annotator(
 
     world = await _seed_scope_world(db_session, project_admin, super_admin)
     straddler = await create_user(
-        db_session, "annotator", "straddler@e.test", "Task Straddler"
+        db_session, "employee", "straddler@e.test", "Task Straddler"
     )
     db_session.add(
         Task(
@@ -525,13 +523,13 @@ async def test_pa_delete_transfer_receiver_must_cover_task_projects(
     headers = _headers(project_admin)
 
     target = await create_user(
-        db_session, "annotator", "leaving-member@e.test", "Leaving Member"
+        db_session, "employee", "leaving-member@e.test", "Leaving Member"
     )
     receiver = await create_user(
-        db_session, "annotator", "covering-member@e.test", "Covering Member"
+        db_session, "employee", "covering-member@e.test", "Covering Member"
     )
     outsider = await create_user(
-        db_session, "annotator", "outside-receiver@e.test", "Outside Receiver"
+        db_session, "employee", "outside-receiver@e.test", "Outside Receiver"
     )
     db_session.add_all(
         [
@@ -626,7 +624,7 @@ async def test_pa_writes_blocked_on_super_admin(
 
     role = await httpx_client.patch(
         f"/api/v1/users/{target.id}/role",
-        json={"role": "reviewer"},
+        json={"role": "employee"},
         headers=headers,
     )
     assert role.status_code == 403, role.text
@@ -644,11 +642,28 @@ async def test_pa_writes_blocked_on_super_admin(
     delete = await httpx_client.delete(f"/api/v1/users/{target.id}", headers=headers)
     assert delete.status_code == 403, delete.text
 
+    # Platform-role preview is super-admin only, so an out-of-scope project
+    # administrator is denied before any user detail is disclosed.
     preview = await httpx_client.get(
-        f"/api/v1/users/{target.id}/role/preview?role=reviewer", headers=headers
+        f"/api/v1/users/{target.id}/role/preview?role=employee", headers=headers
     )
-    assert preview.status_code == 404, preview.text
+    assert preview.status_code == 403, preview.text
     assert target.email not in preview.text and target.name not in preview.text
+
+
+async def test_legacy_role_filters_are_rejected(
+    httpx_client: httpx.AsyncClient, super_admin
+):
+    """role=annotator/reviewer must be a validation error, not an empty list."""
+
+    _, token = super_admin
+    headers = {"Authorization": f"Bearer {token}"}
+    for url in ("/api/v1/users", "/api/v1/users/query", "/api/v1/users/stats"):
+        response = await httpx_client.get(
+            url, params={"role": "reviewer"}, headers=headers
+        )
+        assert response.status_code == 400, (url, response.text)
+        assert "非法平台角色" in response.text
 
 
 async def test_super_admin_visibility_unchanged(
@@ -675,10 +690,10 @@ async def test_legacy_picker_semantics_unchanged(
 ):
     world = await _seed_scope_world(db_session, project_admin, super_admin)
 
-    # role=annotator&status=active keeps the wide candidate list (assign modal).
+    # role=employee&status=active keeps the wide candidate list (assign modal).
     candidates = await httpx_client.get(
         "/api/v1/users",
-        params={"role": "annotator", "status": "active"},
+        params={"role": "employee", "status": "active"},
         headers=_headers(project_admin),
     )
     assert candidates.status_code == 200, candidates.text

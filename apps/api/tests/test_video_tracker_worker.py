@@ -127,7 +127,7 @@ async def test_tracker_worker_completes_mock_bbox_job_and_writes_video_track(
     async def _noop(_c: str, _p: dict) -> None:
         return None
 
-    await accept_tracker_job(db_session, job.id, publisher=_noop)
+    await accept_tracker_job(db_session, job.id, actor_id=user.id, publisher=_noop)
     await db_session.refresh(job)
     await db_session.refresh(annotation)
     assert job.status == "accepted"
@@ -453,7 +453,7 @@ async def test_tracker_worker_preserves_partial_results_on_cancel(
     async def _noop(_c: str, _p: dict) -> None:
         return None
 
-    await accept_tracker_job(db_session, job.id, publisher=_noop)
+    await accept_tracker_job(db_session, job.id, actor_id=user.id, publisher=_noop)
     await db_session.refresh(annotation)
     assert [kf["frame_index"] for kf in annotation.geometry["keyframes"]] == [0, 1]
     assert annotation.geometry["keyframes"][1]["source"] == "prediction"
@@ -562,7 +562,7 @@ async def test_tracker_worker_calls_project_ml_backend_in_windows(
     async def _noop(_c: str, _p: dict) -> None:
         return None
 
-    await accept_tracker_job(db_session, job.id, publisher=_noop)
+    await accept_tracker_job(db_session, job.id, actor_id=user.id, publisher=_noop)
     await db_session.refresh(annotation)
     assert [kf["frame_index"] for kf in annotation.geometry["keyframes"]] == [
         0,
@@ -776,7 +776,7 @@ async def test_tracker_worker_marks_low_confidence_backend_results_outside(
     async def _noop(_c: str, _p: dict) -> None:
         return None
 
-    await accept_tracker_job(db_session, job.id, publisher=_noop)
+    await accept_tracker_job(db_session, job.id, actor_id=user.id, publisher=_noop)
     await db_session.refresh(annotation)
     assert annotation.geometry["outside"] == [
         {"from": 1, "to": 1, "source": "prediction"}
@@ -1331,7 +1331,7 @@ async def test_accept_mask_candidate_validates_source_dimensions_before_commit(
         return None
 
     with pytest.raises(ValueError, match="mask size must match source video"):
-        await accept_tracker_job(db_session, job.id, publisher=_noop)
+        await accept_tracker_job(db_session, job.id, actor_id=user.id, publisher=_noop)
     await db_session.refresh(annotation)
     await db_session.refresh(job)
     assert annotation.geometry["type"] == "video_track_bbox"

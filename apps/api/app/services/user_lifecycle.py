@@ -20,6 +20,7 @@ from sqlalchemy import delete, func, or_, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.exc import DBAPIError
 
+from app.db.enums import PROJECT_ROLES as _VALID_PROJECT_ROLES
 from app.db.enums import UserRole
 from app.db.models.api_key import ApiKey
 from app.db.models.password_reset_token import PasswordResetToken
@@ -45,7 +46,9 @@ from app.core.token_blacklist import increment_user_generation
 ACTIVE_HANDOFF_STATUSES = ("pending", "in_progress", "review", "rejected")
 REACTIVATABLE_KINDS = {"suspended", "emergency_suspended"}
 HISTORICAL_KINDS = {"deleted", "historical_unknown"}
-MANAGED_PROJECT_ROLES = ("annotator", "reviewer")
+#: Platform roles a project administrator may offboard/handoff.  Only the
+#: post-cutover staff identity; legacy globals are history, not live targets.
+MANAGED_PROJECT_ROLES = ("employee",)
 
 
 def lifecycle_user_out(user: User) -> UserOut:
@@ -289,7 +292,6 @@ class UserLifecycleService:
                     ProjectMember.project_id == project_id,
                     ProjectMember.role == role,
                     User.is_active.is_(True),
-                    User.role == role,
                     User.id != target_id,
                 )
                 .order_by(User.name, User.email, User.id)
@@ -536,18 +538,28 @@ class UserLifecycleService:
                     project_blockers.append(blocker)
                     all_blockers.append(blocker)
 
+            # Responsibility is project-scoped, so the account's platform role
+            # is no longer compared here.  Legitimate cross-project mixed roles
+            # (annotator in A, reviewer in B) are not an anomaly.  Flag only a
+            # genuinely invalid membership role or a batch assignment that has
+            # no matching membership responsibility in the same project.
+            valid_member_roles = member_roles[project.id]
             mismatched = {
                 member_role
-                for member_role in member_roles[project.id]
-                if member_role != target.role
+                for member_role in valid_member_roles
+                if member_role not in _VALID_PROJECT_ROLES
             }
-            # A batch assignment can outlive a role change even when the
-            # corresponding ProjectMember row was later removed. Treat either
-            # source as a historic mixed-role anomaly instead of silently
-            # choosing one responsibility.
+            # A batch assignment can outlive a membership removal. Treat that
+            # as a historic anomaly instead of silently choosing one role.
             if any(
-                (batch.annotator_id == target_id and target.role != "annotator")
-                or (batch.reviewer_id == target_id and target.role != "reviewer")
+                (
+                    batch.annotator_id == target_id
+                    and "annotator" not in valid_member_roles
+                )
+                or (
+                    batch.reviewer_id == target_id
+                    and "reviewer" not in valid_member_roles
+                )
                 for batch in batches_by_project[project.id]
             ):
                 mismatched.add("batch_assignment")

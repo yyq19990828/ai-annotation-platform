@@ -166,9 +166,10 @@ const test = base.extend<{ sliceCase: Case }>({
                 "/api/v1/audit-logs",
                 "/api/v1/tasks",
               ].includes(error.path!) ||
-                /^\/api\/v1\/tasks\/[0-9a-f-]{36}(\/(annotations|discussion\/page))?$/.test(
+                /^\/api\/v1\/tasks\/[0-9a-f-]{36}(\/(annotations|discussion\/(page|annotation-counts)))?$/.test(
                   error.path!,
                 ) ||
+                /^\/api\/v1\/projects\/[0-9a-f-]{36}\/access$/.test(error.path!) ||
                 /^\/api\/v1\/annotations\/[0-9a-f-]{36}\/(mask-content|comments\/page)$/.test(
                   error.path!,
                 )))),

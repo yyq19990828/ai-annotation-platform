@@ -33,7 +33,7 @@ async def test_users_query_stats_and_export_keep_the_same_filtered_scope(
     project = await create_project(db_session, owner_id=manager.id)
     managed = await create_user(
         db_session,
-        "annotator",
+        "employee",
         "contract-managed@example.test",
         "Contract Managed",
     )
@@ -45,7 +45,7 @@ async def test_users_query_stats_and_export_keep_the_same_filtered_scope(
     )
     disabled_outside = await create_user(
         db_session,
-        "annotator",
+        "employee",
         "contract-disabled@example.test",
         "Contract Disabled",
     )
@@ -94,7 +94,7 @@ async def test_users_query_stats_and_export_keep_the_same_filtered_scope(
     # ...but does include enabled unassigned annotators (issue #115).
     enabled_outside = await create_user(
         db_session,
-        "annotator",
+        "employee",
         "contract-enabled@example.test",
         "Contract Enabled",
     )

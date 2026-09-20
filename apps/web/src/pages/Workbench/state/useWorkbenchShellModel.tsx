@@ -28,6 +28,7 @@ import {
   AlertDialogTitle,
 } from "@/components/shadcn/ui/alert-dialog";
 import { useProject, useUpdateProject } from "@/hooks/useProjects";
+import { useProjectAccess } from "@/hooks/useProjectAccess";
 import { useProjectPipelines } from "@/hooks/useProjectPipelines";
 import {
   useTaskList,
@@ -248,9 +249,15 @@ import {
 import {
   getAll as offlineQueueGetAll,
   removeById as offlineQueueRemoveById,
+  type OfflineOp,
   type OfflineQueueScope,
 } from "./offlineQueue";
-import { useWorkbenchOfflineQueue } from "./useWorkbenchOfflineQueue";
+import {
+  useWorkbenchOfflineQueue,
+  type FlushAuthorizationOutcome,
+} from "./useWorkbenchOfflineQueue";
+import { projectAccessQueryKey } from "@/hooks/useProjectAccess";
+import { projectsApi } from "@/api/projects";
 import { useImageAnnotationActions } from "../stages/image/useImageAnnotationActions";
 import { confirmDialog } from "@/components/ui/decisionDialog";
 import {
@@ -294,6 +301,7 @@ import {
   resolveVideoTimelineRangePurpose,
   resolveVideoSelectionCardCollapsed,
   resolveFloatingSelectionRect,
+  classifyAccessLookupError,
 } from "./useWorkbenchShellModel.helpers";
 import type {
   WorkbenchWorkspaceCommands,
@@ -555,6 +563,15 @@ export function useWorkbenchShellModel({
 
   const { data: currentProject, isLoading: isProjectLoading } = useProject(routeId ?? "");
   const projectId = currentProject?.id;
+  const projectAccess = useProjectAccess(projectId);
+  const requiredWriteCapability = mode === "review" ? "review.write" : "annotation.write";
+  // Loading / failed project access must not mount an editable editor, and a
+  // revoked membership blocks offline replay in `useWorkbenchOfflineQueue`.
+  const projectWriteBlocked =
+    !projectId ||
+    projectAccess.isLoading ||
+    projectAccess.isError ||
+    !projectAccess.hasCapability(requiredWriteCapability);
   const projectPipelinesQ = useProjectPipelines(
     { scope: "private", project_id: projectId },
     { enabled: !!projectId },
@@ -3020,12 +3037,48 @@ export function useWorkbenchShellModel({
     return tasks.filter((t) => t.status !== "completed" && t.id !== taskId).length;
   }, [tasks, taskId]);
 
+  // Authorize each queued op against its own project with fresh authority so a
+  // stale cache cannot permit a revoked project; a revoked A retains its drafts
+  // without blocking an unrelated authorized B in the same account queue.
+  // A network/server failure is "indeterminate": the drain defers the op and
+  // retries with backoff instead of recording a false permission change.
+  const authorizeOfflineFlush = useCallback(
+    async (op: OfflineOp): Promise<FlushAuthorizationOutcome> => {
+      const opProjectId = op.projectId ?? projectId;
+      const owner = useAuthStore.getState().user?.id ?? null;
+      if (!opProjectId || !owner) return { outcome: "denied" };
+      try {
+        // staleTime:0 forces a fresh access read for every op.
+        const data = await queryClient.fetchQuery({
+          queryKey: projectAccessQueryKey(opProjectId, owner),
+          queryFn: ({ signal }) => projectsApi.getAccess(opProjectId, { signal }),
+          staleTime: 0,
+        });
+        // Bind the response to the exact op context and re-check the owner after
+        // the await so a switched account cannot authorize with stale caps.
+        if (data.project_id !== opProjectId || data.user_id !== owner) {
+          return { outcome: "denied" };
+        }
+        if ((useAuthStore.getState().user?.id ?? null) !== owner) {
+          return { outcome: "denied" };
+        }
+        const capabilities = new Set(data.capabilities ?? []);
+        const authorized = capabilities.has("annotation.write") || capabilities.has("review.write");
+        return { outcome: authorized ? "authorized" : "denied" };
+      } catch (error) {
+        return { outcome: classifyAccessLookupError(error) };
+      }
+    },
+    [projectId, queryClient],
+  );
+
   const offlineQ = useWorkbenchOfflineQueue({
     history,
     queryClient,
     pushToast,
     userId: meUserId,
     taskId,
+    authorizeFlush: authorizeOfflineFlush,
   });
   const {
     online,
@@ -3042,6 +3095,7 @@ export function useWorkbenchShellModel({
   } = offlineQ;
 
   const isLockedForActions =
+    projectWriteBlocked ||
     sceneWriteBlocked ||
     (mode === "review"
       ? task?.status === "completed" || videoCollaborationEnabled || !!lockConflict || !!lockError
@@ -8543,6 +8597,7 @@ export function useWorkbenchShellModel({
       queueScope,
       onFlushOne: executeOp,
       onFlushAll: flushOffline,
+      classifyError: offlineQ.classifyError,
     },
     workbenchSettings: {
       open: workbenchSettingsOpen,

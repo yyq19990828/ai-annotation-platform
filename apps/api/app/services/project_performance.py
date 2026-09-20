@@ -33,7 +33,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.enums import UserRole
 from app.db.models.annotation import Annotation
 from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
@@ -241,8 +240,13 @@ async def resolve_performance_access(
     project = await db.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="项目不存在")
-    team_access = user.role == UserRole.SUPER_ADMIN.value or project.owner_id == user.id
-    if team_access:
+    # Project performance stays manager-only: a super administrator or an owner
+    # whose current platform role is administrative.  Ownership alone or a
+    # foreign-project platform administrator is not enough; the account role is
+    # never used as a project grant.
+    from app.services.scheduler import is_privileged_for_project
+
+    if is_privileged_for_project(user, project):
         return project
     raise HTTPException(
         status_code=403, detail="仅项目负责人或超级管理员可查看项目绩效"

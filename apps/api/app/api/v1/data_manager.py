@@ -9,11 +9,17 @@ from app.deps import (
     assert_project_visible,
     get_current_user,
     get_db,
+    require_project_capability,
     require_project_owner,
     require_project_visible,
 )
 from app.db.models.task import Task
 from app.db.models.user import User
+from app.services.project_access import (
+    ProjectAccess,
+    ProjectCapability,
+    resolve_project_access,
+)
 from app.schemas.data_manager import (
     DataManagerMatchesRequest,
     DataManagerMatchesResponse,
@@ -125,6 +131,9 @@ async def export_data_manager_tasks(
     project=Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
     actor: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(
+        require_project_capability(ProjectCapability.EXPORT_ANNOTATIONS.value)
+    ),
     idempotency_key: str | None = Header(
         default=None,
         alias="Idempotency-Key",
@@ -135,9 +144,12 @@ async def export_data_manager_tasks(
     rows = (
         (
             await db.execute(
-                visible_tasks_stmt(project_id, user=actor, project=project).where(
-                    Task.id.in_(task_ids)
-                )
+                visible_tasks_stmt(
+                    project_id,
+                    user=actor,
+                    project=project,
+                    project_role=access.project_role,
+                ).where(Task.id.in_(task_ids))
             )
         )
         .scalars()
@@ -296,12 +308,14 @@ async def get_data_manager_summary(
     user: User = Depends(get_current_user),
 ):
     project = await assert_project_visible(project_id, db, user)
+    access = await resolve_project_access(db, user=user, project=project)
     validate_filter(payload.filter_json, project=project, user=user)
     return await DataManagerService(db).summary(
         project_id=project_id,
         filter_json=payload.filter_json,
         user=user,
         project=project,
+        project_role=access.project_role,
     )
 
 
@@ -317,6 +331,7 @@ async def get_data_manager_matches(
     user: User = Depends(get_current_user),
 ):
     project = await assert_project_visible(project_id, db, user)
+    access = await resolve_project_access(db, user=user, project=project)
     validate_filter(payload.filter_json, project=project, user=user)
     return await DataManagerService(db).matches(
         project_id=project_id,
@@ -326,6 +341,7 @@ async def get_data_manager_matches(
         offset=payload.offset,
         user=user,
         project=project,
+        project_role=access.project_role,
     )
 
 
@@ -340,6 +356,7 @@ async def query_data_manager_objects(
     user: User = Depends(get_current_user),
 ):
     project = await assert_project_visible(project_id, db, user)
+    access = await resolve_project_access(db, user=user, project=project)
     validate_entity_view(
         entity_scope="objects",
         filter_json=payload.filter_json,
@@ -352,6 +369,7 @@ async def query_data_manager_objects(
         payload=payload,
         user=user,
         project=project,
+        project_role=access.project_role,
     )
 
 
@@ -385,11 +403,13 @@ async def get_data_manager_object_detail(
     user: User = Depends(get_current_user),
 ):
     project = await assert_project_visible(project_id, db, user)
+    access = await resolve_project_access(db, user=user, project=project)
     return await DataManagerObjectService(db).detail(
         project_id=project_id,
         annotation_id=annotation_id,
         user=user,
         project=project,
+        project_role=access.project_role,
     )
 
 
@@ -404,6 +424,7 @@ async def query_data_manager_tracks(
     user: User = Depends(get_current_user),
 ):
     project = await assert_project_visible(project_id, db, user)
+    access = await resolve_project_access(db, user=user, project=project)
     validate_entity_view(
         entity_scope="tracks",
         filter_json=payload.filter_json,
@@ -416,6 +437,7 @@ async def query_data_manager_tracks(
         payload=payload,
         user=user,
         project=project,
+        project_role=access.project_role,
     )
 
 
@@ -430,9 +452,11 @@ async def get_data_manager_track_detail(
     user: User = Depends(get_current_user),
 ):
     project = await assert_project_visible(project_id, db, user)
+    access = await resolve_project_access(db, user=user, project=project)
     return await DataManagerTrackService(db).detail(
         project_id=project_id,
         track_ref=track_ref,
         user=user,
         project=project,
+        project_role=access.project_role,
     )

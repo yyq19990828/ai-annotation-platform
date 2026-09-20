@@ -51,6 +51,27 @@ vi.mock("@/hooks/useProjects", () => ({
     isLoading: false,
   }),
 }));
+vi.mock("@/hooks/useProjectAccess", () => ({
+  useProjectAccess: () => ({
+    access: {
+      project_id: "p1",
+      user_id: "user-1",
+      platform_role: "employee",
+      project_role: "annotator",
+      capabilities: ["project.read", "task.read", "annotation.write", "review.write"],
+    },
+    capabilities: new Set(["project.read", "task.read", "annotation.write", "review.write"]),
+    hasCapability: () => true,
+    projectRole: "annotator",
+    membershipVersion: 1,
+    isManager: false,
+    isPending: false,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
 
 import type { MeResponse } from "@/api/auth";
 import { useAuthStore } from "@/stores/authStore";
@@ -60,7 +81,7 @@ const user: MeResponse = {
   id: "user-1",
   email: "annotator@example.com",
   name: "Annotator",
-  role: "annotator",
+  role: "employee",
   group_name: null,
   status: "active",
   created_at: "2026-05-10T00:00:00Z",

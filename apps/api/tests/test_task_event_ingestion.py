@@ -35,6 +35,12 @@ def _task(project_id: uuid.UUID, display_id: str):
     )
 
 
+def _member(project_id: uuid.UUID, user_id: uuid.UUID, role: str):
+    from app.db.models.project_member import ProjectMember
+
+    return ProjectMember(project_id=project_id, user_id=user_id, role=role)
+
+
 def _event(task_id: uuid.UUID, project_id: uuid.UUID, event_id: uuid.UUID):
     now = datetime.now(timezone.utc).replace(microsecond=0)
     return {
@@ -59,7 +65,9 @@ async def test_task_event_derives_project_and_is_idempotent(
     user, token = annotator
     project = _project(user.id, "P-TE-TRUST")
     task = _task(project.id, "T-TE-TRUST")
-    db_session.add_all([project, task])
+    # Explicit unbatched assignment makes the task visible to its annotator.
+    task.assignee_id = user.id
+    db_session.add_all([project, task, _member(project.id, user.id, "annotator")])
     await db_session.flush()
     event_id = uuid.uuid4()
     payload = {"events": [_event(task.id, project.id, event_id)]}
@@ -126,7 +134,8 @@ async def test_task_event_batch_discards_stale_row_without_blocking_valid_row(
     user, token = annotator
     project = _project(user.id, "P-TE-PARTIAL")
     task = _task(project.id, "T-TE-PARTIAL")
-    db_session.add_all([project, task])
+    task.assignee_id = user.id
+    db_session.add_all([project, task, _member(project.id, user.id, "annotator")])
     await db_session.flush()
     monkeypatch.setattr(settings, "task_events_async", False)
 
@@ -188,7 +197,8 @@ async def test_async_payload_coverage_survives_worker_revalidation(
     user, token = annotator
     project = _project(user.id, "P-TE-ASYNC-COVERAGE")
     task = _task(project.id, "T-TE-ASYNC-COVERAGE")
-    db_session.add_all([project, task])
+    task.assignee_id = user.id
+    db_session.add_all([project, task, _member(project.id, user.id, "annotator")])
     await db_session.flush()
 
     captured: list[dict] = []
@@ -250,7 +260,7 @@ async def test_task_event_rejects_conflicting_project_and_future_interval(
     user, token = annotator
     project = _project(user.id, "P-TE-MISMATCH")
     task = _task(project.id, "T-TE-MISMATCH")
-    db_session.add_all([project, task])
+    db_session.add_all([project, task, _member(project.id, user.id, "annotator")])
     await db_session.flush()
     monkeypatch.setattr(settings, "task_events_async", False)
 
@@ -528,11 +538,25 @@ async def test_buffered_review_chunks_survive_real_claim_and_decision(
     from app.db.models.task_batch import TaskBatch
     from app.workers.task_events import _async_persist
 
+    from tests.factory import create_user
+
     owner, _ = super_admin
     user, token = reviewer
     project = _project(owner.id, "P-TE-BUFFERED-REVIEW")
     task = _task(project.id, "T-TE-BUFFERED-REVIEW")
     task.status = "review"
+    # A distinct literal annotator submitted the round; the reviewer's decision
+    # is authorized against that frozen contributor evidence.
+    writer = await create_user(
+        db_session,
+        "employee",
+        f"te-writer-{uuid.uuid4().hex[:8]}@test.local",
+        "TE Writer",
+    )
+    task.annotation_contributor_ids = [str(writer.id)]
+    task.review_contributor_ids = [str(writer.id)]
+    task.review_submitter_id = writer.id
+    task.review_round_id = uuid.uuid4()
     db_session.add(project)
     await db_session.flush()
     batch = TaskBatch(
@@ -620,7 +644,6 @@ async def test_buffered_chunks_keep_actor_and_time_boundaries(
     kind,
     invalid,
 ):
-    from app.db.models.project_member import ProjectMember
     from app.db.models.task_batch import TaskBatch
     from app.schemas.task_event import TaskEventIn
     from app.services.task_event_ingestion import (
@@ -653,10 +676,12 @@ async def test_buffered_chunks_keep_actor_and_time_boundaries(
     await db_session.flush()
     task.batch_id = batch.id
     db_session.add(task)
+    membership = None
     if invalid != "removed_member":
-        db_session.add(
-            ProjectMember(project_id=project.id, user_id=user.id, role=user.role)
+        membership = _member(
+            project.id, user.id, "reviewer" if kind == "review" else "annotator"
         )
+        db_session.add(membership)
     event_start = started
     if invalid == "before_actor_start":
         event_start -= timedelta(minutes=31)
@@ -667,7 +692,8 @@ async def test_buffered_chunks_keep_actor_and_time_boundaries(
     elif invalid == "different_actor":
         task.assignee_id = task.reviewer_id = owner.id
     elif invalid == "wrong_role":
-        user.role = "annotator" if kind == "review" else "reviewer"
+        # The project membership role, not the account role, decides the work type.
+        membership.role = "annotator" if kind == "review" else "reviewer"
     await db_session.flush()
     event = _buffered_events(task, started_at=event_start, kind=kind)[0]
     rows, rejected = await validate_api_events(

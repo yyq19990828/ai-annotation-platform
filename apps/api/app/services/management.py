@@ -12,7 +12,7 @@ from fastapi import HTTPException
 from sqlalchemy import and_, func, or_, select, true, union
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.enums import UserRole
+from app.db.enums import PLATFORM_ROLES, TaskStatus, UserRole
 from app.db.models.group import Group
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
@@ -32,6 +32,7 @@ from app.schemas.management import (
     RoleImpactProject,
     UserStats,
 )
+from app.services.invitation import invitation_project_role
 
 
 USER_STATUS = Literal["active", "inactive", "all"]
@@ -42,10 +43,9 @@ INVITATION_STATUS = Literal["pending", "accepted", "expired", "revoked", "all"]
 # annotator/reviewer identity becomes project-driven; matches the widened
 # member-assignment candidate list. Super admins stay read-only-visible but
 # never manageable, and deactivated accounts stay out of scope.
-_PA_OPERABLE_ROLES = (
-    UserRole.ANNOTATOR.value,
-    UserRole.REVIEWER.value,
-)
+#: Live platform roles a project administrator may manage/assign.  Legacy
+#: global staff values are history only and never an eligible receiver.
+_PA_OPERABLE_ROLES = (UserRole.EMPLOYEE.value,)
 
 
 def _managed_user_ids(actor: User):
@@ -205,6 +205,20 @@ def user_visibility_clause(
     )
 
 
+def validate_platform_role_filter(role: str | None) -> str | None:
+    """Reject legacy/unknown staff-role filters instead of returning nothing.
+
+    ``role=annotator``/``reviewer`` was the old global staff query; after the
+    employee cutover it must be a validation error, never a silently empty set.
+    """
+
+    if role is None:
+        return None
+    if role not in PLATFORM_ROLES:
+        raise HTTPException(status_code=400, detail=f"非法平台角色: {role}")
+    return role
+
+
 def build_user_query(
     actor: User,
     *,
@@ -214,6 +228,7 @@ def build_user_query(
     status_filter: USER_STATUS = "active",
     search: str | None = None,
 ):
+    role = validate_platform_role_filter(role)
     query = select(User).where(user_visibility_clause(actor, project_id=project_id))
     if status_filter == "active":
         query = query.where(User.is_active.is_(True))
@@ -467,7 +482,7 @@ async def _invitation_outputs(
             group_name=row.group_name,
             project_id=row.project_id,
             project_name=projects.get(row.project_id),
-            project_member_role=row.role if row.project_id else None,
+            project_member_role=invitation_project_role(row),
             status=row.status,
             expires_at=row.expires_at,
             invited_by=row.invited_by,
@@ -582,6 +597,77 @@ async def invitation_stats(
     )
 
 
+async def platform_role_change_blockers(
+    db: AsyncSession, *, target: User, new_role: str
+) -> list[str]:
+    """Blockers shared by platform-role preview and mutation.
+
+    Leaving an administrative identity (including a demotion to ``employee``)
+    must not create an anomalous non-administrative project owner, and a
+    platform-role edit never rewrites project memberships.
+    """
+
+    from app.db.enums import MANAGER_PLATFORM_ROLES, PlatformRole, ProjectRole
+    from app.services.scheduler import (
+        effective_task_assignee_expr,
+        effective_task_reviewer_expr,
+    )
+
+    blockers: list[str] = []
+    is_manager_role = new_role in MANAGER_PLATFORM_ROLES
+
+    if is_manager_role or new_role == PlatformRole.VIEWER.value:
+        work_memberships = int(
+            await db.scalar(
+                select(func.count(ProjectMember.id)).where(
+                    ProjectMember.user_id == target.id,
+                    ProjectMember.role != ProjectRole.VIEWER.value,
+                )
+            )
+            or 0
+        )
+        if work_memberships:
+            blockers.append("账号仍持有标注/质检项目职责，请先在项目中变更职责")
+
+    # Ownership blocks every non-administrative platform role, including
+    # employee: an employee owner would be an authorization anomaly.
+    if not is_manager_role:
+        owned = int(
+            await db.scalar(
+                select(func.count(Project.id)).where(Project.owner_id == target.id)
+            )
+            or 0
+        )
+        if owned:
+            blockers.append("账号仍是项目负责人，请先转移项目后变更平台角色")
+
+    if new_role == PlatformRole.VIEWER.value:
+        unfinished_statuses = (
+            TaskStatus.PENDING.value,
+            TaskStatus.IN_PROGRESS.value,
+            TaskStatus.REJECTED.value,
+            TaskStatus.REVIEW.value,
+        )
+        unfinished = int(
+            await db.scalar(
+                select(func.count(Task.id))
+                .outerjoin(TaskBatch, TaskBatch.id == Task.batch_id)
+                .where(
+                    Task.status.in_(unfinished_statuses),
+                    or_(
+                        effective_task_assignee_expr() == target.id,
+                        effective_task_reviewer_expr() == target.id,
+                    ),
+                )
+            )
+            or 0
+        )
+        if unfinished:
+            blockers.append("账号仍有未完成的标注/质检工作，请先交接")
+
+    return blockers
+
+
 async def role_impact_preview(
     db: AsyncSession,
     *,
@@ -621,6 +707,14 @@ async def role_impact_preview(
         )
         if active_super_admins <= 1:
             blockers.append("不能降级最后一名超级管理员")
+
+    if requested_role != target.role:
+        # Preview must report the same blockers the mutation enforces.
+        blockers.extend(
+            await platform_role_change_blockers(
+                db, target=target, new_role=requested_role
+            )
+        )
 
     project_query = (
         select(ProjectMember, Project)

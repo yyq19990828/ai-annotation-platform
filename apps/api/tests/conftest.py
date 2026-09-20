@@ -5,7 +5,9 @@
   - apply_migrations: session 级，alembic upgrade head（一次性）
   - test_engine: function-scoped，避免 pytest-asyncio function-scope event loop 与 session-scope engine 冲突
   - db_session: function-scoped，SAVEPOINT 隔离
-  - super_admin / project_admin / annotator / reviewer：四角色 fixture（含 JWT token）
+  - super_admin / project_admin / annotator / reviewer：平台身份 fixture（含 JWT token）。
+    annotator / reviewer 现在是字面平台 employee 账号；项目职责必须由测试显式创建
+    ProjectMember 行授予，fixture 不创建任何 membership，也不从平台角色推断职责。
   - httpx_client: 不绑定 fixture session（仅用于纯路由 / 不需要 fixture 写入数据可见的场景）
   - httpx_client_bound: app.dependency_overrides[get_db] 绑定到 db_session（fixture 写入对 API 可见）
 
@@ -237,12 +239,16 @@ async def project_admin(db_session: AsyncSession):
 
 @pytest.fixture
 async def annotator(db_session: AsyncSession):
-    return await _create_user(db_session, "annotator", "anno@test.local", "Annotator")
+    """Literal platform employee; project authority requires an explicit membership."""
+
+    return await _create_user(db_session, "employee", "anno@test.local", "Annotator")
 
 
 @pytest.fixture
 async def reviewer(db_session: AsyncSession):
-    return await _create_user(db_session, "reviewer", "qa@test.local", "Reviewer")
+    """Literal platform employee; project authority requires an explicit membership."""
+
+    return await _create_user(db_session, "employee", "qa@test.local", "Reviewer")
 
 
 @pytest.fixture

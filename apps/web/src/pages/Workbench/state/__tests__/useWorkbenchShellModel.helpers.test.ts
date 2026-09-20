@@ -1,8 +1,10 @@
 // v0.16.x 第 2 批 · useWorkbenchShellModel 纯函数测试守护(伴随逻辑提炼,锁定坐标公式行为)。
 import { describe, it, expect, vi } from "vitest";
+import { ApiError } from "@/api/client";
 import {
   LatestTaskNavigationScheduler,
   annotationsForTask,
+  classifyAccessLookupError,
   commitAfterNavigationGuard,
   runWorkbenchLeaveGuards,
   resolveMaskEditorSize,
@@ -376,5 +378,18 @@ describe("native Mask candidate presentation", () => {
         },
       ]),
     ).toEqual([]);
+  });
+});
+
+describe("classifyAccessLookupError", () => {
+  it("treats 403/404 from the access endpoint as an affirmative denial", () => {
+    expect(classifyAccessLookupError(new ApiError(403, "forbidden"))).toBe("denied");
+    expect(classifyAccessLookupError(new ApiError(404, "项目不存在"))).toBe("denied");
+  });
+
+  it("treats transport failures and server errors as indeterminate", () => {
+    expect(classifyAccessLookupError(new TypeError("Failed to fetch"))).toBe("indeterminate");
+    expect(classifyAccessLookupError(new ApiError(502, "bad gateway"))).toBe("indeterminate");
+    expect(classifyAccessLookupError(undefined)).toBe("indeterminate");
   });
 });

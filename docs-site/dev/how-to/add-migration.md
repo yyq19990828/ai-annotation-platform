@@ -37,11 +37,18 @@ uv run alembic history             # 查看版本历史
 ```yaml
 - name: alembic round-trip (upgrade-then-downgrade-then-upgrade)
   run: |
+    FLOOR=$(uv run python ../../scripts/alembic_reversible_floor.py)
+    if [ "$FLOOR" != "$(uv run alembic heads | awk '{print $1}')" ]; then
+      uv run alembic stamp "$FLOOR"
+    fi
     uv run alembic downgrade base
     uv run alembic upgrade head
 ```
 
-确保所有迁移可双向。如果 downgrade 实现不全，就在 PR 里写明并标注「无回滚」。
+确保所有迁移可双向。确实无法无损回滚的迁移（如 0174 员工角色切换）在迁移文件里声明模块级
+`IRREVERSIBLE = True` 并让 `downgrade()` 抛错：`scripts/alembic_reversible_floor.py`
+会找到最高的可逆版本，CI 用 `alembic stamp` 跳过不可逆段（新鲜空库上数据转换为
+no-op），仍完整校验其下每一步 downgrade/upgrade。
 
 ## 同步数据修复
 

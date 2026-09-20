@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 
@@ -37,6 +38,17 @@ async def _make_video_task(
     )
     db.add_all([project, dataset])
     await db.flush()
+    # Keep an explicit project role for the owner: an employee owner acts
+    # through membership, and managers are unaffected by the extra row.
+    db.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=owner_id,
+            role="annotator",
+            assigned_by=owner_id,
+        )
+    )
+    await db.flush()
     item = DatasetItem(
         dataset_id=dataset.id,
         file_name="clip.mp4",
@@ -54,6 +66,8 @@ async def _make_video_task(
         file_path="videos/clip.mp4",
         file_type="video",
         status="pending",
+        # Unbatched task visibility requires the effective annotator to match.
+        assignee_id=owner_id,
     )
     db.add(task)
     await db.flush()

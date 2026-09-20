@@ -33,6 +33,56 @@ export interface SeedData {
   ml_backend_id: string;
 }
 
+export interface ProjectRolesSeedUser {
+  id: string;
+  email: string;
+  platform_role: string;
+}
+
+export interface ProjectRolesSeedProject {
+  project_id: string;
+  display_id: string;
+  owner_email: string;
+  project_role: string | null;
+  membership_id: string | null;
+  batch_id: string;
+  task_ids: string[];
+}
+
+/**
+ * Multi-project employee-role fixture.  `employee` annotates in `a`, reviews
+ * in `b`, has no membership in `c` (despite an assigned task), and is an idle
+ * annotator in the open-pool project `d` used for the revocation check.
+ */
+export interface ProjectRolesSeedData {
+  employee_email: string;
+  peer_email: string;
+  owner_email_a: string;
+  owner_email_b: string;
+  owner_email_c: string;
+  viewer_email: string;
+  viewer_unassigned_email: string;
+  spare_email: string;
+  solo_email: string;
+  users: Record<
+    | "employee"
+    | "peer"
+    | "owner_a"
+    | "owner_b"
+    | "owner_c"
+    | "spare"
+    | "viewer"
+    | "viewer_unassigned"
+    | "solo",
+    ProjectRolesSeedUser
+  >;
+  projects: Record<"a" | "b" | "c" | "d", ProjectRolesSeedProject>;
+  annotation_task_id: string;
+  review_task_id: string;
+  c_assigned_task_id: string;
+  open_pool_task_id: string;
+}
+
 export interface FilteringSeedManifest {
   users: Record<string, string>;
   user_emails: Record<string, string>;
@@ -425,6 +475,17 @@ export class SeedAPI {
       throw new Error(`seed/reset failed: ${res.status()} ${await res.text()}`);
     }
     return (await res.json()) as SeedData;
+  }
+
+  /** Build the multi-project employee-role acceptance fixture (cleanup-safe). */
+  async projectRoles(): Promise<ProjectRolesSeedData> {
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/project-roles`, {
+      timeout: 60_000,
+    });
+    if (!res.ok()) {
+      throw new Error(`seed/project-roles failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as ProjectRolesSeedData;
   }
 
   async filtering(): Promise<FilteringSeedManifest> {

@@ -290,3 +290,33 @@ describe("DataManagerTaskActions", () => {
     expect(screen.queryByText("标注员：未分派 → Ada")).not.toBeInTheDocument();
   });
 });
+
+describe("DataManagerTaskActions capability gating", () => {
+  it("disables management and export without the project capabilities", () => {
+    render(
+      <DataManagerTaskActions
+        projectId="project-1"
+        taskIds={["task-1"]}
+        canManage={false}
+        canExport={false}
+      />,
+    );
+    expect(screen.getByTestId("data-manager-assign")).toBeDisabled();
+    expect(screen.getByTestId("data-manager-preannotate")).toBeDisabled();
+    expect(screen.getByTestId("data-manager-export")).toBeDisabled();
+  });
+
+  it("permits reviewer export while management stays disabled", () => {
+    render(
+      <DataManagerTaskActions
+        projectId="project-1"
+        taskIds={["task-1"]}
+        canManage={false}
+        canExport
+      />,
+    );
+    expect(screen.getByTestId("data-manager-export")).toBeEnabled();
+    expect(screen.getByTestId("data-manager-assign")).toBeDisabled();
+    expect(screen.getByTestId("data-manager-preannotate")).toBeDisabled();
+  });
+});

@@ -35,9 +35,8 @@ import { useAuditLogs, useAuditMonthlySummary } from "@/hooks/useAudit";
 import { useUsers } from "@/hooks/useUsers";
 import { auditApi } from "@/api/audit";
 import { AUDIT_BUSINESS_ACTIONS, AUDIT_TARGET_TYPES, auditActionLabel } from "@/utils/auditLabels";
-import { ROLE_LABELS } from "@/constants/roles";
+import { roleLabel } from "@/constants/roles";
 import type { AuditLogResponse, AuditSummaryBucket } from "@/api/audit";
-import type { UserRole } from "@/types";
 import { useElementStyle } from "@/components/ui/useElementStyle";
 import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useUrlFilterState } from "@/hooks/useUrlFilterState";
@@ -632,9 +631,7 @@ export function AuditPage() {
                         )}
                         {it.actor_role && (
                           <span className={styles.tinyBadge}>
-                            <Badge variant="outline">
-                              {ROLE_LABELS[it.actor_role as UserRole] ?? it.actor_role}
-                            </Badge>
+                            <Badge variant="outline">{roleLabel(it.actor_role)}</Badge>
                           </span>
                         )}
                       </div>
@@ -1022,13 +1019,7 @@ function SummaryRanking({
       <div className={styles.rankingRows}>
         {items.map((item) => (
           <div key={item.key || "__system"} className={styles.rankingRow}>
-            <span>
-              {item.key
-                ? roleLabels
-                  ? (ROLE_LABELS[item.key as UserRole] ?? item.key)
-                  : item.key
-                : "系统/未知"}
-            </span>
+            <span>{item.key ? (roleLabels ? roleLabel(item.key) : item.key) : "系统/未知"}</span>
             <strong>{item.event_count.toLocaleString("zh-CN")}</strong>
           </div>
         ))}

@@ -131,10 +131,11 @@ async def test_readiness_counts_real_tasks_valid_recipients_and_all_jobs(
     anno, _ = annotator
     review, _ = reviewer
     project = await _seed_project(db_session, admin.id)
-    for user in [anno, review]:
-        db_session.add(
-            ProjectMember(project_id=project.id, user_id=user.id, role=user.role)
-        )
+    memberships: dict[uuid.UUID, ProjectMember] = {}
+    for user, role in ((anno, "annotator"), (review, "reviewer")):
+        membership = ProjectMember(project_id=project.id, user_id=user.id, role=role)
+        db_session.add(membership)
+        memberships[user.id] = membership
     batches = []
     for status in ["draft", "active", "active", "archived"]:
         batch = TaskBatch(
@@ -187,7 +188,9 @@ async def test_readiness_counts_real_tasks_valid_recipients_and_all_jobs(
     data = (await httpx_client.get(url, headers=headers(token))).json()
     assert data["active_reviewer_count"] == data["assigned_batch_count"] == 0
     review.is_active = True
-    review.role = "annotator"
+    # Project authority now comes from the membership, not the account role:
+    # changing the reviewer membership to annotator drops the reviewer count.
+    memberships[review.id].role = "annotator"
     await db_session.flush()
     data = (await httpx_client.get(url, headers=headers(token))).json()
     assert data["active_reviewer_count"] == data["assigned_batch_count"] == 0

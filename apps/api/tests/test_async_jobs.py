@@ -123,7 +123,9 @@ async def test_removed_project_member_cannot_read_or_list_export_result(
     membership = ProjectMember(
         project_id=project.id,
         user_id=member.id,
-        role="annotator",
+        # Export result/URL access is a reviewer/manager capability; a reviewer
+        # membership is required before the revocation half of this test.
+        role="reviewer",
         assigned_by=owner.id,
     )
     db_session.add(membership)
@@ -312,9 +314,11 @@ class TestAsyncJobsAPI:
         assert r.json()["total"] >= 1
 
     async def test_list_filters_and_project_meta(
-        self, httpx_client_bound, db_session, annotator
+        self, httpx_client_bound, db_session, project_admin
     ):
-        user, token = annotator
+        # Project-scoped list access needs current management of the owned
+        # project; use the administrative owner so the scope matches.
+        user, token = project_admin
         project = Project(
             display_id="PROJ-AJ-1",
             name="Async Jobs Project",
@@ -641,3 +645,28 @@ class TestAsyncJobsAPI:
             f"/api/v1/async-jobs/{aj.id}/cancel", headers=_bearer(token)
         )
         assert r.status_code == 409
+
+    async def test_export_job_without_project_is_hidden(
+        self, httpx_client_bound, db_session, project_admin
+    ):
+        """A projectless export row has no legitimate global mode."""
+
+        user, token = project_admin
+        aj = await async_job_svc.create_job(
+            db_session, kind="export", user_id=user.id, payload={}
+        )
+        await async_job_svc.mark_complete(
+            db_session, aj.id, result={"download_url": "https://download.invalid/x"}
+        )
+        await db_session.commit()
+
+        detail = await httpx_client_bound.get(
+            f"/api/v1/async-jobs/{aj.id}", headers=_bearer(token)
+        )
+        assert detail.status_code == 403, detail.text
+
+        listed = await httpx_client_bound.get(
+            "/api/v1/async-jobs", headers=_bearer(token)
+        )
+        assert listed.status_code == 200, listed.text
+        assert str(aj.id) not in {item["id"] for item in listed.json()["items"]}

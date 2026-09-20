@@ -7,10 +7,9 @@ describe("defaultHomePath", () => {
     expect(defaultHomePath("super_admin")).toBe("/overview");
   });
 
-  it("其余角色与未加载完身份时落在 /dashboard", () => {
+  it("其余平台角色与未加载完身份时落在 /dashboard", () => {
     expect(defaultHomePath("project_admin")).toBe("/dashboard");
-    expect(defaultHomePath("reviewer")).toBe("/dashboard");
-    expect(defaultHomePath("annotator")).toBe("/dashboard");
+    expect(defaultHomePath("employee")).toBe("/dashboard");
     expect(defaultHomePath("viewer")).toBe("/dashboard");
     expect(defaultHomePath(undefined)).toBe("/dashboard");
     expect(defaultHomePath(null)).toBe("/dashboard");

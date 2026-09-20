@@ -10,6 +10,7 @@ import {
   removeById,
   drain,
   subscribe,
+  type DrainOptions,
   type OfflineQueueScope,
 } from "../state/offlineQueue";
 
@@ -24,6 +25,8 @@ interface OfflineQueueDrawerProps {
   onFlushOne: (op: OfflineOp) => Promise<void>;
   /** 全部同步：drain 整个队列，调用方负责 invalidate cache + 提示。 */
   onFlushAll: () => Promise<void>;
+  /** 与 drain 相同的错误分类：delete 的 404 = 目标已不存在（视为已同步）。 */
+  classifyError?: DrainOptions["classifyError"];
 }
 
 function formatTs(ts: number): string {
@@ -65,6 +68,7 @@ export function OfflineQueueDrawer({
   queueScope,
   onFlushOne,
   onFlushAll,
+  classifyError,
 }: OfflineQueueDrawerProps) {
   const [storedItems, setItems] = useState<OfflineOp[]>([]);
   const items = useMemo(
@@ -140,11 +144,25 @@ export function OfflineQueueDrawer({
     async (op: OfflineOp) => {
       setBusyId(op.id);
       try {
-        const result = await drain(onFlushOne, {
-          ...queueScope,
-          userId: queueScope?.userId ?? "",
-          operationId: op.id,
-        });
+        const result = await drain(
+          onFlushOne,
+          {
+            ...queueScope,
+            userId: queueScope?.userId ?? "",
+            operationId: op.id,
+          },
+          // Same classification as the drain: a 404 on a delete means the
+          // target is already gone server-side and the op leaves the queue.
+          classifyError ? { classifyError } : undefined,
+        );
+        if ((result.deferred ?? 0) > 0) {
+          pushToast({
+            msg: "网络不稳定",
+            sub: "授权检查未完成，稍后将自动重试",
+            kind: "warning",
+          });
+          return;
+        }
         if (result.failed) throw new Error("该操作仍未同步，请检查连接和任务权限后重试");
         if (!queueScope?.isCurrent?.()) return;
         pushToast({ msg: "已同步该操作", kind: "success" });
@@ -154,7 +172,7 @@ export function OfflineQueueDrawer({
         setBusyId(null);
       }
     },
-    [onFlushOne, pushToast, queueScope],
+    [classifyError, onFlushOne, pushToast, queueScope],
   );
 
   const handleDelete = useCallback(

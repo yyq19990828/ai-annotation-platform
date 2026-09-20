@@ -3,7 +3,7 @@ audience: [dev]
 type: explanation
 since: v0.9.14
 status: stable
-last_reviewed: 2026-09-14
+last_reviewed: 2026-09-19
 ---
 
 # 可见性与权限
@@ -34,6 +34,34 @@ last_reviewed: 2026-09-14
 - 其他用户：必须命中 `ProjectMember(project_id, user_id)`
 
 真值主要在 `deps.assert_project_visible()`。
+
+### 平台角色与项目角色
+
+项目访问与写权限来自**资源所属项目中的有效成员关系**，不来自账号的全局角色：
+
+- 平台角色 `PlatformRole`：`super_admin` / `project_admin` / `employee` / `viewer`（`apps/api/app/db/enums.py:22`）。历史值 `annotator` / `reviewer` 仅用于迁移与历史读取，新授权模型**永不**从它们取权。
+- 项目角色 `ProjectRole`：`annotator` / `reviewer` / `viewer`，存储在 `project_members.role`，每个账号在每个项目最多一个角色。
+- 一个 `employee` 可以在 A 项目标注、B 项目质检、C 项目只读观察，无需切换全局身份；没有成员关系就没有项目访问，除非是合法管理者（超管，或该项目的 owner / 合法 `project_admin`）。
+
+统一解析在 `apps/api/app/services/project_access.py`：`resolve_project_access()` 产出不可变上下文（平台角色、项目角色、membership ID/version、管理者分类）与固定能力集 `project.read` / `project.manage` / `member.read` / `member.manage` / `task.read` / `annotation.write` / `review.write` / `export.annotations` / `performance.read`。未知角色 fail closed，请求上下文与资源项目不一致直接拒绝。能力是**必要非充分**条件：任务级指派覆盖、批次默认、开放池、预留审核、管理员锁、乐观版本、Mask QC 与视频边界检查全部保留。API key scope 只做附加交集，`*` 不授予项目访问；Socket 与异步作业在各自边界重新解析当前权限。
+
+成员输出 `ProjectMemberOut` 是**扁平**的：`role` 是项目角色，另有独立的 `platform_role`；邀请 HTTP 字段仍叫 `project_member_role`，映射到数据库 `project_role`。项目列表 / 详情带 `my_project_role`，列表按 `project_role` 过滤。
+
+### 导出收紧（有意行为变化）
+
+全项目、批次与选定任务 / Data Manager 导出要求显式能力 `export.annotations`，仅项目 `reviewer` 与合法管理者；项目 `annotator` / `viewer` 被拒。这是相对“项目可见即可导出”的**故意收紧**，同样作用于导出创建、worker 执行、缓存命中与结果访问；选定任务导出仍保留逐任务可见性检查。项目绩效明细与 CSV 仍仅 owner / 超管，导出标注不等于可看他人绩效。
+
+### 自审与审阅贡献者证据
+
+自审拒绝（提交者不能领取 / 编辑 / 通过 / 退回自己提交的内容，含管理者动作）依据的是持久化的**贡献者证据**，不是全局角色：
+
+- 任务上新增 `annotation_contributor_ids`（标注阶段实际操作者的去重并集）、`review_contributor_ids`（冻结在当前 `review_round_id`）与 `review_submitter_id`。
+- 所有标注阶段变更（批量、撤销 / 恢复、转换、导入、AI 接受、视频 / 场景 / 多相机）在任务锁事务内累积**实际操作者**，而不仅是原始作者；改派不清空已冻结贡献者。
+- “已知为空”与“未知”不同：`annotation_contributor_ids = []` 表示尚无已记录的贡献者，但它单独不能证明审核轮次完整；`NULL`（旧二进制或迁移前创建）、结构畸形，或审核轮次缺少有效 `review_round_id` + `review_submitter_id` + 完整集合，才是“未知”。“未知”是黏性的：`NULL` 不会因新增一条标注变成“已知集合”；未知证据的审核写入返回 `409 review_contributors_unknown` 并阻断，**不**按全局角色回退。**平台不附带自动回填工具**，证据修复与不可用任务的恢复是单独批准的运维闸门，见 [迁移与回滚 runbook](/ops/runbooks/project-role-migration)。
+
+### 成员角色变更与交接
+
+角色变更走“预检 → 写入”两阶段：`GET .../access` 之外，项目 owner / 超管可调用 `POST /projects/{project_id}/members/{member_id}/role/preview`（只读，返回阻塞项、受影响资源快照与 `preview_token`）与 `PATCH .../role`（要求 `expected_version` + `preview_token` + 原因，可带显式接替人）。写入在锁内重读、按 `current_version` 做 CAS，并在**一个事务内**完成交接、释放受影响项目的锁 / 认领与角色 / version 更新；陈旧版本 / 快照失效 / 资源占用返回 409，不做部分交接。删除 / 重新加入产生新 member ID，重放旧变更不会成功。
 
 ## 批次层
 
@@ -104,6 +132,8 @@ last_reviewed: 2026-09-14
 - 不要把 task lock 当成权限系统
 - 不要把 reviewer 和 project owner 的权限混为一谈
 - 改 batch 状态集合时，要同步审视 task 可见性是否跟着变
+- 新授权判断不要读账号全局 `role`：项目访问来自 `resolve_project_access()`；遗留 `annotator` / `reviewer` 只用于历史读取
+- 改导出、自审、异步 / Socket 边界时，要同步覆盖创建、worker 执行、缓存命中与结果交付四个时点
 
 ## 相关文档
 

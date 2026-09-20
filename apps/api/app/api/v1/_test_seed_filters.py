@@ -1205,10 +1205,10 @@ async def _seed_operations(
 
     admin, annotator = users["admin"], users["anno"]
     active = await create_user(
-        db, "annotator", "filter-active@e2e.test", "Filter Active"
+        db, "employee", "filter-active@e2e.test", "Filter Active"
     )
     inactive = await create_user(
-        db, "annotator", "filter-inactive@e2e.test", "Filter Inactive"
+        db, "employee", "filter-inactive@e2e.test", "Filter Inactive"
     )
     inactive.is_active = False
     inactive.status = "offline"
@@ -1293,7 +1293,8 @@ async def _seed_operations(
     invitations = [
         UserInvitation(
             email="filter-pending@example.test",
-            role="annotator",
+            role="employee",
+            project_role="annotator",
             group_name="filter",
             project_id=project_a.id,
             token="filter-invitation-pending",

@@ -327,13 +327,13 @@ test("member filter summaries remove one condition without clearing search or ac
   const filtered = getResponse(page, "/users/query", {
     search: "Filter",
     status: "active",
-    role: "annotator",
+    role: "employee",
   });
-  await dialog.getByRole("combobox", { name: "角色筛选" }).selectOption("annotator");
+  await dialog.getByRole("combobox", { name: "角色筛选" }).selectOption("employee");
   await checked(await filtered);
   await dialog.getByRole("button", { name: "完成", exact: true }).click();
   await expect(dialog).not.toBeVisible();
-  await expect(page.getByRole("button", { name: "角色：标注员", exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "角色：员工", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "移除角色筛选" }).click();
   await expect(page.getByRole("button", { name: "移除角色筛选" })).toHaveCount(0);
   // The initial query is still fresh in the 30-second cache. Reload verifies

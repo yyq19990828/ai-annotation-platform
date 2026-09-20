@@ -100,6 +100,14 @@ jobs:
       - name: alembic round-trip (upgrade-then-downgrade-then-upgrade)
         working-directory: apps/api
         run: |
+          # 0174+ migrations marked IRREVERSIBLE refuse to downgrade by design;
+          # stamp past them (data-only no-ops on this fresh database) so every
+          # reversible migration below the floor is still exercised both ways.
+          FLOOR=$(uv run python ../../scripts/alembic_reversible_floor.py)
+          echo "Reversible floor: $FLOOR"
+          if [ "$FLOOR" != "$(uv run alembic heads | awk '{print $1}')" ]; then
+            uv run alembic stamp "$FLOOR"
+          fi
           uv run alembic downgrade base
           uv run alembic upgrade head
       - name: OpenAPI snapshot drift check

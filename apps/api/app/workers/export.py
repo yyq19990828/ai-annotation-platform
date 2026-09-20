@@ -32,7 +32,6 @@ from app.db.models.async_job import AsyncJob
 from app.db.models.export_artifact import ExportArtifact
 from app.db.models.dataset import DatasetItem, Scene, SensorCalibrationRevision
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.scene_pose import SceneFramePose
 from app.db.models.task import Task
 from app.db.models.task_dataset_item_link import TaskDatasetItemLink
@@ -47,8 +46,8 @@ from app.services.exporting.video_scope import VideoExportScope
 from app.services.mask_formats import registry as mask_format_registry
 from app.services.mask_formats.contracts import canonical_digest
 from app.schemas.export import LidarExportOptions
+from app.db.models.notification import Notification
 from app.services.notification import NotificationService
-from app.services.scheduler import is_privileged_for_project
 from app.services.data_management.task_filters import visible_tasks_stmt
 from app.services.storage import storage_service
 from app.workers.celery_app import celery_app
@@ -75,7 +74,13 @@ async def _complete_from_cache(
     export_bucket: str,
     download_name: str,
     cache_key: str,
+    task_ids: list[uuid.UUID] | None,
 ) -> None:
+    # Final result/URL boundary: reauthorize current account + membership and
+    # the canonical selected-task scope immediately before the cache-hit URL.
+    # ``_assert_export_task_scope`` inside the guard compares these same worker
+    # arguments against the stored job scope and fails closed on mismatch.
+    await _reauthorize_export_final_write(db, job_uuid, task_ids)
     download_url = storage_service.generate_download_url(
         hit.object_key,
         expires_in=PRESIGN_EXPIRES_SECONDS,
@@ -91,8 +96,9 @@ async def _complete_from_cache(
         "cache_hit": True,
     }
     await async_job_svc.mark_complete(db, job_uuid, result=result)
-    await _emit_export_notification(db, job_uuid, ok=True, result=result)
+    pending = await _emit_export_notification(db, job_uuid, ok=True, result=result)
     await db.commit()
+    await _publish_export_notification(db, pending)
     log.info("run_export cache hit job=%s key=%s", job_uuid, cache_key)
 
 
@@ -103,7 +109,7 @@ async def _emit_export_notification(
     ok: bool,
     result: dict | None = None,
     error: str | None = None,
-) -> None:
+) -> Notification | None:
     """导出完成/失败发通知（WS 推送 + 持久化）。job.payload 已含 project_display_id/format。
 
     失败不阻断主流程（与 notification 服务自身的 try/except 一致）。调用方负责后续 commit。
@@ -111,7 +117,7 @@ async def _emit_export_notification(
     try:
         job = await db.get(AsyncJob, job_uuid)
         if job is None or job.user_id is None:
-            return
+            return None
         payload_in = job.payload or {}
         notif_payload: dict = {
             "project_display_id": payload_in.get("project_display_id"),
@@ -124,7 +130,9 @@ async def _emit_export_notification(
             notif_payload["expires_at"] = result.get("expires_at")
         if not ok and error:
             notif_payload["error"] = error[:200]
-        await NotificationService(db).notify(
+        # Returned unpublished; the caller publishes after its commit so the WS
+        # delivery gate can see the committed notification row.
+        return await NotificationService(db).notify(
             user_id=job.user_id,
             type="export.ready" if ok else "export.failed",
             target_type="export",
@@ -133,6 +141,14 @@ async def _emit_export_notification(
         )
     except Exception as e:  # noqa: BLE001
         log.warning("export notification failed job=%s err=%s", job_uuid, e)
+        return None
+
+
+async def _publish_export_notification(db: AsyncSession, pending: Notification | None):
+    """Publish deferred export notifications after the enclosing commit."""
+
+    if pending is not None:
+        await NotificationService(db).publish_committed([pending])
 
 
 @celery_app.task(bind=True, name="app.workers.export.run_export")
@@ -493,15 +509,17 @@ async def _assert_export_task_scope(
     actor = await db.get(User, job.user_id) if job.user_id is not None else None
     if actor is None or not actor.is_active:
         raise ValueError("export scope owner is unavailable")
-    if not is_privileged_for_project(actor, project):
-        member_id = await db.scalar(
-            select(ProjectMember.id).where(
-                ProjectMember.project_id == project_id,
-                ProjectMember.user_id == actor.id,
-            )
-        )
-        if member_id is None:
-            raise ValueError("export project access is no longer valid")
+    # Export is a fixed project capability: reviewer or legitimate manager.
+    # Reauthorize against current membership so a revoked queued export fails
+    # safely before any cache lookup, build or signed-URL issuance.
+    from app.services.project_access import ProjectCapability, resolve_project_access
+
+    try:
+        access = await resolve_project_access(db, user=actor, project=project)
+    except Exception as exc:  # noqa: BLE001 - fail the durable job, not the request
+        raise ValueError("export project access is no longer valid") from exc
+    if ProjectCapability.EXPORT_ANNOTATIONS.value not in access.capabilities:
+        raise ValueError("export capability is no longer valid")
 
     if task_ids is None:
         return
@@ -518,18 +536,57 @@ async def _assert_export_task_scope(
     if stored_task_ids != set(task_ids):
         raise ValueError("export job task scope does not match worker arguments")
 
-    if is_privileged_for_project(actor, project):
+    if access.is_manager:
         query = select(Task.id).where(
             Task.project_id == project_id,
             Task.id.in_(task_ids),
         )
     else:
-        query = visible_tasks_stmt(project_id, user=actor, project=project).where(
-            Task.id.in_(task_ids)
-        )
+        query = visible_tasks_stmt(
+            project_id,
+            user=actor,
+            project=project,
+            project_role=access.project_role,
+        ).where(Task.id.in_(task_ids))
     visible_ids = set((await db.execute(query)).scalars().all())
     if visible_ids != set(task_ids):
         raise ValueError("export task scope is no longer visible")
+
+
+async def _reauthorize_export_final_write(
+    db: AsyncSession, job_uuid: uuid.UUID, task_ids: list[uuid.UUID] | None
+) -> None:
+    """Recheck account + membership + canonical task scope before a URL.
+
+    The initial scope check runs before the (potentially long) build; a
+    revocation or batch/visibility change during that window must prevent final
+    result creation and signed-URL issuance.  Account is locked before the
+    membership share lock (account-first), then the canonical
+    ``_assert_export_task_scope`` re-runs under those locks instead of a
+    duplicate policy.
+    """
+
+    from fastapi import HTTPException
+
+    from app.db.models.user import User
+    from app.services.project_write_guard import lock_actor_scope
+
+    job = await db.get(AsyncJob, job_uuid)
+    if job is None or job.project_id is None or job.user_id is None:
+        raise ValueError("export scope is no longer valid")
+    actor = await db.get(User, job.user_id)
+    if actor is None or not actor.is_active:
+        raise ValueError("export scope owner is unavailable")
+    try:
+        await lock_actor_scope(db, actor.id, job.project_id)
+    except HTTPException as exc:
+        raise ValueError("export scope is busy") from exc
+    await _assert_export_task_scope(
+        db,
+        project_id=job.project_id,
+        task_ids=task_ids,
+        job_uuid=job_uuid,
+    )
 
 
 async def _run_export(
@@ -702,6 +759,7 @@ async def _run_export(
                         export_bucket=export_bucket,
                         download_name=download_name,
                         cache_key=cache_key,
+                        task_ids=selected_task_ids,
                     )
                     return
 
@@ -761,6 +819,10 @@ async def _run_export(
                 await async_job_svc.update_progress(db, job_uuid, 90)
                 await db.commit()
 
+                # Final result/URL boundary after the long build: reauthorize
+                # the initiating account/membership and canonical selected-task
+                # scope before issuing the URL.
+                await _reauthorize_export_final_write(db, job_uuid, selected_task_ids)
                 download_url = storage_service.generate_download_url(
                     object_key,
                     expires_in=PRESIGN_EXPIRES_SECONDS,
@@ -779,7 +841,7 @@ async def _run_export(
                         "cache_hit": False,
                     },
                 )
-                await _emit_export_notification(
+                pending = await _emit_export_notification(
                     db,
                     job_uuid,
                     ok=True,
@@ -790,6 +852,7 @@ async def _run_export(
                     },
                 )
                 await db.commit()
+                await _publish_export_notification(db, pending)
                 log.info(
                     "run_export complete job=%s key=%s files=%d bytes=%d",
                     async_job_id,
@@ -815,8 +878,11 @@ async def _run_export(
                 try:
                     err = f"{type(exc).__name__}: {exc}"
                     await async_job_svc.mark_failed(db, job_uuid, error=err)
-                    await _emit_export_notification(db, job_uuid, ok=False, error=err)
+                    pending = await _emit_export_notification(
+                        db, job_uuid, ok=False, error=err
+                    )
                     await db.commit()
+                    await _publish_export_notification(db, pending)
                 except Exception:
                     await db.rollback()
                 raise

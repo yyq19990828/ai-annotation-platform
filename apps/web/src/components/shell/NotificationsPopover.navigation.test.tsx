@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
   batch: vi.fn(),
   job: vi.fn(),
   resolveDiscussion: vi.fn(),
+  access: vi.fn(),
   read: vi.fn(),
   delete: vi.fn(),
   notifications: [] as NotificationItem[],
@@ -19,6 +20,7 @@ const mocks = vi.hoisted(() => ({
 }));
 vi.mock("@/api/tasks", () => ({ tasksApi: { get: mocks.task } }));
 vi.mock("@/api/batches", () => ({ batchesApi: { get: mocks.batch } }));
+vi.mock("@/api/projects", () => ({ projectsApi: { getAccess: mocks.access } }));
 vi.mock("@/api/asyncJobs", () => ({ asyncJobsApi: { get: mocks.job } }));
 vi.mock("@/api/discussionTargets", () => ({
   resolveActiveDiscussionAnnotation: vi.fn(),
@@ -119,6 +121,19 @@ function Location() {
     </output>
   );
 }
+
+function access(capabilities: string[]) {
+  return {
+    project_id: "p1",
+    user_id: "u1",
+    platform_role: "employee" as const,
+    project_role: "annotator" as const,
+    access_kind: "member" as const,
+    is_manager: false,
+    capabilities,
+  };
+}
+const BOTH_WRITE = ["project.read", "task.read", "annotation.write", "review.write"];
 function renderUI(navigateExternal?: (to: string) => void) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
@@ -148,6 +163,7 @@ describe("通知直达当前目标", () => {
       status: "rejected",
       reject_reason: "最新理由",
     });
+    mocks.access.mockResolvedValue(access(BOTH_WRITE));
   });
   afterEach(() => {
     act(() => useAuthStore.getState().logout());
@@ -189,7 +205,7 @@ describe("通知直达当前目标", () => {
     );
     expect(screen.getByTestId("location")).toHaveTextContent("/dashboard");
     fireEvent.click(screen.getByRole("button", { name: "查看当前任务" }));
-    expect(screen.getByTestId("location")).toHaveTextContent("/annotate");
+    expect(screen.getByTestId("location")).toHaveTextContent("/dashboard");
   });
 
   it("网络失败可重试同一目标", async () => {
@@ -276,7 +292,8 @@ describe("通知直达当前目标", () => {
   it("标注评论通知按审核角色生成评论定位链接", async () => {
     useAuthStore
       .getState()
-      .setAuth("review-token", { id: "reviewer-1", role: "reviewer" } as MeResponse);
+      .setAuth("review-token", { id: "reviewer-1", role: "employee" } as MeResponse);
+    mocks.access.mockResolvedValue(access(["project.read", "task.read", "review.write"]));
     mocks.notifications = [commentNotification];
     mocks.resolveDiscussion.mockResolvedValue({
       projectId: discussionIds.project,
@@ -368,6 +385,7 @@ describe("通知入口角标与工作台导航回调", () => {
       batch_id: "b1",
       status: "rejected",
     });
+    mocks.access.mockResolvedValue(access(BOTH_WRITE));
   });
   afterEach(() => {
     act(() => useAuthStore.getState().logout());
@@ -450,7 +468,7 @@ describe("通知入口角标与工作台导航回调", () => {
     fireEvent.click(screen.getByTitle("通知，1 条未读"));
     fireEvent.click(await screen.findByRole("button", { name: "打开通知：退回了任务 T-1" }));
     fireEvent.click(await screen.findByRole("button", { name: "查看当前任务" }));
-    expect(navigateExternal).toHaveBeenCalledWith("/annotate");
+    expect(navigateExternal).toHaveBeenCalledWith("/dashboard");
   });
 
   it("a derived export detail forwards navigation and remains open when leave is cancelled", async () => {

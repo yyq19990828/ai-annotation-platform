@@ -9,7 +9,7 @@ from __future__ import annotations
 import uuid
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 
 from app.db.models.annotation import Annotation
 from app.db.models.audit_log import AuditLog
@@ -321,6 +321,12 @@ async def test_reset_to_draft_owner_only(
         n_tasks=1,
         task_status="pending",
     )
+    # Both accounts are visible project members with non-management work roles.
+    db_session.add(
+        ProjectMember(
+            project_id=p.id, user_id=rev.id, role="reviewer", assigned_by=owner.id
+        )
+    )
     await db_session.commit()
 
     for token in (anno_token, rev_token):
@@ -336,10 +342,14 @@ async def test_reset_to_draft_owner_only(
 
 
 @pytest.mark.asyncio
-async def test_persist_audit_entry_task_writes_row(db_session):
+async def test_persist_audit_entry_task_writes_row(test_engine):
     """task body 直接写一行 audit_logs。Celery 在 test 环境不真起 broker，本测验证函数体本身正确。"""
+    from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
     from app.workers.audit import _async_persist
 
+    # audit_logs.request_id is varchar(36); a bare 32-char uuid hex fits and is unique.
+    request_id = uuid.uuid4().hex
     payload = {
         # 用 None actor_id 避免 FK 约束触发（audit_logs.actor_id → users.id）
         "actor_id": None,
@@ -349,28 +359,33 @@ async def test_persist_audit_entry_task_writes_row(db_session):
         "path": "/api/v1/test/audit-async",
         "status_code": 200,
         "ip": "127.0.0.1",
-        "request_id": "test-rid-123",
+        "request_id": request_id,
     }
     await _async_persist(payload)
 
-    # 用独立 session 验证（_async_persist 自己 commit），fixture 的 db_session 看不到
-    from app.db.base import async_session as _session
-
-    async with _session() as s:
-        row = (
-            await s.execute(
-                select(AuditLog).where(AuditLog.request_id == "test-rid-123")
+    # 用当前测试引擎的独立 session 验证：_async_persist 自带 engine 并 commit，
+    # 而全局 app.db.base.async_session 的连接池绑定在另一事件循环上，不能在此复用。
+    maker = async_sessionmaker(test_engine, class_=AsyncSession, expire_on_commit=False)
+    try:
+        async with maker() as s:
+            row = (
+                await s.execute(
+                    select(AuditLog).where(AuditLog.request_id == request_id)
+                )
+            ).scalar_one()
+            assert row.action == "http.post"
+            assert row.method == "POST"
+            assert row.path == "/api/v1/test/audit-async"
+            assert row.status_code == 200
+            assert row.actor_role == "annotator"
+    finally:
+        # cleanup — v0.7.8 audit_logs 不可变 trigger 需要豁免；只删本测试自己的行。
+        async with maker() as cleanup:
+            await cleanup.execute(text("SET LOCAL \"app.allow_audit_update\" = 'true'"))
+            await cleanup.execute(
+                delete(AuditLog).where(AuditLog.request_id == request_id)
             )
-        ).scalar_one()
-        assert row.action == "http.post"
-        assert row.method == "POST"
-        assert row.path == "/api/v1/test/audit-async"
-        assert row.status_code == 200
-        assert row.actor_role == "annotator"
-        # cleanup — v0.7.8 audit_logs 不可变 trigger 需要豁免
-        await s.execute(text("SET LOCAL \"app.allow_audit_update\" = 'true'"))
-        await s.delete(row)
-        await s.commit()
+            await cleanup.commit()
 
 
 # ── S5 · annotation keyset 分页 ────────────────────────────────────────────

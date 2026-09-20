@@ -76,6 +76,24 @@ vi.mock("@/hooks/useProjects", () => ({
   }),
 }));
 
+vi.mock("@/hooks/useProjectAccess", () => ({
+  useProjectAccess: () => ({
+    // The members section is gated on performance.read; these flows exercise
+    // an authorized manager, so the capability must resolve to true.
+    hasCapability: (capability: string) => capability === "performance.read",
+    capabilities: new Set<string>(["performance.read"]),
+    access: undefined,
+    projectRole: null,
+    membershipVersion: null,
+    isManager: false,
+    isPending: false,
+    isLoading: false,
+    isError: false,
+    error: null,
+    refetch: vi.fn(),
+  }),
+}));
+
 vi.mock("@/hooks/useTasks", () => ({
   useTask: (id: string) => ({
     data: state.taskLookups.get(id) ?? state.taskLookup,

@@ -216,7 +216,7 @@ async def bulk_clear_preannotate(
 
         try:
             if payload.mode == "reset_to_draft":
-                _, _, cascade = await svc.reset_to_draft(bid)
+                _, _, cascade = await svc.reset_to_draft(bid, actor_id=admin.id)
             else:
                 # predictions_only: 复用 reset_to_draft 的级联 SQL 但保留 task / lock 状态.
                 # 实现上先记录 batch 当前 status, 再调 reset_to_draft, 最后状态回 ACTIVE.

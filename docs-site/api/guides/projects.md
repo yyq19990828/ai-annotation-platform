@@ -3,7 +3,7 @@ audience: [dev]
 type: reference
 since: v0.1.0
 status: stable
-last_reviewed: 2026-05-27
+last_reviewed: 2026-09-19
 ---
 
 # 项目
@@ -16,7 +16,7 @@ GET /api/v1/projects/query?page=1&page_size=20
 
 返回 `{ items, total, page, page_size, pages }`，`items` 中每项与项目详情的字段一致。`page` 从 1 开始，`page_size` 默认 20，范围为 1–100。空结果的 `total`、`pages` 为 0；超出末页时保留请求页码、返回空 `items` 和实际总数，调用方可据此回到有效页。
 
-支持 `status`、`search`、可重复的 `type_key` / `data_type`、`member_id`、`created_from` / `created_to`。总数和项目行均先应用相同的权限与筛选：超级管理员可见所有项目，项目管理员可见自己负责的项目，其他成员可见自己加入的项目。按创建时间倒序排列，同一时间以项目 ID 倒序稳定排序。
+支持 `status`、`search`、可重复的 `type_key` / `data_type`、`member_id`、`project_role`、`created_from` / `created_to`。`project_role` 按成员的项目角色过滤；不要把旧的账号 `role=reviewer` 解释为“任意带 reviewer 成员关系的员工”。总数和项目行均先应用相同的权限与筛选：超级管理员可见所有项目，项目管理员可见自己负责的项目，其他成员可见自己加入的项目。项目行带 `my_project_role`（当前账号在该项目的项目角色，管理者 / 无成员关系为 null）。按创建时间倒序排列，同一时间以项目 ID 倒序稳定排序。
 
 创建时间条件接受 ISO 日期或时间；无时区值按 UTC 解释，仅填写日期时结束日期包含全天。非法日期、倒置日期范围及非法分页参数返回 422。
 
@@ -93,15 +93,34 @@ DELETE /api/v1/projects/:id/guide-assets?key=<resource-key>
 
 上传与删除仅限项目负责人或超级管理员；普通项目成员写入返回 403。正文通过项目的 `annotation_guide` 字段读取和保存。
 
+## 当前账号的项目权限
+
+```http
+GET /api/v1/projects/:id/access
+```
+
+返回当前账号在该项目上的解析后权限：`project_id`、`user_id`、`platform_role`（账号级平台角色）、`project_role`（项目角色，管理者可为 null）、`membership_id`、`membership_version`、`access_kind`（`super_admin` / `owner` / `member`）、`is_manager` 与固定 `capabilities`。管理者可能没有成员关系；普通成员给出 membership 身份 / 版本与自身能力。能力集为 `project.read` / `project.manage` / `member.read` / `member.manage` / `task.read` / `annotation.write` / `review.write` / `export.annotations` / `performance.read`，服务端是权威，客户端本地判断只作展示。
+
+授权来源是资源所属项目的**成员关系 + 项目角色**，不是账号全局角色：一个 `employee` 可以在 A 项目 `annotator`、B 项目 `reviewer`，无成员关系即无项目访问（合法管理者除外）。历史全局 `annotator` / `reviewer` 只用于迁移与历史读取。
+
 ## 成员管理
 
 ```http
-POST   /api/v1/projects/:id/members        # 加成员
-DELETE /api/v1/projects/:id/members/:uid   # 移除
-PATCH  /api/v1/projects/:id/members/:uid   # 改角色
+GET    /api/v1/projects/:id/members                        # 列成员
+POST   /api/v1/projects/:id/members                        # 加成员
+DELETE /api/v1/projects/:id/members/:member_id             # 移除
+POST   /api/v1/projects/:id/members/:member_id/role/preview # 角色变更预检（只读）
+PATCH  /api/v1/projects/:id/members/:member_id/role         # 角色变更
 ```
 
-角色：`viewer` / `annotator` / `reviewer` / `project_admin`。
+成员输出是扁平结构：`role` 是**项目角色**（`annotator` / `reviewer` / `viewer`），`platform_role` 是账号的**平台角色**（`super_admin` / `project_admin` / `employee` / `viewer`），另有 `version`（CAS 版本）与 `assigned_at` / `updated_at`。项目成员角色不含 `project_admin`；平台 `viewer` 账号只能获得 `viewer` 成员身份。
+
+加成员会校验账号启用状态与平台 / 项目角色兼容性。角色变更分两步：
+
+1. `POST .../role/preview` 传 `project_role`（可带 `replacement_annotator_id` / `replacement_reviewer_id`），返回当前角色 / 版本、阻塞项、受影响资源快照与一次性 `preview_token`，**不写库**。
+2. `PATCH .../role` 要求 `project_role` + `expected_version` + `preview_token` + `reason`（1–500 字），可带显式接替人。服务端在锁内重校验并按 `expected_version` 做 CAS；版本陈旧、预览快照失效或资源被占用返回 409，需要重新预检。删除成员对未完成工作 / 活动锁 / 认领返回 409，需先交接或改派，不会静默清空指派。
+
+角色的 `role` / `platform_role` 命名与账号 / 邀请的区分见[可见性与权限](../../dev/concepts/visibility-and-permissions.md)。完整迁移、回滚与已签发 URL 限制见[员工项目角色迁移与回滚 runbook](../../ops/runbooks/project-role-migration.md)。
 
 ### @ 提及候选
 

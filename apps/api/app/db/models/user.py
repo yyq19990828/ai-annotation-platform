@@ -17,7 +17,13 @@ class User(Base):
     )
     name: Mapped[str] = mapped_column(String(100), nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
-    role: Mapped[str] = mapped_column(String(50), default="annotator")
+    # Platform role.  New ordinary staff are employees; public self-registration
+    # explicitly creates a viewer.  Legacy annotator/reviewer values are only
+    # pre-cutover historical data.  The server default matches migration 0174:
+    # an insert that omits role creates a usable employee account.
+    role: Mapped[str] = mapped_column(
+        String(50), default="employee", server_default="employee"
+    )
     group_name: Mapped[str | None] = mapped_column(String(100))
     group_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),

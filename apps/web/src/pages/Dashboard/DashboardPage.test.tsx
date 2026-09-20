@@ -61,7 +61,7 @@ vi.mock("@/components/guards/Can", () => ({
 }));
 
 vi.mock("@/utils/workbenchNavigation", () => ({
-  buildWorkbenchUrl: (id: string) => mockBuildWorkbenchUrl(id),
+  buildProjectEntryUrl: (id: string) => mockBuildWorkbenchUrl(id),
   currentWorkbenchReturnTo: () => "/dashboard",
 }));
 

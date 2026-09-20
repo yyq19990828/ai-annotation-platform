@@ -42,12 +42,13 @@ import { useDebouncedValue } from "@/hooks/useDebouncedValue";
 import { useUrlFilterState } from "@/hooks/useUrlFilterState";
 import { USERS_URL_DEFAULTS, USERS_URL_KEYS, usersUrlCodec } from "./usersUrlState";
 
-// actor.role × target.role → 可点"编辑"（即可改角色或可删）
+// actor.role × target.role → 可点"编辑"（即可改平台角色或可删）。
+// 平台角色编辑仅 super_admin（后端 AUTH-04）；项目管理员的生命周期路径仅
+// 接受 employee 目标，观察者行不提供编辑/离职等入口。
 const EDITABLE_TARGET_ROLES_BY_ACTOR: Record<UserRole, UserRole[]> = {
-  super_admin: ["super_admin", "project_admin", "reviewer", "annotator", "viewer"],
-  project_admin: ["reviewer", "annotator"],
-  reviewer: [],
-  annotator: [],
+  super_admin: ["super_admin", "project_admin", "employee", "viewer"],
+  project_admin: ["employee"],
+  employee: [],
   viewer: [],
 };
 
@@ -55,8 +56,7 @@ const ROLE_COLORS: Record<string, "accent" | "ai" | "warning" | "success" | "out
   {
     super_admin: "danger",
     project_admin: "accent",
-    reviewer: "ai",
-    annotator: "outline",
+    employee: "ai",
     viewer: "success",
   };
 
@@ -1151,9 +1151,7 @@ function UsersPageContent() {
                         (u: UserResponse) =>
                           u.id !== deleting.id &&
                           u.is_active &&
-                          (u.role === "annotator" ||
-                            u.role === "reviewer" ||
-                            u.role === "project_admin"),
+                          (u.role === "employee" || u.role === "project_admin"),
                       )
                       .map((u: UserResponse) => (
                         <option key={u.id} value={u.id}>

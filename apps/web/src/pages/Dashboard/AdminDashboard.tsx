@@ -18,7 +18,7 @@ import { CreateProjectWizard } from "@/components/projects/CreateProjectWizard";
 import { ImportDatasetWizard } from "@/components/datasets/ImportDatasetWizard";
 import { auditActionLabel } from "@/utils/auditLabels";
 import { projectDisplayType } from "@/utils/projectDisplay";
-import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import { buildProjectEntryUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import type { ProjectResponse } from "@/api/projects";
 import type { UserRole } from "@/types";
 import type { RegistrationDayPoint } from "@/api/dashboard";
@@ -67,7 +67,11 @@ export function AdminDashboard() {
   // B-46 · 项目行「打开」入口 — 与其它 dashboard 一致: 工作台型项目进工作台, 其余 toast 提示.
   const onOpenProject = (p: ProjectResponse) => {
     if (p.data_type && WORKBENCH_DATA_TYPES.has(p.data_type)) {
-      navigate(buildWorkbenchUrl(p.id, { returnTo: currentWorkbenchReturnTo(location) }));
+      navigate(
+        buildProjectEntryUrl(p.id, p.my_project_role, {
+          returnTo: currentWorkbenchReturnTo(location),
+        }),
+      );
     } else {
       pushToast({
         msg: `项目 "${p.name}" 已打开`,

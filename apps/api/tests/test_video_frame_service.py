@@ -1,6 +1,6 @@
 import uuid
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import select, text, update
 
 from app.db.models.dataset import (
     Dataset,
@@ -280,6 +280,47 @@ async def test_video_submit_does_not_credit_shared_item_segment_assignees(
     assert audit.detail_json["project_id"] == str(project.id)
     assert str(owner.id) in audit.detail_json["contributor_ids"]
     assert str(foreign_user.id) not in audit.detail_json["contributor_ids"]
+
+    # A2 · the last segment submitter is recorded as a contributor and frozen
+    # with the round; the shared dataset-item segment assignee is not credited.
+    await db_session.refresh(task)
+    assert task.status == "review"
+    assert task.review_submitter_id == owner.id
+    assert str(owner.id) in (task.review_contributor_ids or [])
+    assert str(foreign_user.id) not in (task.review_contributor_ids or [])
+    assert str(owner.id) in (task.annotation_contributor_ids or [])
+
+
+async def test_segment_evidence_retains_each_actual_submitter(
+    db_session, super_admin, monkeypatch
+):
+    from app.services.video_frame_service import build_context_from_task
+    from app.services.video_segment_service import ensure_segments, submit_segment
+    from tests.factory import create_user
+
+    owner, _ = super_admin
+    other = await create_user(
+        db_session, "super_admin", "segment-submitter@test.local", "Other submitter"
+    )
+    task, _ = await _make_video_task(db_session, owner.id)
+    project = await db_session.get(Project, task.project_id)
+    project.video_collaboration = {"enabled": True, "overlap_frames": 2}
+    monkeypatch.setattr(
+        "app.services.video_segment_service.settings.video_segment_size_frames", 45
+    )
+    ctx = await build_context_from_task(db_session, task)
+    segments = await ensure_segments(db_session, ctx)
+    assert len(segments) == 2
+
+    await submit_segment(db_session, ctx, segments[0].id, owner, privileged=True)
+    assert task.status != "review"
+    assert task.annotation_contributor_ids == [str(owner.id)]
+    await submit_segment(db_session, ctx, segments[1].id, other, privileged=True)
+    await db_session.refresh(task)
+    assert task.status == "review"
+    assert task.review_round_id is not None
+    assert task.review_submitter_id == other.id
+    assert task.review_contributor_ids == sorted([str(owner.id), str(other.id)])
 
 
 async def test_video_collaboration_derives_overlap_work_ranges(
@@ -1058,6 +1099,127 @@ async def test_video_asset_retry_queues_existing_media_tasks(
     assert chunk.error is None
     assert frame.status == "pending"
     assert frame.error is None
+
+
+async def test_video_asset_retry_accepts_any_managed_linked_project(
+    db_session, httpx_client_bound, super_admin, project_admin, monkeypatch
+):
+    """一个 dataset item 可被多个项目的 task 关联：只要其中任一链接项目是该
+    管理员合法管理的，重试就应放行（与失败列表 any-owned-project 作用域一致），
+    而不是依赖 LIMIT 1 任选一条链接行。"""
+
+    owner, token = project_admin
+    owned_task, item = await _make_video_task(db_session, owner.id)
+
+    # Second project owned by someone else, linking the same dataset item.
+    from tests.factory import create_user
+
+    other_user = await create_user(
+        db_session, "project_admin", f"vfs-other-{uuid.uuid4().hex[:6]}@test.local", "O"
+    )
+    other_project = Project(
+        display_id=f"P-VFS-{uuid.uuid4().hex[:6]}",
+        name="Other Project",
+        type_key="video-track",
+        type_label="视频 · 时序追踪",
+        data_type="video",
+        owner_id=other_user.id,
+        classes=["car"],
+    )
+    db_session.add(other_project)
+    await db_session.flush()
+    other_task = Task(
+        project_id=other_project.id,
+        dataset_item_id=item.id,
+        display_id=f"T-VFS-{uuid.uuid4().hex[:6]}",
+        file_name="clip.mp4",
+        file_path="videos/clip.mp4",
+        file_type="video",
+        status="pending",
+    )
+    db_session.add(other_task)
+    await db_session.flush()
+
+    queued_metadata: list[str] = []
+    monkeypatch.setattr(
+        "app.workers.media.generate_video_metadata.delay",
+        lambda item_id: queued_metadata.append(item_id),
+    )
+
+    resp = await httpx_client_bound.post(
+        "/api/v1/storage/video-assets/retry",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"asset_type": "poster", "dataset_item_id": str(item.id)},
+    )
+    assert resp.status_code == 202, resp.text
+    assert queued_metadata == [str(item.id)]
+
+
+async def test_video_asset_retry_rejects_unmanaged_linked_projects_only(
+    db_session, httpx_client_bound, super_admin, project_admin
+):
+    """所有链接项目都不归该管理员管理时保持 403。"""
+
+    owner, token = project_admin
+    _, item = await _make_video_task(db_session, owner.id)
+
+    from tests.factory import create_user
+
+    other_user = await create_user(
+        db_session,
+        "project_admin",
+        f"vfs-denied-{uuid.uuid4().hex[:6]}@test.local",
+        "D",
+    )
+    other_project = Project(
+        display_id=f"P-VFS-{uuid.uuid4().hex[:6]}",
+        name="Denied Project",
+        type_key="video-track",
+        type_label="视频 · 时序追踪",
+        data_type="video",
+        owner_id=other_user.id,
+        classes=["car"],
+    )
+    db_session.add(other_project)
+    await db_session.flush()
+    db_session.add(
+        Task(
+            project_id=other_project.id,
+            dataset_item_id=item.id,
+            display_id=f"T-VFS-{uuid.uuid4().hex[:6]}",
+            file_name="clip.mp4",
+            file_path="videos/clip.mp4",
+            file_type="video",
+            status="pending",
+        )
+    )
+    await db_session.flush()
+
+    # Re-point the first task at a fresh item so the shared item is only linked
+    # to the unmanaged project.
+    await db_session.execute(
+        update(Task)
+        .where(
+            Task.id
+            == (
+                await db_session.scalar(
+                    select(Task.id).where(
+                        Task.project_id != other_project.id,
+                        Task.dataset_item_id == item.id,
+                    )
+                )
+            )
+        )
+        .values(dataset_item_id=None)
+    )
+    await db_session.flush()
+
+    resp = await httpx_client_bound.post(
+        "/api/v1/storage/video-assets/retry",
+        headers={"Authorization": f"Bearer {token}"},
+        json={"asset_type": "poster", "dataset_item_id": str(item.id)},
+    )
+    assert resp.status_code == 403
 
 
 async def test_rebuild_timetable_cli_helper_replaces_rows(

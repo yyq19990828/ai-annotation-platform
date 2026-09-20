@@ -190,21 +190,21 @@ async def test_feedback_status_event_reaches_all_active_descendant_authors(
     qa, _ = reviewer
     old_only = await create_user(
         db_session,
-        "reviewer",
+        "employee",
         f"old-only-{uuid4().hex}@test.local",
         "Old-only",
     )
     grandchild_only = await create_user(
         db_session,
-        "reviewer",
+        "employee",
         f"grandchild-only-{uuid4().hex}@test.local",
         "Grandchild-only",
     )
     inactive = await create_user(
-        db_session, "annotator", f"inactive-{uuid4().hex}@test.local", "Inactive"
+        db_session, "employee", f"inactive-{uuid4().hex}@test.local", "Inactive"
     )
     away = await create_user(
-        db_session, "annotator", f"away-{uuid4().hex}@test.local", "Away"
+        db_session, "employee", f"away-{uuid4().hex}@test.local", "Away"
     )
     inactive.is_active = False
     project, batch, task = await _seed_task_scope(db_session, owner, author)
@@ -361,12 +361,12 @@ async def test_annotation_mentions_notify_original_comment_only_and_filter_acces
     qa, _ = reviewer
     inactive = await create_user(
         db_session,
-        "annotator",
+        "employee",
         f"inactive-mention-{uuid4().hex}@test.local",
         "Inactive",
     )
     away = await create_user(
-        db_session, "annotator", f"away-mention-{uuid4().hex}@test.local", "Away"
+        db_session, "employee", f"away-mention-{uuid4().hex}@test.local", "Away"
     )
     project, batch, task = await _seed_task_scope(db_session, owner, qa)
     for user, role in (
@@ -537,7 +537,7 @@ async def test_feedback_status_route_honors_mute_and_noop_transition(
 
 
 @pytest.mark.asyncio
-async def test_deferred_notification_publish_and_legacy_immediate_default(
+async def test_deferred_notification_publish_is_default(
     db_session, annotator, monkeypatch
 ):
     user, _ = annotator
@@ -573,14 +573,29 @@ async def test_deferred_notification_publish_and_legacy_immediate_default(
     await service.publish_committed(deferred_many)
     assert len(messages) == 2
 
-    immediate = await service.notify(
+    # Publication is deferred by default: the row is written but nothing is
+    # pushed until the caller publishes after its commit.
+    default_deferred = await service.notify(
         user_id=user.id,
         type="legacy.type",
         target_type="task",
         target_id=uuid4(),
     )
-    assert immediate is not None
+    assert default_deferred is not None
+    assert len(messages) == 2
+    await service.publish_committed([default_deferred])
     assert len(messages) == 3
+
+    # Legacy explicit opt-in still publishes immediately.
+    immediate = await service.notify(
+        user_id=user.id,
+        type="legacy.type",
+        target_type="task",
+        target_id=uuid4(),
+        defer_publish=False,
+    )
+    assert immediate is not None
+    assert len(messages) == 4
 
     db_session.add(
         NotificationPreference(
@@ -598,7 +613,7 @@ async def test_deferred_notification_publish_and_legacy_immediate_default(
         defer_publish=True,
     )
     assert muted is None
-    assert len(messages) == 3
+    assert len(messages) == 4
 
 
 @pytest.mark.asyncio

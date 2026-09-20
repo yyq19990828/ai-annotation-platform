@@ -60,7 +60,7 @@ async def _seed_project(
             email=f"a{i}-{uuid.uuid4().hex[:6]}@test.local",
             name=f"Annotator {i}",
             password_hash=hash_password("Test1234"),
-            role="annotator",
+            role="employee",
             is_active=True,
         )
         db.add(u)
@@ -71,7 +71,7 @@ async def _seed_project(
             email=f"r{i}-{uuid.uuid4().hex[:6]}@test.local",
             name=f"Reviewer {i}",
             password_hash=hash_password("Test1234"),
-            role="reviewer",
+            role="employee",
             is_active=True,
         )
         db.add(u)

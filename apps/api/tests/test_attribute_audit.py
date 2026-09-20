@@ -12,6 +12,7 @@ from sqlalchemy import select
 from app.db.models.annotation import Annotation
 from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 
 
@@ -36,6 +37,10 @@ async def test_attribute_change_writes_one_audit_per_changed_key(
     )
     db_session.add(project)
     await db_session.flush()
+    # Literal employee: explicit annotator membership carries the write authority.
+    db_session.add(
+        ProjectMember(project_id=project.id, user_id=ann_user.id, role="annotator")
+    )
 
     task = Task(
         id=uuid.uuid4(),

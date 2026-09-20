@@ -146,7 +146,7 @@ const SAMPLE_USERS = [
     id: "u1",
     name: "Alice",
     email: "alice@example.com",
-    role: "annotator",
+    role: "employee",
     is_active: true,
     status: "online",
     group_id: null,
@@ -157,7 +157,7 @@ const SAMPLE_USERS = [
     id: "u2",
     name: "Bob",
     email: "bob@example.com",
-    role: "reviewer",
+    role: "employee",
     is_active: true,
     status: "offline",
     group_id: null,
@@ -170,7 +170,7 @@ const INACTIVE_USER = {
   id: "u3",
   name: "Emergency Bob",
   email: "emergency@example.com",
-  role: "annotator",
+  role: "employee",
   is_active: false,
   disabled_kind: "emergency_suspended",
   disabled_at: "2026-09-08T10:00:00Z",
@@ -367,7 +367,7 @@ describe("UsersPage", () => {
           id: "u4",
           name: "Free Annotator",
           email: "free@example.com",
-          role: "annotator",
+          role: "employee",
           is_active: true,
           status: "offline",
           group_id: null,
@@ -420,7 +420,7 @@ describe("UsersPage", () => {
           id: "u6",
           name: "Cross Project",
           email: "cross@example.com",
-          role: "annotator",
+          role: "employee",
           is_active: true,
           status: "offline",
           group_id: null,
@@ -475,18 +475,18 @@ describe("UsersPage", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "筛选" }));
     fireEvent.change(screen.getByLabelText("项目筛选"), { target: { value: "project-1" } });
-    fireEvent.change(screen.getByLabelText("角色筛选"), { target: { value: "annotator" } });
+    fireEvent.change(screen.getByLabelText("角色筛选"), { target: { value: "employee" } });
     expect(mockUseUsers).toHaveBeenLastCalledWith(
-      expect.objectContaining({ project_id: "project-1", role: "annotator", page: 1 }),
+      expect.objectContaining({ project_id: "project-1", role: "employee", page: 1 }),
     );
     expect(mockUseUsersStats).toHaveBeenLastCalledWith(
-      expect.objectContaining({ project_id: "project-1", role: "annotator", status: "active" }),
+      expect.objectContaining({ project_id: "project-1", role: "employee", status: "active" }),
     );
     fireEvent.click(screen.getByRole("button", { name: /导出名单/ }));
     await waitFor(() =>
       expect(mockExportUsers).toHaveBeenCalledWith(
         "csv",
-        expect.objectContaining({ project_id: "project-1", role: "annotator", status: "active" }),
+        expect.objectContaining({ project_id: "project-1", role: "employee", status: "active" }),
       ),
     );
   });
@@ -499,20 +499,20 @@ describe("UsersPage", () => {
     expect(screen.getByText(/已选择 1 名成员/)).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "筛选" }));
-    fireEvent.change(screen.getByLabelText("角色筛选"), { target: { value: "annotator" } });
+    fireEvent.change(screen.getByLabelText("角色筛选"), { target: { value: "employee" } });
     await waitFor(() =>
-      expect(screen.getByTestId("location-search")).toHaveTextContent("?role=annotator"),
+      expect(screen.getByTestId("location-search")).toHaveTextContent("?role=employee"),
     );
     expect(screen.queryByText(/已选择 1 名成员/)).not.toBeInTheDocument();
 
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
     await waitFor(() =>
-      expect(screen.getByTestId("location-search")).toHaveTextContent("?role=annotator&page=2"),
+      expect(screen.getByTestId("location-search")).toHaveTextContent("?role=employee&page=2"),
     );
     fireEvent.click(screen.getByLabelText("选择 Alice"));
     fireEvent.click(screen.getByRole("button", { name: "下一页" }));
     await waitFor(() =>
-      expect(screen.getByTestId("location-search")).toHaveTextContent("?role=annotator&page=3"),
+      expect(screen.getByTestId("location-search")).toHaveTextContent("?role=employee&page=3"),
     );
     expect(screen.getByText(/已选择 1 名成员/)).toBeInTheDocument();
   });

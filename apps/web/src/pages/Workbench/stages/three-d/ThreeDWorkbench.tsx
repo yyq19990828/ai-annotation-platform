@@ -29,6 +29,7 @@ import {
   useUpdateAnnotation,
 } from "@/hooks/useTasks";
 import { useProject } from "@/hooks/useProjects";
+import { useProjectAccess } from "@/hooks/useProjectAccess";
 import { useFrameNeighbors } from "@/hooks/useFrameNeighbors";
 import { useNeighborAnnotations } from "@/hooks/useNeighborAnnotations";
 import { useNeighborPointClouds } from "@/hooks/useNeighborPointClouds";
@@ -517,8 +518,10 @@ export function ThreeDWorkbench({
   // 创建新 3D 标注需要对应工具单位的类别(后端按 tool_bindings 校验 class_name)。
   const { data: task } = useTask(taskId ?? "");
   const { data: project } = useProject(task?.project_id ?? "");
-  const qualityAllowed =
-    userRole === "super_admin" || userRole === "project_admin" || userRole === "reviewer";
+  // 点云质量由项目能力门控（与后端 review.write 授权一致）：项目负责人/超级管理员
+  // 经 is_manager 放行，普通项目质检员经 review.write 放行；全局角色不再是授权来源。
+  const projectAccess = useProjectAccess(task?.project_id ?? undefined);
+  const qualityAllowed = projectAccess.isManager || projectAccess.hasCapability("review.write");
   const qualityCanScanScene = userRole === "super_admin" || project?.owner_id === userId;
   const canManageCalibration = userRole === "super_admin" || project?.owner_id === userId;
   const [qualityPanelOpen, setQualityPanelOpen] = useState(false);

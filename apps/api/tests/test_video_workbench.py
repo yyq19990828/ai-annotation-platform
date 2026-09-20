@@ -15,6 +15,7 @@ from app.db.models.dataset import (
     VideoFrameIndex,
 )
 from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.schemas._jsonb_types import Geometry
@@ -1478,9 +1479,20 @@ async def test_video_track_convert_requires_task_visibility(
     annotator,
 ):
     user, _ = super_admin
-    _, annotator_token = annotator
+    annotator_user, annotator_token = annotator
     project, _, _ = await _create_video_export_fixture(db_session, user)
     task, track = await _video_fixture_task_and_track(db_session, project)
+    # Valid membership so the account passes project access, while the
+    # unassigned task must still be hidden from this annotator.
+    db_session.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=annotator_user.id,
+            role="annotator",
+            assigned_by=user.id,
+        )
+    )
+    await db_session.commit()
 
     resp = await httpx_client_bound.post(
         f"/api/v1/tasks/{task.id}/annotations/{track.id}/video/convert-to-bboxes",
@@ -2083,9 +2095,20 @@ async def test_video_track_composition_requires_task_visibility(
     annotator,
 ):
     user, _ = super_admin
-    _, annotator_token = annotator
+    annotator_user, annotator_token = annotator
     project, _, _ = await _create_video_export_fixture(db_session, user)
     task, track = await _video_fixture_task_and_track(db_session, project)
+    # Valid membership so the account passes project access, while the
+    # unassigned task must still be hidden from this annotator.
+    db_session.add(
+        ProjectMember(
+            project_id=project.id,
+            user_id=annotator_user.id,
+            role="annotator",
+            assigned_by=user.id,
+        )
+    )
+    await db_session.commit()
 
     resp = await httpx_client_bound.post(
         f"/api/v1/tasks/{task.id}/annotations/video/track-compositions",

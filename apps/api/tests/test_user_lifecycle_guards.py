@@ -30,7 +30,9 @@ def headers(user):
 
 
 async def seed_handoff(db, actor, role="annotator", project_count=2):
-    account_role = "project_admin" if role == "owner" else role
+    # Post-cutover staff are platform employees; the project role is carried by
+    # the membership only.  Owner retains the administrative identity.
+    account_role = "project_admin" if role == "owner" else "employee"
     target = await create_user(
         db, account_role, f"leaving-{uuid.uuid4()}@test.local", "Leaving"
     )
@@ -60,6 +62,14 @@ async def seed_handoff(db, actor, role="annotator", project_count=2):
             setattr(
                 task, "assignee_id" if role == "annotator" else "reviewer_id", target.id
             )
+        if role == "reviewer":
+            # A reviewable post-cutover task carries frozen contributor evidence.
+            # The outgoing reviewer submitted the round; the receiver is not a
+            # contributor, so the handoff decision is not a self-review.
+            task.review_round_id = uuid.uuid4()
+            task.annotation_contributor_ids = []
+            task.review_contributor_ids = [str(target.id)]
+            task.review_submitter_id = target.id
         projects.append(project)
         batches.append(batch)
         tasks.append(task)
@@ -140,7 +150,7 @@ async def test_manager_cannot_list_unrelated_disabled_candidates(
     target.disabled_kind = "suspended"
     await db_session.flush()
     response = await httpx_client.get(
-        f"/api/v1/users?role=annotator&status={account_status}",
+        f"/api/v1/users?role=employee&status={account_status}",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert response.status_code == 200
@@ -148,7 +158,7 @@ async def test_manager_cannot_list_unrelated_disabled_candidates(
     projects[0].owner_id = manager.id
     await db_session.flush()
     response = await httpx_client.get(
-        f"/api/v1/users?role=annotator&status={account_status}",
+        f"/api/v1/users?role=employee&status={account_status}",
         headers={"Authorization": f"Bearer {token}"},
     )
     assert str(target.id) in {row["id"] for row in response.json()}

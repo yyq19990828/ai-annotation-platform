@@ -1460,29 +1460,27 @@ test.describe("video Issue persisted context", () => {
       await request.get(`${API_BASE}/api/v1/users`, { headers: auth(fixture.token) }),
     );
     const annotator = users.find((user) => user.email === fixture.data.annotator_email)!;
-    const otherUser = users.find((user) => user.email === fixture.data.reviewer_email)!;
-    // Make the second real seeded user an annotator through the administrative API.
-    await json(
-      await request.patch(`${API_BASE}/api/v1/users/${otherUser.id}/role`, {
+    // Authority now comes from project membership: invite a second employee who
+    // accepts an annotator responsibility in this project through the real
+    // invitation → registration path, then hand the batch to them.
+    const invitation = await json<{ token: string }>(
+      await request.post(`${API_BASE}/api/v1/users/invite`, {
         headers: auth(fixture.token),
-        data: { role: "annotator" },
+        data: {
+          email: "takeover@e2e.test",
+          role: "employee",
+          project_id: fixture.data.project_id,
+          project_member_role: "annotator",
+        },
       }),
     );
-    // Assignment requires the project responsibility as well as the global role.
-    const membersPath = `${API_BASE}/api/v1/projects/${fixture.data.project_id}/members`;
-    const members = await json<Array<{ id: string; user_id: string }>>(
-      await request.get(membersPath, { headers: auth(fixture.token) }),
-    );
-    const previousMember = members.find((member) => member.user_id === otherUser.id);
-    expect(previousMember).toBeDefined();
-    const removed = await request.delete(`${membersPath}/${previousMember!.id}`, {
-      headers: auth(fixture.token),
-    });
-    expect(removed.status()).toBe(204);
-    await json(
-      await request.post(membersPath, {
-        headers: auth(fixture.token),
-        data: { user_id: otherUser.id, role: "annotator" },
+    const takeover = await json<{ user: { id: string } }>(
+      await request.post(`${API_BASE}/api/v1/auth/register`, {
+        data: {
+          token: invitation.token,
+          name: "E2E Takeover",
+          password: "Takeover-123",
+        },
       }),
     );
     const batch = await json<{ id: string }>(
@@ -1525,7 +1523,7 @@ test.describe("video Issue persisted context", () => {
     await json(
       await request.patch(
         `${API_BASE}/api/v1/projects/${fixture.data.project_id}/batches/${batch.id}`,
-        { headers: auth(fixture.token), data: { annotator_id: otherUser.id } },
+        { headers: auth(fixture.token), data: { annotator_id: takeover.user.id } },
       ),
     );
     fixture.expectedHttpErrors.push({

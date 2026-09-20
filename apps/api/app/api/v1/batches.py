@@ -7,11 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.deps import (
     get_db,
     get_current_user,
-    require_roles,
+    project_access_for_path,
     require_project_visible,
     require_project_owner,
+    require_project_capability,
 )
-from app.db.enums import UserRole, BatchStatus
+from app.db.enums import BatchStatus
 from app.db.models.user import User
 from app.db.models.project import Project
 from app.schemas.batch import (
@@ -45,9 +46,8 @@ from app.services.batch import (
     BatchService,
     assert_can_transition,
     REVERSE_TRANSITIONS,
-    _is_owner,
-    _is_annotator_assigned,
 )
+from app.services.project_access import ProjectAccess, ProjectCapability
 from app.services.management import preview_batch_distribution
 from app.services.audit import AuditService, AuditAction
 from app.services.notification import NotificationService
@@ -58,14 +58,6 @@ from sqlalchemy import select as sa_select
 
 router = APIRouter()
 
-_REVIEWERS = (UserRole.SUPER_ADMIN, UserRole.PROJECT_ADMIN, UserRole.REVIEWER)
-# 整批送审：被分派标注员 + owner/管理员（与 annotating→reviewing 鉴权一致）
-_BATCH_SUBMITTERS = (
-    UserRole.SUPER_ADMIN,
-    UserRole.PROJECT_ADMIN,
-    UserRole.REVIEWER,
-    UserRole.ANNOTATOR,
-)
 # 整批送审的分块大小：避免大批次一次性物化全部 task 行锁与事务。
 _SUBMIT_REVIEW_CHUNK_SIZE = 200
 
@@ -273,7 +265,7 @@ async def delete_batch(
         raise HTTPException(status_code=404, detail="Batch not found")
     affected = batch.total_tasks
     # v0.11.25：含进行中成果/已预标时 svc.delete 会抛 409 requires_force；force=true 走强制清理删除
-    await svc.delete(batch_id, force=force)
+    await svc.delete(batch_id, force=force, actor_id=current_user.id)
     await AuditService.log(
         db,
         actor=current_user,
@@ -296,6 +288,7 @@ async def transition_batch(
     project: Project = Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(project_access_for_path),
 ):
     svc = BatchService(db)
     batch = await svc.get(batch_id)
@@ -303,7 +296,13 @@ async def transition_batch(
         raise HTTPException(status_code=404, detail="Batch not found")
 
     # v0.7.0：按 (from, to) 校验角色（403 携带可读 detail）
-    assert_can_transition(current_user, project, batch, data.target_status)
+    assert_can_transition(
+        current_user,
+        project,
+        batch,
+        data.target_status,
+        project_role=access.project_role,
+    )
 
     # v0.7.3：逆向迁移强制 reason（schema 层面 reason 是可选，这里按方向决定是否必填）
     is_reverse = (batch.status, data.target_status) in REVERSE_TRANSITIONS
@@ -346,9 +345,10 @@ async def transition_batch(
         if batch.reviewer_id is not None and batch.reviewer_id != current_user.id:
             notif_recipients.append(batch.reviewer_id)
 
+    pending_notifications = []
     if notif_type and notif_recipients:
         notif_svc = NotificationService(db)
-        await notif_svc.notify_many(
+        pending_notifications = await notif_svc.notify_many(
             user_ids=notif_recipients,
             type=notif_type,
             target_type="batch",
@@ -363,6 +363,8 @@ async def transition_batch(
         )
 
     await db.commit()
+    if pending_notifications:
+        await NotificationService(db).publish_committed(pending_notifications)
     await db.refresh(batch)
     briefs = await _briefs_for_batches(db, project_id, [batch])
     return _batch_to_out(batch, briefs)
@@ -375,7 +377,8 @@ async def submit_batch_review(
     request: Request,
     project: Project = Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_BATCH_SUBMITTERS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(project_access_for_path),
 ):
     """整批送审：把批次内所有未送审任务（pending / in_progress）提交质检。
 
@@ -395,8 +398,13 @@ async def submit_batch_review(
     if not batch or batch.project_id != project_id:
         raise HTTPException(status_code=404, detail="Batch not found")
 
-    actor_is_owner = _is_owner(current_user, project)
-    if not (actor_is_owner or _is_annotator_assigned(current_user, batch)):
+    actor_is_owner = access.is_manager
+    actor_is_assigned_annotator = (
+        access.project_role == "annotator"
+        and batch.annotator_id is not None
+        and batch.annotator_id == current_user.id
+    )
+    if not (actor_is_owner or actor_is_assigned_annotator):
         raise HTTPException(
             status_code=403,
             detail="only the assigned annotator or a project owner can submit the batch",
@@ -471,6 +479,12 @@ async def submit_batch_review(
                     "batch_id": str(batch_id),
                     "assignee_id": str(task.assignee_id) if task.assignee_id else None,
                     "contributor_ids": result["contributor_ids"],
+                    "review_contributor_ids": result["review_contributor_ids"],
+                    "review_submitter_id": (
+                        str(result["review_submitter_id"])
+                        if result["review_submitter_id"]
+                        else None
+                    ),
                     "review_round_id": str(result["review_round_id"]),
                     "result": "submitted",
                     "trigger": "batch_submit_review",
@@ -685,7 +699,10 @@ async def reject_batch(
     request: Request,
     project: Project = Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(
+        require_project_capability(ProjectCapability.REVIEW_WRITE.value)
+    ),
 ):
     svc = BatchService(db)
     batch = await svc.get(batch_id)
@@ -693,12 +710,19 @@ async def reject_batch(
         raise HTTPException(status_code=404, detail="Batch not found")
 
     # v0.7.0：复用 transition 鉴权矩阵（reviewing → rejected 的角色门）
-    assert_can_transition(current_user, project, batch, "rejected")
+    assert_can_transition(
+        current_user,
+        project,
+        batch,
+        "rejected",
+        project_role=access.project_role,
+    )
 
     batch, affected = await svc.reject_batch(
         batch_id,
         feedback=data.feedback,
         reviewer_id=current_user.id,
+        actor_id=current_user.id,
     )
     await AuditService.log(
         db,
@@ -712,9 +736,10 @@ async def reject_batch(
     )
 
     # v0.7.2 · 单值语义：只通知该批次的标注员（reviewer 是 actor 本人无需通知）
+    pending_notifications = []
     if batch.annotator_id is not None:
         notif_svc = NotificationService(db)
-        await notif_svc.notify_many(
+        pending_notifications = await notif_svc.notify_many(
             user_ids=[batch.annotator_id],
             type="batch.rejected",
             target_type="batch",
@@ -729,6 +754,8 @@ async def reject_batch(
         )
 
     await db.commit()
+    if pending_notifications:
+        await NotificationService(db).publish_committed(pending_notifications)
     await db.refresh(batch)
     briefs = await _briefs_for_batches(db, project_id, [batch])
     return _batch_to_out(batch, briefs)
@@ -760,7 +787,9 @@ async def reset_batch_to_draft(
         raise HTTPException(status_code=404, detail="Batch not found")
 
     from_status = batch.status
-    batch, affected, cascade = await svc.reset_to_draft(batch_id)
+    batch, affected, cascade = await svc.reset_to_draft(
+        batch_id, actor_id=current_user.id
+    )
 
     await AuditService.log(
         db,
@@ -824,9 +853,10 @@ async def admin_lock_batch(
         notif_recipients.append(batch.reviewer_id)
     if project.owner_id != current_user.id:
         notif_recipients.append(project.owner_id)
+    pending_notifications = []
     if notif_recipients:
         notif_svc = NotificationService(db)
-        await notif_svc.notify_many(
+        pending_notifications = await notif_svc.notify_many(
             user_ids=notif_recipients,
             type="batch.admin_locked",
             target_type="batch",
@@ -840,6 +870,8 @@ async def admin_lock_batch(
         )
 
     await db.commit()
+    if pending_notifications:
+        await NotificationService(db).publish_committed(pending_notifications)
     await db.refresh(batch)
     briefs = await _briefs_for_batches(db, project_id, [batch])
     return _batch_to_out(batch, briefs)
@@ -877,9 +909,10 @@ async def admin_unlock_batch(
         notif_recipients.append(batch.annotator_id)
     if batch.reviewer_id and batch.reviewer_id != current_user.id:
         notif_recipients.append(batch.reviewer_id)
+    pending_notifications = []
     if notif_recipients:
         notif_svc = NotificationService(db)
-        await notif_svc.notify_many(
+        pending_notifications = await notif_svc.notify_many(
             user_ids=notif_recipients,
             type="batch.admin_unlocked",
             target_type="batch",
@@ -892,6 +925,8 @@ async def admin_unlock_batch(
         )
 
     await db.commit()
+    if pending_notifications:
+        await NotificationService(db).publish_committed(pending_notifications)
     await db.refresh(batch)
     briefs = await _briefs_for_batches(db, project_id, [batch])
     return _batch_to_out(batch, briefs)
@@ -952,7 +987,9 @@ async def bulk_delete_batches(
 ):
     svc = BatchService(db)
     # v0.11.25：force=false 时含进行中成果/已预标的批次进 failed(reason=requires_force)
-    summary = await svc.bulk_delete(project_id, data.batch_ids, force=force)
+    summary = await svc.bulk_delete(
+        project_id, data.batch_ids, force=force, actor_id=current_user.id
+    )
     await AuditService.log(
         db,
         actor=current_user,
@@ -1046,10 +1083,15 @@ async def bulk_approve_batches(
     request: Request,
     project: Project = Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(
+        require_project_capability(ProjectCapability.REVIEW_WRITE.value)
+    ),
 ):
     svc = BatchService(db)
-    summary = await svc.bulk_approve(project_id, data.batch_ids)
+    summary = await svc.bulk_approve(
+        project_id, data.batch_ids, actor_id=current_user.id
+    )
     await AuditService.log(
         db,
         actor=current_user,
@@ -1071,7 +1113,10 @@ async def bulk_reject_batches(
     request: Request,
     project: Project = Depends(require_project_visible),
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_REVIEWERS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(
+        require_project_capability(ProjectCapability.REVIEW_WRITE.value)
+    ),
 ):
     svc = BatchService(db)
     summary = await svc.bulk_reject(
@@ -1079,6 +1124,7 @@ async def bulk_reject_batches(
         data.batch_ids,
         feedback=data.feedback,
         reviewer_id=current_user.id,
+        actor_id=current_user.id,
     )
     audit_detail = _bulk_audit_detail({"batch_ids": data.batch_ids}, summary)
     audit_detail["feedback"] = data.feedback
@@ -1093,25 +1139,30 @@ async def bulk_reject_batches(
         detail=audit_detail,
     )
     # 通知各批次的标注员
+    pending_notifications = []
     if summary["succeeded"]:
         loaded = await svc._load_batches_for_bulk(project_id, summary["succeeded"])
         notif_svc = NotificationService(db)
         for batch in loaded.values():
             if batch.annotator_id and batch.annotator_id != current_user.id:
-                await notif_svc.notify_many(
-                    user_ids=[batch.annotator_id],
-                    type="batch.rejected",
-                    target_type="batch",
-                    target_id=batch.id,
-                    payload={
-                        "batch_display_id": batch.display_id,
-                        "batch_name": batch.name,
-                        "project_id": str(project_id),
-                        "feedback": data.feedback,
-                        "bulk": True,
-                    },
+                pending_notifications.extend(
+                    await notif_svc.notify_many(
+                        user_ids=[batch.annotator_id],
+                        type="batch.rejected",
+                        target_type="batch",
+                        target_id=batch.id,
+                        payload={
+                            "batch_display_id": batch.display_id,
+                            "batch_name": batch.name,
+                            "project_id": str(project_id),
+                            "feedback": data.feedback,
+                            "bulk": True,
+                        },
+                    )
                 )
     await db.commit()
+    if pending_notifications:
+        await NotificationService(db).publish_committed(pending_notifications)
     return summary
 
 

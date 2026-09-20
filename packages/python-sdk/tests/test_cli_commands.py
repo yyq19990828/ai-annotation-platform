@@ -699,6 +699,8 @@ def test_members_list_table(respx_mock):
                     "user_name": "张三",
                     "user_email": "zhang@x.io",
                     "role": "annotator",
+                    "platform_role": "employee",
+                    "version": 1,
                     "assigned_at": "2026-06-10T00:00:00Z",
                 }
             ],
@@ -709,6 +711,7 @@ def test_members_list_table(respx_mock):
     plain = _plain(result.output)
     assert "张三" in plain
     assert "annotator" in plain
+    assert "employee" in plain
 
 
 def test_me_command(respx_mock):

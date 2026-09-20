@@ -292,7 +292,7 @@ class _StubClient:
         pools_by_project=None,
         batches_by_project=None,
         members_by_project=None,
-        role="annotator",
+        role="employee",
         people=None,
         stats=None,
     ):
@@ -320,7 +320,7 @@ class _StubClient:
 def _make_app(
     job_statuses=("running",),
     with_ml=False,
-    role="annotator",
+    role="employee",
     job_kind="export",
 ) -> AapTuiApp:
     pages = [JobPage(items=[_job(s, kind=job_kind)], total=1) for s in job_statuses]
@@ -828,6 +828,7 @@ def _member() -> Member:
         user_name="张三",
         user_email="zhang@x.io",
         role="annotator",
+        platform_role="employee",
         assigned_at=datetime(2026, 6, 10, tzinfo=timezone.utc),
     )
 
@@ -977,9 +978,9 @@ async def test_people_tab_loads_for_super_admin():
         assert "5%" in row[4]  # 退回率
 
 
-async def test_people_tab_gated_for_annotator():
+async def test_people_tab_gated_for_employee():
     # 非 super_admin 仍加载本人摘要，但不拉全员 people。
-    app = _make_app(role="annotator")
+    app = _make_app(role="employee")
     async with app.run_test(size=(120, 32)) as pilot:
         await _settle(app, pilot)
         app.query_one("#tabs", TabbedContent).active = "tab-people"

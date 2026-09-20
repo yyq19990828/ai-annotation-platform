@@ -6,6 +6,12 @@ import type {
   ProjectUpdate,
   ProjectStats,
   ProjectMemberOut,
+  ProjectAccessOut,
+  ProjectMemberRoleChangeRequest,
+  ProjectMemberRolePreviewOut,
+  ProjectMemberRolePreviewRequest,
+  PlatformRole,
+  ProjectRole,
   MentionCandidateOut,
   AttributeField as GenAttributeField,
   AttributeFieldOption as GenAttributeFieldOption,
@@ -68,6 +74,14 @@ export type ProjectResponse = Omit<ProjectOut, "preannotate_pipeline"> & {
 };
 export type ProjectStatsResponse = ProjectStats;
 export type ProjectMemberResponse = ProjectMemberOut;
+export type ProjectAccessResponse = ProjectAccessOut;
+export type { PlatformRole, ProjectRole };
+export type ProjectMemberRolePreviewResponse = ProjectMemberRolePreviewOut;
+export type ProjectMemberRoleChangePayload = ProjectMemberRoleChangeRequest;
+export type ProjectMemberRolePreviewPayload = ProjectMemberRolePreviewRequest;
+
+/** Fixed capability set returned by `GET /projects/{id}/access`. */
+export type ProjectCapability = NonNullable<ProjectAccessOut["capabilities"]>[number];
 
 /** @ 提及候选：项目负责人 / 平台超管 / 项目成员，`kind` 用于输入区展示标签。 */
 export type MentionCandidateResponse = MentionCandidateOut;
@@ -283,6 +297,15 @@ export const projectsApi = {
   get: (id: string) => apiClient.get<ProjectResponse>(`/projects/${id}`),
   getReadiness: (id: string) => apiClient.get<ProjectReadinessSummary>(`/projects/${id}/readiness`),
 
+  /**
+   * B1 · resolved project access (platform + project role, membership version and
+   * fixed capability set).  Server authoritative; local guards are presentation.
+   */
+  getAccess: (id: string, init?: RequestInit) =>
+    init
+      ? apiClient.get<ProjectAccessResponse>(`/projects/${id}/access`, init)
+      : apiClient.get<ProjectAccessResponse>(`/projects/${id}/access`),
+
   create: (payload: ProjectCreatePayload) => apiClient.post<ProjectResponse>("/projects", payload),
 
   update: (id: string, payload: ProjectUpdatePayload) =>
@@ -314,8 +337,18 @@ export const projectsApi = {
   mentionCandidates: (id: string) =>
     apiClient.get<MentionCandidateResponse[]>(`/projects/${id}/mention-candidates`),
 
-  addMember: (id: string, payload: { user_id: string; role: "annotator" | "reviewer" }) =>
+  addMember: (id: string, payload: { user_id: string; role: ProjectRole }) =>
     apiClient.post<ProjectMemberResponse>(`/projects/${id}/members`, payload),
+
+  // B1 · member role change is a preview → CAS write flow (see plan §6).
+  previewMemberRole: (id: string, memberId: string, payload: ProjectMemberRolePreviewPayload) =>
+    apiClient.post<ProjectMemberRolePreviewResponse>(
+      `/projects/${id}/members/${memberId}/role/preview`,
+      payload,
+    ),
+
+  changeMemberRole: (id: string, memberId: string, payload: ProjectMemberRoleChangePayload) =>
+    apiClient.patch<ProjectMemberResponse>(`/projects/${id}/members/${memberId}/role`, payload),
 
   removeMember: (id: string, memberId: string) =>
     apiClient.delete<void>(`/projects/${id}/members/${memberId}`),

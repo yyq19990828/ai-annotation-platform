@@ -20,7 +20,7 @@ async def test_distribution_counts_real_tasks_and_applies_identical_tied_order(
     headers = {"Authorization": f"Bearer {token}"}
     project = await create_project(db_session, owner_id=admin.id)
     users = [
-        await create_user(db_session, "annotator", f"load-{i}@e.test", f"Worker {i}")
+        await create_user(db_session, "employee", f"load-{i}@e.test", f"Worker {i}")
         for i in range(2)
     ]
     for user in users:
@@ -86,7 +86,7 @@ async def test_distribution_rejects_stale_preview_without_changing_assignment(
     admin, token = super_admin
     headers = {"Authorization": f"Bearer {token}"}
     project = await create_project(db_session, owner_id=admin.id)
-    user = await create_user(db_session, "annotator", "stale-plan@e.test", "Worker")
+    user = await create_user(db_session, "employee", "stale-plan@e.test", "Worker")
     db_session.add(
         ProjectMember(
             project_id=project.id,
@@ -129,11 +129,11 @@ async def test_bulk_invite_failed_middle_item_does_not_break_following_or_leave_
     _, token = super_admin
     headers = {"Authorization": f"Bearer {token}"}
     existing = await create_user(
-        db_session, "annotator", "bulk-exists@e.test", "Existing"
+        db_session, "employee", "bulk-exists@e.test", "Existing"
     )
     body = {
         "items": [
-            {"email": email, "role": "annotator"}
+            {"email": email, "role": "employee"}
             for email in ("bulk-first@e.test", existing.email, "bulk-last@e.test")
         ]
     }
@@ -182,19 +182,21 @@ async def test_management_previews_do_not_reveal_out_of_scope_users(
     item = group.json()["items"][0]
     assert item["ok"] is False
     assert item["email"] is None and item["name"] is None
+    # Platform-role preview is super-admin only; a project administrator is
+    # denied before any out-of-scope detail is disclosed.
     impact = await httpx_client.get(
-        f"/api/v1/users/{outside.id}/role/preview?role=reviewer", headers=headers
+        f"/api/v1/users/{outside.id}/role/preview?role=employee", headers=headers
     )
-    assert impact.status_code == 404, impact.text
+    assert impact.status_code == 403, impact.text
     assert outside.email not in impact.text and outside.name not in impact.text
 
 
-async def test_role_preview_warns_about_other_projects_without_disclosing_names(
+async def test_role_preview_is_super_admin_only_and_hides_project_names(
     httpx_client, project_admin, super_admin, db_session
 ):
     manager, token = project_admin
-    admin, _ = super_admin
-    user = await create_user(db_session, "annotator", "shared-role@e.test", "Shared")
+    admin, admin_token = super_admin
+    user = await create_user(db_session, "employee", "shared-role@e.test", "Shared")
     for owner, name in ((manager, "Visible"), (admin, "Private project name")):
         project = await create_project(db_session, owner_id=owner.id, name=name)
         db_session.add(
@@ -206,14 +208,22 @@ async def test_role_preview_warns_about_other_projects_without_disclosing_names(
             )
         )
     await db_session.flush()
-    result = await httpx_client.get(
-        f"/api/v1/users/{user.id}/role/preview?role=reviewer",
+
+    denied = await httpx_client.get(
+        f"/api/v1/users/{user.id}/role/preview?role=employee",
         headers={"Authorization": f"Bearer {token}"},
     )
-    assert result.status_code == 200, result.text
-    assert result.json()["other_project_count"] == 1
-    assert result.json()["warnings"]
-    assert "Private project name" not in result.text
+    assert denied.status_code == 403, denied.text
+    assert "Private project name" not in denied.text
+
+    allowed = await httpx_client.get(
+        f"/api/v1/users/{user.id}/role/preview?role=employee",
+        headers={"Authorization": f"Bearer {admin_token}"},
+    )
+    assert allowed.status_code == 200, allowed.text
+    # A super administrator legitimately sees every project; only the denied
+    # project administrator response must not disclose it.
+    assert "Private project name" in allowed.text
 
 
 async def test_management_csv_treats_user_and_invitation_fields_as_literal_text(
@@ -263,9 +273,9 @@ async def test_bulk_invite_validation_reports_invalid_email_per_item(
         headers={"Authorization": f"Bearer {token}"},
         json={
             "items": [
-                {"email": "valid-bulk@e.test", "role": "annotator"},
-                {"email": "invalid", "role": "annotator"},
-                {"email": " VALID-BULK@e.test ", "role": "annotator"},
+                {"email": "valid-bulk@e.test", "role": "employee"},
+                {"email": "invalid", "role": "employee"},
+                {"email": " VALID-BULK@e.test ", "role": "employee"},
             ]
         },
     )
@@ -281,16 +291,16 @@ async def test_single_batch_preview_counts_review_backlog_and_applies_exact_mapp
     admin, token = super_admin
     headers = {"Authorization": f"Bearer {token}"}
     project = await create_project(db_session, owner_id=admin.id)
-    anno = await create_user(db_session, "annotator", "single-anno@e.test", "Annotator")
+    anno = await create_user(db_session, "employee", "single-anno@e.test", "Annotator")
     review = await create_user(
-        db_session, "reviewer", "single-review@e.test", "Reviewer"
+        db_session, "employee", "single-review@e.test", "Reviewer"
     )
-    for user in (anno, review):
+    for user, project_role in ((anno, "annotator"), (review, "reviewer")):
         db_session.add(
             ProjectMember(
                 project_id=project.id,
                 user_id=user.id,
-                role=user.role,
+                role=project_role,
                 assigned_by=admin.id,
             )
         )
@@ -395,7 +405,7 @@ async def test_distribution_can_target_only_selected_batches(
     admin, token = super_admin
     project = await create_project(db_session, owner_id=admin.id)
     user = await create_user(
-        db_session, "annotator", "selected-batches@e.test", "Worker"
+        db_session, "employee", "selected-batches@e.test", "Worker"
     )
     db_session.add(
         ProjectMember(

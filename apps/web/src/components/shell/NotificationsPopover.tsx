@@ -21,6 +21,7 @@ import { AsyncJobDetailModal } from "@/components/jobs/AsyncJobDetailModal";
 import { ApiError } from "@/api/client";
 import { tasksApi } from "@/api/tasks";
 import { batchesApi } from "@/api/batches";
+import { projectsApi } from "@/api/projects";
 import { ShellPopover, SHELL_POPOVER_HEADER_CLASS } from "./ShellPopover";
 import {
   DiscussionNotificationError,
@@ -111,6 +112,22 @@ const JOB_KIND_LABEL: Record<string, string> = {
 
 function stringValue(value: unknown): string {
   return typeof value === "string" ? value : "";
+}
+
+type WorkMode = "annotate" | "review";
+
+/**
+ * Pick the work mode a notification should open.  Review work is never
+ * downgraded to the annotation editor just because the account could annotate
+ * somewhere; if the target is a review task and the account lacks review
+ * authority the caller surfaces an access error instead.
+ */
+export function chooseWorkMode(capabilities: ReadonlySet<string>, status?: string): WorkMode {
+  const canAnnotate = capabilities.has("annotation.write");
+  const canReview = capabilities.has("review.write");
+  if (status === "review") return canReview ? "review" : "annotate";
+  if (canReview && !canAnnotate) return "review";
+  return "annotate";
 }
 
 function jobVerb(item: NotificationItem): string | null {
@@ -394,28 +411,55 @@ export function NotificationsPopover({
       isCurrentAuthOwner(owner);
     setTarget({ item, error: null });
     try {
-      const buildUrl = role === "reviewer" ? buildReviewWorkbenchUrl : buildWorkbenchUrl;
       const returnTo = currentWorkbenchReturnTo(location);
-      let url: string;
+      let projectId: string;
+      let taskId: string | undefined;
+      let batchId: string | undefined;
+      let status: string | undefined;
+      let discussion:
+        | Awaited<ReturnType<typeof resolveDiscussionNotification>>["target"]
+        | undefined;
       if (item.target_type === "feedback" || item.target_type === "annotation_comment") {
         const resolved = await resolveDiscussionNotification(item, controller.signal);
         if (!current()) return;
-        url = buildUrl(resolved.projectId, {
-          taskId: resolved.task.id,
-          batchId: resolved.task.batch_id,
-          returnTo,
-          discussion: resolved.target,
-        });
+        projectId = resolved.projectId;
+        taskId = resolved.task.id;
+        batchId = resolved.task.batch_id ?? undefined;
+        status = resolved.task.status;
+        discussion = resolved.target;
       } else if (item.target_type === "task") {
         // Read the current target: notification payloads may precede a transfer or another review.
         const task = await tasksApi.get(item.target_id, { signal: controller.signal });
-        url = buildUrl(task.project_id, { taskId: task.id, batchId: task.batch_id, returnTo });
+        if (!current()) return;
+        projectId = task.project_id;
+        taskId = task.id;
+        batchId = task.batch_id ?? undefined;
+        status = task.status;
       } else {
-        const projectId = stringValue(item.payload?.project_id);
-        if (!projectId) throw new Error("通知缺少项目信息，请从任务列表查看该批次。");
-        const batch = await batchesApi.get(projectId, item.target_id);
-        url = buildUrl(batch.project_id, { batchId: batch.id, returnTo });
+        const payloadProjectId = stringValue(item.payload?.project_id);
+        if (!payloadProjectId) throw new Error("通知缺少项目信息，请从任务列表查看该批次。");
+        const batch = await batchesApi.get(payloadProjectId, item.target_id);
+        if (!current()) return;
+        projectId = batch.project_id;
+        batchId = batch.id;
       }
+      // Resolve the *actual* project's access before choosing a work mode; an
+      // employee's review notification must not silently open the annotation
+      // editor, and a project they cannot work in must not open a dead editor.
+      const access = await projectsApi.getAccess(projectId, { signal: controller.signal });
+      if (!current()) return;
+      const capabilities = new Set(access.capabilities ?? []);
+      const mode = chooseWorkMode(capabilities, status);
+      if (!capabilities.has(mode === "review" ? "review.write" : "annotation.write")) {
+        throw new Error("你对该项目没有所需的工作权限，请联系项目负责人。");
+      }
+      const buildUrl = mode === "review" ? buildReviewWorkbenchUrl : buildWorkbenchUrl;
+      const url =
+        item.target_type === "feedback" || item.target_type === "annotation_comment"
+          ? buildUrl(projectId, { taskId: taskId!, batchId, returnTo, discussion: discussion! })
+          : item.target_type === "task"
+            ? buildUrl(projectId, { taskId: taskId!, batchId, returnTo })
+            : buildUrl(projectId, { batchId: batchId!, returnTo });
       if (!current()) return;
       // 守卫导航可能在视频 / Mask 离开检查中被取消并返回 false；确认成功前
       // 保留目标弹窗，取消时给出可重试的说明而不是静默关闭来源。
@@ -533,7 +577,7 @@ export function NotificationsPopover({
                   onClick={() => {
                     cancelNavigation();
                     setTarget(null);
-                    go(role === "reviewer" ? "/review" : "/annotate");
+                    go("/dashboard");
                   }}
                 >
                   查看当前任务

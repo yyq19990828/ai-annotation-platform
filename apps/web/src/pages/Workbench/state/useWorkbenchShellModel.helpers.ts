@@ -17,6 +17,21 @@ import type { PipelineStagePayload, TriggerPreannotationPayload } from "@/hooks/
 import { videoIntrinsicSize } from "../stage/videoKonvaCoordinates";
 import type { TimelineRangePurpose } from "../stage/VideoPlaybackOverlay";
 import { cocoRleBounds, type CocoRle } from "../stage/shared/geometry/maskRle";
+import { ApiError } from "@/api/client";
+
+/**
+ * Classify a `/projects/{id}/access` preflight failure for the offline drain.
+ * On this endpoint 404 is the affirmative "project hidden / membership revoked"
+ * signal and 403 an explicit refusal — both are authority denials.  A transport
+ * failure (TypeError) or a server error is indeterminate: the drain must retry
+ * instead of recording a permanent permission change.
+ */
+export function classifyAccessLookupError(error: unknown): "denied" | "indeterminate" {
+  if (error instanceof ApiError && (error.status === 403 || error.status === 404)) {
+    return "denied";
+  }
+  return "indeterminate";
+}
 
 export function resolveVideoSelectionCardCollapsed(
   preferredCollapsed: boolean,

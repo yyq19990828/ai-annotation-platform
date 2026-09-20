@@ -284,12 +284,13 @@ async def count_entity_filters(
     filters: list[dict[str, Any]],
     user: User,
     project: Project,
+    project_role: str | None = None,
 ) -> list[int]:
     if not filters:
         return []
-    visible = visible_tasks_stmt(project_id, user=user, project=project).subquery(
-        f"dm_{entity_scope}_view_visible"
-    )
+    visible = visible_tasks_stmt(
+        project_id, user=user, project=project, project_role=project_role
+    ).subquery(f"dm_{entity_scope}_view_visible")
     conditions = [
         compile_entity_filter(item, Annotation, project=project, user=user)
         for item in filters

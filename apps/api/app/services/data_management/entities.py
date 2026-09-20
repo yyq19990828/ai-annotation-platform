@@ -199,10 +199,17 @@ class DataManagerObjectService:
     def __init__(self, db: AsyncSession):
         self.db = db
 
-    def _base(self, project_id: uuid.UUID, user: User, project: Project):
-        visible = visible_tasks_stmt(project_id, user=user, project=project).subquery(
-            "dm_object_visible_tasks"
-        )
+    def _base(
+        self,
+        project_id: uuid.UUID,
+        user: User,
+        project: Project,
+        *,
+        project_role: str | None = None,
+    ):
+        visible = visible_tasks_stmt(
+            project_id, user=user, project=project, project_role=project_role
+        ).subquery("dm_object_visible_tasks")
         return (
             select(Annotation.id)
             .select_from(Annotation)
@@ -223,6 +230,7 @@ class DataManagerObjectService:
         payload: DataManagerEntityQueryRequest,
         user: User,
         project: Project,
+        project_role: str | None = None,
     ) -> DataManagerObjectQueryResponse:
         sort = (
             payload.sort_json
@@ -238,7 +246,9 @@ class DataManagerObjectService:
         condition = compile_entity_filter(
             payload.filter_json, Annotation, project=project, user=user
         )
-        base = self._base(project_id, user, project).where(condition)
+        base = self._base(project_id, user, project, project_role=project_role).where(
+            condition
+        )
         total = int(
             await self.db.scalar(select(func.count()).select_from(base.subquery())) or 0
         )
@@ -345,11 +355,12 @@ class DataManagerObjectService:
         annotation_id: uuid.UUID,
         user: User,
         project: Project,
+        project_role: str | None = None,
     ) -> DataManagerObjectDetailResponse:
         created_by = aliased(User)
         item = aliased(DatasetItem)
         scene = aliased(Scene)
-        base = self._base(project_id, user, project).where(
+        base = self._base(project_id, user, project, project_role=project_role).where(
             Annotation.id == annotation_id
         )
         match = base.subquery("dm_object_detail")

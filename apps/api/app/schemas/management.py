@@ -93,6 +93,7 @@ class BulkInviteItem(BaseModel):
     role: str = Field(max_length=100)
     group_name: str | None = Field(default=None, max_length=1000)
     project_id: UUID | None = None
+    project_member_role: str | None = Field(default=None, max_length=100)
 
 
 class BulkInviteRequest(BaseModel):

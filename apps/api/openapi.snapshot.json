@@ -7352,6 +7352,18 @@
             ],
             "title": "Project Id"
           },
+          "project_member_role": {
+            "anyOf": [
+              {
+                "maxLength": 100,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Member Role"
+          },
           "role": {
             "maxLength": 100,
             "title": "Role",
@@ -15399,6 +15411,17 @@
             ],
             "title": "Project Id"
           },
+          "project_member_role": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Project Member Role"
+          },
           "role": {
             "title": "Role",
             "type": "string"
@@ -22600,6 +22623,17 @@
         "title": "PipelineStage",
         "type": "object"
       },
+      "PlatformRole": {
+        "description": "Account-level role.  The database/account field stays named ``role``.",
+        "enum": [
+          "super_admin",
+          "project_admin",
+          "employee",
+          "viewer"
+        ],
+        "title": "PlatformRole",
+        "type": "string"
+      },
       "PointCloudCameraOut": {
         "properties": {
           "calibration": {
@@ -25123,6 +25157,86 @@
         "title": "ProfileUpdate",
         "type": "object"
       },
+      "ProjectAccessOut": {
+        "description": "Resolved project access for the current account (``GET .../access``).",
+        "properties": {
+          "access_kind": {
+            "enum": [
+              "super_admin",
+              "owner",
+              "member"
+            ],
+            "title": "Access Kind",
+            "type": "string"
+          },
+          "capabilities": {
+            "items": {
+              "$ref": "#/components/schemas/ProjectCapability"
+            },
+            "title": "Capabilities",
+            "type": "array"
+          },
+          "is_manager": {
+            "default": false,
+            "title": "Is Manager",
+            "type": "boolean"
+          },
+          "membership_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Membership Id"
+          },
+          "membership_version": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Membership Version"
+          },
+          "platform_role": {
+            "$ref": "#/components/schemas/PlatformRole"
+          },
+          "project_id": {
+            "format": "uuid",
+            "title": "Project Id",
+            "type": "string"
+          },
+          "project_role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRole"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "project_id",
+          "user_id",
+          "platform_role",
+          "access_kind"
+        ],
+        "title": "ProjectAccessOut",
+        "type": "object"
+      },
       "ProjectBatchSummary": {
         "properties": {
           "assigned": {
@@ -25143,6 +25257,22 @@
         },
         "title": "ProjectBatchSummary",
         "type": "object"
+      },
+      "ProjectCapability": {
+        "description": "Fixed capability set for a project request context.",
+        "enum": [
+          "project.read",
+          "project.manage",
+          "member.read",
+          "member.manage",
+          "task.read",
+          "annotation.write",
+          "review.write",
+          "export.annotations",
+          "performance.read"
+        ],
+        "title": "ProjectCapability",
+        "type": "string"
       },
       "ProjectClassUsageOut": {
         "properties": {
@@ -25674,9 +25804,23 @@
             "title": "Id",
             "type": "string"
           },
+          "platform_role": {
+            "$ref": "#/components/schemas/PlatformRole"
+          },
           "role": {
-            "title": "Role",
-            "type": "string"
+            "$ref": "#/components/schemas/ProjectRole"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
           },
           "user_email": {
             "title": "User Email",
@@ -25690,6 +25834,11 @@
           "user_name": {
             "title": "User Name",
             "type": "string"
+          },
+          "version": {
+            "default": 1,
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -25698,9 +25847,177 @@
           "user_name",
           "user_email",
           "role",
+          "platform_role",
           "assigned_at"
         ],
         "title": "ProjectMemberOut",
+        "type": "object"
+      },
+      "ProjectMemberRoleChangeRequest": {
+        "properties": {
+          "expected_version": {
+            "minimum": 1.0,
+            "title": "Expected Version",
+            "type": "integer"
+          },
+          "preview_token": {
+            "minLength": 1,
+            "title": "Preview Token",
+            "type": "string"
+          },
+          "project_role": {
+            "enum": [
+              "annotator",
+              "reviewer",
+              "viewer"
+            ],
+            "title": "Project Role",
+            "type": "string"
+          },
+          "reason": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Reason",
+            "type": "string"
+          },
+          "replacement_annotator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement Annotator Id"
+          },
+          "replacement_reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement Reviewer Id"
+          }
+        },
+        "required": [
+          "project_role",
+          "expected_version",
+          "preview_token",
+          "reason"
+        ],
+        "title": "ProjectMemberRoleChangeRequest",
+        "type": "object"
+      },
+      "ProjectMemberRolePreviewOut": {
+        "properties": {
+          "blocker_details": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Blocker Details",
+            "type": "array"
+          },
+          "blockers": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Blockers",
+            "type": "array"
+          },
+          "current_role": {
+            "$ref": "#/components/schemas/ProjectRole"
+          },
+          "current_version": {
+            "title": "Current Version",
+            "type": "integer"
+          },
+          "member_id": {
+            "format": "uuid",
+            "title": "Member Id",
+            "type": "string"
+          },
+          "preview_token": {
+            "title": "Preview Token",
+            "type": "string"
+          },
+          "requires_handoff": {
+            "default": false,
+            "title": "Requires Handoff",
+            "type": "boolean"
+          },
+          "resource_snapshot": {
+            "additionalProperties": true,
+            "title": "Resource Snapshot",
+            "type": "object"
+          },
+          "target_role": {
+            "$ref": "#/components/schemas/ProjectRole"
+          },
+          "user_id": {
+            "format": "uuid",
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "member_id",
+          "user_id",
+          "current_role",
+          "current_version",
+          "target_role",
+          "preview_token"
+        ],
+        "title": "ProjectMemberRolePreviewOut",
+        "type": "object"
+      },
+      "ProjectMemberRolePreviewRequest": {
+        "description": "Input for the read-only role-change preview (no writes).",
+        "properties": {
+          "project_role": {
+            "enum": [
+              "annotator",
+              "reviewer",
+              "viewer"
+            ],
+            "title": "Project Role",
+            "type": "string"
+          },
+          "replacement_annotator_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement Annotator Id"
+          },
+          "replacement_reviewer_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Replacement Reviewer Id"
+          }
+        },
+        "required": [
+          "project_role"
+        ],
+        "title": "ProjectMemberRolePreviewRequest",
         "type": "object"
       },
       "ProjectOut": {
@@ -25878,6 +26195,16 @@
               }
             ],
             "title": "Model Version"
+          },
+          "my_project_role": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ProjectRole"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "name": {
             "title": "Name",
@@ -26555,6 +26882,16 @@
         },
         "title": "ProjectRenderingConfig",
         "type": "object"
+      },
+      "ProjectRole": {
+        "description": "Per-project responsibility stored on ``project_members.role``.",
+        "enum": [
+          "annotator",
+          "reviewer",
+          "viewer"
+        ],
+        "title": "ProjectRole",
+        "type": "string"
       },
       "ProjectStats": {
         "properties": {
@@ -50629,6 +50966,22 @@
           },
           {
             "in": "query",
+            "name": "project_role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Role"
+            }
+          },
+          {
+            "in": "query",
             "name": "created_from",
             "required": false,
             "schema": {
@@ -50853,6 +51206,22 @@
                 }
               ],
               "title": "Member Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "project_role",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Project Role"
             }
           },
           {
@@ -51085,6 +51454,55 @@
           }
         ],
         "summary": "Update Project",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/access": {
+      "get": {
+        "description": "Resolved project access for the current account.\n\nManagers may have null membership fields; ordinary members expose their\nmembership identity/version and fixed capability set.",
+        "operationId": "get_project_access_api_v1_projects__project_id__access_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectAccessOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Project Access",
         "tags": [
           "projects"
         ]
@@ -55090,6 +55508,144 @@
           }
         ],
         "summary": "Remove Member",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/members/{member_id}/role": {
+      "patch": {
+        "description": "Role change with expected version, preview token and explicit handoff.",
+        "operationId": "change_member_role_api_v1_projects__project_id__members__member_id__role_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectMemberRoleChangeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMemberOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Change Member Role",
+        "tags": [
+          "projects"
+        ]
+      }
+    },
+    "/api/v1/projects/{project_id}/members/{member_id}/role/preview": {
+      "post": {
+        "description": "Read-only role-change preview: blockers, resource snapshot and token.",
+        "operationId": "preview_member_role_change_api_v1_projects__project_id__members__member_id__role_preview_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "member_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Member Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "project_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Project Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectMemberRolePreviewRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectMemberRolePreviewOut"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Preview Member Role Change",
         "tags": [
           "projects"
         ]
@@ -65784,7 +66340,7 @@
     },
     "/api/v1/users": {
       "get": {
-        "description": "用户列表。\n- super_admin：默认全量；可选 `project_id` 过滤到该项目成员。\n- project_admin：\n  * `role=annotator|reviewer`：放开限制返回全量候选（用于指派 modal 选人）。\n  * 其他场景：限定到 `Project.owner_id == actor.id` 的项目成员（actor 自身始终可见）。",
+        "description": "用户列表。\n- super_admin：默认全量；可选 `project_id` 过滤到该项目成员。\n- project_admin：\n  * `role=employee`：放开限制返回全量候选（用于指派 modal 选人）。\n  * 其他场景：限定到 `Project.owner_id == actor.id` 的项目成员（actor 自身始终可见）。",
         "operationId": "list_users_api_v1_users_get",
         "parameters": [
           {
@@ -66894,6 +67450,7 @@
     },
     "/api/v1/users/{user_id}/role": {
       "patch": {
+        "description": "Platform-role mutation.  Super administrator only (plan AUTH-04).\n\nA platform-role edit never cascades into any project's membership; project\nresponsibility is changed through the project member role endpoints.",
         "operationId": "change_user_role_api_v1_users__user_id__role_patch",
         "parameters": [
           {
@@ -66951,6 +67508,7 @@
     },
     "/api/v1/users/{user_id}/role/preview": {
       "get": {
+        "description": "Platform-role preview.  Super administrator only (plan AUTH-04).",
         "operationId": "preview_user_role_change_api_v1_users__user_id__role_preview_get",
         "parameters": [
           {

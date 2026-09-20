@@ -447,8 +447,8 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     await _cleanup_e2e_fixtures(db)
 
     admin = await create_user(db, "super_admin", "admin@e2e.test", "E2E Admin")
-    annotator = await create_user(db, "annotator", "anno@e2e.test", "E2E Annotator")
-    reviewer = await create_user(db, "reviewer", "rev@e2e.test", "E2E Reviewer")
+    annotator = await create_user(db, "employee", "anno@e2e.test", "E2E Annotator")
+    reviewer = await create_user(db, "employee", "rev@e2e.test", "E2E Reviewer")
     project = await create_project(db, owner_id=admin.id, name="E2E Demo Project")
     # Mask E2E 走兼容 polygon 提交；能力握手要求项目显式开启
     # region 工具。保留 bbox 绑定，避免改变其他工作台 E2E 的基础数据。
@@ -557,6 +557,10 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
         t.dataset_item_id = item.id
         t.file_name = item.file_name
         t.file_path = item.file_path
+        # Known-empty accumulator: the base fixture is created by the recording
+        # binary, so review specs can create+submit through the real APIs and
+        # freeze complete evidence instead of leaving every round unknown.
+        t.annotation_contributor_ids = []
         tasks.append(t)
     await db.flush()
     batch.total_tasks = len(tasks)
@@ -621,6 +625,379 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
         project_id=str(project.id),
         task_ids=[str(t.id) for t in tasks],
         ml_backend_id=str(mock_backend.id),
+    )
+
+
+def _project_role_svg_bytes(index: int) -> bytes:
+    """Deterministic tiny image used by the project-roles acceptance fixture."""
+    return (
+        '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48" '
+        'viewBox="0 0 64 48">'
+        f'<rect width="64" height="48" fill="hsl({index * 37} 32% 88%)"/>'
+        '<rect x="4" y="4" width="56" height="40" rx="3" fill="none" '
+        'stroke="#64748b" stroke-width="1"/>'
+        f'<text x="32" y="27" text-anchor="middle" font-size="9" '
+        f'fill="#334155">E2E {index + 1}</text></svg>'
+    ).encode("utf-8")
+
+
+async def _build_project_roles_image_project(
+    db: AsyncSession,
+    *,
+    key: str,
+    owner: Any,
+    dataset_display_id: str,
+    project_name: str,
+    task_count: int,
+) -> tuple[Any, list[Any]]:
+    """Create one image project with deterministic SVG items and tasks.
+
+    Tasks explicitly carry a *known-empty* ``annotation_contributor_ids`` list:
+    the fixture is created by the recording binary, so a later real
+    annotation+submit by the assigned employee can freeze complete review
+    evidence instead of leaving the round permanently unknown.  The existing
+    ``seed.advance_task`` bypass is deliberately not used here.
+    """
+    from app.db.models.dataset import Dataset, DatasetItem, ProjectDataset
+    from app.db.models.project import Project
+    from app.db.models.task import Task
+    from app.services.project import coalesce_legacy_into_tool_bindings
+    from app.services.storage import storage_service
+
+    kw: dict = {"classes": ["car", "person"]}
+    coalesce_legacy_into_tool_bindings(kw, None, "image-det")
+    project = Project(
+        display_id=f"P-E2E-PR-{key.upper()}",
+        name=project_name,
+        type_label="图像目标检测",
+        type_key="image-det",
+        owner_id=owner.id,
+        tool_bindings=kw["tool_bindings"],
+        ai_enabled=False,
+    )
+    db.add(project)
+    await db.flush()
+
+    dataset = Dataset(
+        display_id=dataset_display_id,
+        name=f"E2E Roles {key.upper()} Dataset",
+        data_type="image",
+        file_count=task_count,
+        created_by=owner.id,
+    )
+    db.add(dataset)
+    await db.flush()
+    db.add(ProjectDataset(project_id=project.id, dataset_id=dataset.id))
+
+    tasks: list[Task] = []
+    for index in range(task_count):
+        image_key = f"e2e/project-roles/{key.lower()}/task-{index + 1}.svg"
+        svg = _project_role_svg_bytes(index)
+        storage_service.client.put_object(
+            Bucket=storage_service.datasets_bucket,
+            Key=image_key,
+            Body=svg,
+            ContentType="image/svg+xml",
+        )
+        item = DatasetItem(
+            dataset_id=dataset.id,
+            file_name=f"{key.lower()}-task-{index + 1}.svg",
+            file_path=image_key,
+            file_type="image",
+            file_size=len(svg),
+            width=64,
+            height=48,
+        )
+        db.add(item)
+        await db.flush()
+        task = Task(
+            display_id=f"T-E2E-PR-{key.upper()}-{index + 1:03d}",
+            project_id=project.id,
+            status="pending",
+            file_name=item.file_name,
+            file_path=item.file_path,
+            file_type="image",
+            dataset_item_id=item.id,
+            annotation_contributor_ids=[],
+        )
+        db.add(task)
+        tasks.append(task)
+    await db.flush()
+    return project, tasks
+
+
+class ProjectRolesSeedUser(BaseModel):
+    id: str
+    email: str
+    platform_role: str
+
+
+class ProjectRolesSeedProject(BaseModel):
+    project_id: str
+    display_id: str
+    owner_email: str
+    project_role: str | None
+    membership_id: str | None
+    batch_id: str
+    task_ids: list[str]
+
+
+class ProjectRolesSeed(BaseModel):
+    """Accounts/projects for the two-project browser acceptance fixture.
+
+    ``employee`` is an annotator in ``a`` and a reviewer in ``b``, has no
+    membership in ``c`` (whose task is nevertheless assigned to them), and is an
+    idle annotator in ``d`` so the test can revoke that membership cleanly.
+    ``solo`` is an employee with no membership at all.
+    """
+
+    employee_email: str
+    peer_email: str
+    owner_email_a: str
+    owner_email_b: str
+    owner_email_c: str
+    viewer_email: str
+    viewer_unassigned_email: str
+    spare_email: str
+    solo_email: str
+    users: dict[str, ProjectRolesSeedUser]
+    projects: dict[str, ProjectRolesSeedProject]
+    annotation_task_id: str
+    review_task_id: str
+    c_assigned_task_id: str
+    open_pool_task_id: str
+
+
+@router.post(
+    "/seed/project-roles",
+    response_model=ProjectRolesSeed,
+    status_code=200,
+    include_in_schema=False,
+)
+async def seed_project_roles(db: AsyncSession = Depends(get_db)) -> ProjectRolesSeed:
+    """Build the deterministic multi-project employee-role acceptance fixture.
+
+    Reuses the cleanup-safe ``P-E2E-*`` / ``DS-E2E-*`` / ``B-E2E-*`` /
+    ``T-E2E-*`` display-id prefixes and ``@e2e.test`` account suffix so
+    ``/seed/reset`` and ``/seed/cleanup`` converge this fixture with the base
+    one.  Review work is intentionally left for the spec to submit through the
+    real API so contributor evidence is complete.
+    """
+    from app.db.models.project_member import ProjectMember
+    from app.db.models.task_batch import TaskBatch
+    from tests.factory import create_user
+
+    await _cleanup_e2e_fixtures(db)
+
+    owner_a = await create_user(db, "project_admin", "owner-a@e2e.test", "E2E Owner A")
+    owner_b = await create_user(db, "project_admin", "owner-b@e2e.test", "E2E Owner B")
+    owner_c = await create_user(db, "project_admin", "owner-c@e2e.test", "E2E Owner C")
+    employee = await create_user(db, "employee", "employee@e2e.test", "E2E Employee")
+    peer = await create_user(db, "employee", "peer@e2e.test", "E2E Peer")
+    spare = await create_user(db, "employee", "spare@e2e.test", "E2E Spare")
+    viewer = await create_user(db, "viewer", "viewer@e2e.test", "E2E Viewer")
+    viewer_unassigned = await create_user(
+        db, "viewer", "viewer-unassigned@e2e.test", "E2E Viewer Unassigned"
+    )
+    # Platform employee with no project membership: exercises the no-project
+    # employee empty state without a new production endpoint.
+    solo = await create_user(db, "employee", "solo@e2e.test", "E2E Solo")
+
+    project_a, tasks_a = await _build_project_roles_image_project(
+        db,
+        key="a",
+        owner=owner_a,
+        dataset_display_id="DS-E2E-PR-A",
+        project_name="E2E Project Roles A",
+        task_count=1,
+    )
+    project_b, tasks_b = await _build_project_roles_image_project(
+        db,
+        key="b",
+        owner=owner_b,
+        dataset_display_id="DS-E2E-PR-B",
+        project_name="E2E Project Roles B",
+        task_count=1,
+    )
+    project_c, tasks_c = await _build_project_roles_image_project(
+        db,
+        key="c",
+        owner=owner_c,
+        dataset_display_id="DS-E2E-PR-C",
+        project_name="E2E Project Roles C",
+        task_count=1,
+    )
+    project_d, tasks_d = await _build_project_roles_image_project(
+        db,
+        key="d",
+        owner=owner_a,
+        dataset_display_id="DS-E2E-PR-D",
+        project_name="E2E Project Roles D",
+        task_count=1,
+    )
+
+    batch_a = TaskBatch(
+        project_id=project_a.id,
+        display_id="B-E2E-PR-A",
+        name="E2E Roles A Batch",
+        status="annotating",
+        annotator_id=employee.id,
+        reviewer_id=peer.id,
+        assigned_user_ids=[str(employee.id)],
+        created_by=owner_a.id,
+        total_tasks=1,
+    )
+    batch_b = TaskBatch(
+        project_id=project_b.id,
+        display_id="B-E2E-PR-B",
+        name="E2E Roles B Batch",
+        status="annotating",
+        annotator_id=peer.id,
+        reviewer_id=employee.id,
+        assigned_user_ids=[str(peer.id)],
+        created_by=owner_b.id,
+        total_tasks=1,
+    )
+    batch_c = TaskBatch(
+        project_id=project_c.id,
+        display_id="B-E2E-PR-C",
+        name="E2E Roles C Batch",
+        status="annotating",
+        annotator_id=peer.id,
+        reviewer_id=None,
+        assigned_user_ids=[str(peer.id)],
+        created_by=owner_c.id,
+        total_tasks=1,
+    )
+    # Open pool: no batch default and no task assignee.  An annotator member may
+    # still open the task, but the employee owns no assignment, so the member
+    # can be revoked cleanly without a handoff blocker.
+    batch_d = TaskBatch(
+        project_id=project_d.id,
+        display_id="B-E2E-PR-D",
+        name="E2E Roles D Batch",
+        status="annotating",
+        annotator_id=None,
+        reviewer_id=None,
+        assigned_user_ids=[],
+        created_by=owner_a.id,
+        total_tasks=1,
+    )
+    db.add_all([batch_a, batch_b, batch_c, batch_d])
+    await db.flush()
+
+    task_a_add = tasks_a[0]
+    task_b_review = tasks_b[0]
+    task_c_assigned = tasks_c[0]
+    task_d_open = tasks_d[0]
+    task_a_add.batch_id = batch_a.id
+    task_a_add.assignee_id = employee.id
+    task_b_review.batch_id = batch_b.id
+    task_b_review.assignee_id = peer.id
+    # Assignment alone must not grant authority: employee is not a member of C.
+    task_c_assigned.batch_id = batch_c.id
+    task_c_assigned.assignee_id = employee.id
+    task_d_open.batch_id = batch_d.id
+
+    def add_member(project: Any, user: Any, role: str) -> ProjectMember:
+        member = ProjectMember(
+            project_id=project.id,
+            user_id=user.id,
+            role=role,
+            assigned_by=project.owner_id,
+        )
+        db.add(member)
+        return member
+
+    memberships = {
+        "employee_a": add_member(project_a, employee, "annotator"),
+        "peer_a": add_member(project_a, peer, "reviewer"),
+        "spare_a": add_member(project_a, spare, "viewer"),
+        "viewer_a": add_member(project_a, viewer, "viewer"),
+        "employee_b": add_member(project_b, employee, "reviewer"),
+        "peer_b": add_member(project_b, peer, "annotator"),
+        "peer_c": add_member(project_c, peer, "annotator"),
+        "employee_d": add_member(project_d, employee, "annotator"),
+        "peer_d": add_member(project_d, peer, "reviewer"),
+    }
+    await db.flush()
+    await db.commit()
+
+    def project_payload(
+        project: Any,
+        owner: Any,
+        batch: Any,
+        tasks: list[Any],
+        membership: ProjectMember | None,
+        project_role: str | None,
+    ) -> ProjectRolesSeedProject:
+        return ProjectRolesSeedProject(
+            project_id=str(project.id),
+            display_id=project.display_id,
+            owner_email=owner.email,
+            project_role=project_role,
+            membership_id=str(membership.id) if membership else None,
+            batch_id=str(batch.id),
+            task_ids=[str(task.id) for task in tasks],
+        )
+
+    def user_payload(user: Any) -> ProjectRolesSeedUser:
+        return ProjectRolesSeedUser(
+            id=str(user.id), email=user.email, platform_role=user.role
+        )
+
+    return ProjectRolesSeed(
+        employee_email=employee.email,
+        peer_email=peer.email,
+        owner_email_a=owner_a.email,
+        owner_email_b=owner_b.email,
+        owner_email_c=owner_c.email,
+        viewer_email=viewer.email,
+        viewer_unassigned_email=viewer_unassigned.email,
+        spare_email=spare.email,
+        solo_email=solo.email,
+        users={
+            "employee": user_payload(employee),
+            "peer": user_payload(peer),
+            "owner_a": user_payload(owner_a),
+            "owner_b": user_payload(owner_b),
+            "owner_c": user_payload(owner_c),
+            "spare": user_payload(spare),
+            "viewer": user_payload(viewer),
+            "viewer_unassigned": user_payload(viewer_unassigned),
+            "solo": user_payload(solo),
+        },
+        projects={
+            "a": project_payload(
+                project_a,
+                owner_a,
+                batch_a,
+                tasks_a,
+                memberships["employee_a"],
+                "annotator",
+            ),
+            "b": project_payload(
+                project_b,
+                owner_b,
+                batch_b,
+                tasks_b,
+                memberships["employee_b"],
+                "reviewer",
+            ),
+            "c": project_payload(project_c, owner_c, batch_c, tasks_c, None, None),
+            "d": project_payload(
+                project_d,
+                owner_a,
+                batch_d,
+                tasks_d,
+                memberships["employee_d"],
+                "annotator",
+            ),
+        },
+        annotation_task_id=str(task_a_add.id),
+        review_task_id=str(task_b_review.id),
+        c_assigned_task_id=str(task_c_assigned.id),
+        open_pool_task_id=str(task_d_open.id),
     )
 
 
@@ -778,7 +1155,7 @@ async def seed_lidar(db: AsyncSession = Depends(get_db)) -> SeedLidar:
         return existing or await create_user(db, role, email, name)
 
     admin = await _user("super_admin", "admin@e2e.test", "E2E Admin")
-    annotator = await _user("annotator", "anno@e2e.test", "E2E Annotator")
+    annotator = await _user("employee", "anno@e2e.test", "E2E Annotator")
 
     # 幂等:删旧 lidar fixture(name='E2E Lidar Project',含 task/annotation/锁/草稿链)。
     old_pids = [

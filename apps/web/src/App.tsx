@@ -14,9 +14,8 @@ import { useDecisionDialogStore } from "@/components/ui/decisionDialog";
 import { DashboardPage } from "@/pages/Dashboard/DashboardPage";
 import { AdminDashboard } from "@/pages/Dashboard/AdminDashboard";
 import { AdminProjectsDashboard } from "@/pages/Dashboard/AdminProjectsDashboard";
-import { ReviewerDashboard } from "@/pages/Dashboard/ReviewerDashboard";
-import { AnnotatorDashboard } from "@/pages/Dashboard/AnnotatorDashboard";
 import { ViewerDashboard } from "@/pages/Dashboard/ViewerDashboard";
+import { EmployeeDashboard } from "@/pages/Dashboard/EmployeeDashboard";
 import { LoginPage } from "@/pages/Login/LoginPage";
 import { ForgotPasswordPage } from "@/pages/Login/ForgotPasswordPage";
 import { ResetPasswordPage } from "@/pages/Login/ResetPasswordPage";
@@ -95,7 +94,7 @@ const MyPerformancePage = lazy(() =>
 );
 import { RequireAuth } from "@/components/routing/RequireAuth";
 import { RequirePagePermission } from "@/components/routing/RequirePagePermission";
-import { RequireProjectMember } from "@/components/routing/RequireProjectMember";
+import { RequireProjectAccess } from "@/components/routing/RequireProjectAccess";
 import { useAuthStore } from "@/stores/authStore";
 import { usePermissions } from "@/hooks/usePermissions";
 import { useAppStore } from "@/stores/appStore";
@@ -117,10 +116,8 @@ function DashboardRouter() {
       return <AdminProjectsDashboard />;
     case "project_admin":
       return <DashboardPage />;
-    case "reviewer":
-      return <ReviewerDashboard />;
-    case "annotator":
-      return <AnnotatorDashboard />;
+    case "employee":
+      return <EmployeeDashboard />;
     case "viewer":
       return <ViewerDashboard />;
     default:
@@ -319,9 +316,9 @@ export function App() {
           path="/projects/:id/annotate"
           element={
             <RequireAuth>
-              <RequireProjectMember>
+              <RequireProjectAccess capability="annotation.write">
                 <FullScreenWorkbench />
-              </RequireProjectMember>
+              </RequireProjectAccess>
             </RequireAuth>
           }
         />
@@ -329,9 +326,9 @@ export function App() {
           path="/projects/:id/review"
           element={
             <RequireAuth>
-              <RequireProjectMember>
+              <RequireProjectAccess capability="review.write">
                 <FullScreenWorkbench mode="review" />
-              </RequireProjectMember>
+              </RequireProjectAccess>
             </RequireAuth>
           }
         />
@@ -339,9 +336,9 @@ export function App() {
           path="/projects/:id/data-manager"
           element={
             <RequireAuth>
-              <RequireProjectMember>
+              <RequireProjectAccess capability="project.read">
                 <AppShell />
-              </RequireProjectMember>
+              </RequireProjectAccess>
             </RequireAuth>
           }
         >
@@ -491,7 +488,14 @@ export function App() {
               </RequirePagePermission>
             }
           />
-          <Route path="/projects/:id/settings" element={<ProjectSettingsPage />} />
+          <Route
+            path="/projects/:id/settings"
+            element={
+              <RequireProjectAccess capability="project.manage">
+                <ProjectSettingsPage />
+              </RequireProjectAccess>
+            }
+          />
           <Route
             path="/project-templates"
             element={

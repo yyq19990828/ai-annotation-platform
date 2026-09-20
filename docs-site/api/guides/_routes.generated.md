@@ -462,9 +462,12 @@
 | GET | `/{project_id}/class-usage` |
 | POST | `/{project_id}/cleanup-orphans` |
 | POST | `/{project_id}/transfer` |
+| GET | `/{project_id}/access` |
 | GET | `/{project_id}/members` |
 | GET | `/{project_id}/mention-candidates` |
 | POST | `/{project_id}/members` |
+| POST | `/{project_id}/members/{member_id}/role/preview` |
+| PATCH | `/{project_id}/members/{member_id}/role` |
 | DELETE | `/{project_id}/members/{member_id}` |
 | POST | `/{project_id}/exports/lidar:preflight` |
 | POST | `/{project_id}/export` |
@@ -746,4 +749,4 @@
 
 ---
 
-_共 68 模块 / 429 路由_
+_共 68 模块 / 432 路由_

@@ -15,6 +15,7 @@ import pytest
 
 from app.db.models.annotation import Annotation
 from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 
 
@@ -35,6 +36,10 @@ async def _seed(db_session, ann_user):
     )
     db_session.add(project)
     await db_session.flush()
+    # Literal employee: annotator authority comes from this explicit membership.
+    db_session.add(
+        ProjectMember(project_id=project.id, user_id=ann_user.id, role="annotator")
+    )
     task = Task(
         id=uuid.uuid4(),
         project_id=project.id,

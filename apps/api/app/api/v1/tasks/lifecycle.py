@@ -7,18 +7,21 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.deps import (
     get_db,
-    require_roles,
+    get_current_user,
 )
 from app.db.models.user import User
+from app.services.annotation_evidence import (
+    clear_review_contributor_evidence,
+    freeze_review_contributor_evidence,
+)
 from app.services.audit import AuditAction, AuditService
+from app.services.project_access import ProjectAccess
 from app.services.task_lock import TaskLockService
 
 
 from app.api.v1.tasks._shared import (
     _load_task_or_404,
-    _ANNOTATORS,
     _assert_task_visible,
-    _assert_current_project_member,
     _assert_effective_task_assignee,
     _effective_task_assignee_id,
     _assert_task_editable,
@@ -28,6 +31,7 @@ from app.api.v1.tasks._shared import (
     _task_contributor_snapshot,
     _submission_assignment_start,
     perform_task_submit,
+    require_task_annotation_write_lifecycle,
 )
 
 router = APIRouter()
@@ -38,7 +42,8 @@ async def submit_task(
     task_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write_lifecycle),
 ):
     from app.db.models.task import Task
 
@@ -52,12 +57,14 @@ async def submit_task(
     ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    await _assert_task_visible(db, task, current_user)
+    await _assert_task_visible(db, task, current_user, access=access)
     _assert_effective_task_assignee(
         current_user,
         await _effective_task_assignee_id(db, task),
         action="submit",
+        project_id=task.project_id,
         allow_open_pool=True,
+        access=access,
     )
     if task.status not in ("pending", "in_progress"):
         raise HTTPException(
@@ -65,7 +72,7 @@ async def submit_task(
             detail={"reason": "task_not_submittable", "status": task.status},
         )
 
-    _assert_task_editable(task, current_user)
+    _assert_task_editable(task, current_user, access=access)
 
     now = datetime.now(timezone.utc)
     result = await perform_task_submit(db, task, actor=current_user, now=now)
@@ -91,6 +98,12 @@ async def submit_task(
             "project_id": str(task.project_id),
             "assignee_id": str(task.assignee_id) if task.assignee_id else None,
             "contributor_ids": result["contributor_ids"],
+            "review_contributor_ids": result["review_contributor_ids"],
+            "review_submitter_id": (
+                str(result["review_submitter_id"])
+                if result["review_submitter_id"]
+                else None
+            ),
             "review_round_id": str(result["review_round_id"]),
             "result": "submitted",
             "mask_qc_run_id": str(mask_qc_run.id) if mask_qc_run else None,
@@ -137,7 +150,8 @@ async def skip_task(
     body: SkipTaskRequest,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write_lifecycle),
 ):
     """v0.8.7 F7 · 标注员跳过任务并附原因，自动转 reviewer 复核。
 
@@ -168,12 +182,14 @@ async def skip_task(
     ).scalar_one_or_none()
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    await _assert_task_visible(db, task, current_user)
+    await _assert_task_visible(db, task, current_user, access=access)
     _assert_effective_task_assignee(
         current_user,
         await _effective_task_assignee_id(db, task),
         action="skip",
+        project_id=task.project_id,
         allow_open_pool=True,
+        access=access,
     )
     if task.status not in ("pending", "in_progress"):
         raise HTTPException(
@@ -181,9 +197,13 @@ async def skip_task(
             detail={"reason": "task_not_skippable", "status": task.status},
         )
 
-    _assert_task_editable(task, current_user)
+    _assert_task_editable(task, current_user, access=access)
 
     now = datetime.now(timezone.utc)
+    # A2 · capture the inherited batch assignee before the legacy path replaces
+    # an empty assignee with the actual actor; the frozen evidence must include
+    # both the effective assignee and the submitter.
+    inherited_assignee_id = await _effective_task_assignee_id(db, task)
     if task.assignee_id is None:
         task.assignee_id = current_user.id
         task.assigned_at = await _submission_assignment_start(
@@ -215,6 +235,15 @@ async def skip_task(
 
     contributor_ids = await _task_contributor_snapshot(db, task)
     _capture_first_review_contributor_snapshot(task, contributor_ids)
+    freeze_contributor_ids = list(contributor_ids)
+    if (
+        inherited_assignee_id is not None
+        and str(inherited_assignee_id) not in freeze_contributor_ids
+    ):
+        freeze_contributor_ids.append(str(inherited_assignee_id))
+    freeze_review_contributor_evidence(
+        task, submitter_id=current_user.id, contributor_ids=freeze_contributor_ids
+    )
     await AuditService.log(
         db,
         actor=current_user,
@@ -229,6 +258,10 @@ async def skip_task(
             "note": body.note,
             "assignee_id": str(task.assignee_id) if task.assignee_id else None,
             "contributor_ids": contributor_ids,
+            "review_contributor_ids": task.review_contributor_ids,
+            "review_submitter_id": (
+                str(task.review_submitter_id) if task.review_submitter_id else None
+            ),
             "review_round_id": str(review_round_id),
             "result": "skipped",
         },
@@ -246,7 +279,8 @@ async def withdraw_task(
     task_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write_lifecycle),
 ):
     """v0.6.5: 标注员撤回质检提交。
     前提：status=review、assignee == 当前用户、reviewer_claimed_at IS NULL。
@@ -257,11 +291,12 @@ async def withdraw_task(
     project = await db.get(Project, task.project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    await _assert_current_project_member(db, project, current_user)
     _assert_effective_task_assignee(
         current_user,
         await _effective_task_assignee_id(db, task),
         action="withdraw",
+        project_id=task.project_id,
+        access=access,
     )
     if task.status != "review":
         raise HTTPException(
@@ -279,6 +314,9 @@ async def withdraw_task(
 
     task.status = "in_progress"
     task.submitted_at = None
+    # A2 · leaving review invalidates the round's frozen evidence; the
+    # annotation contributor accumulator is retained conservatively.
+    clear_review_contributor_evidence(task)
 
     if project:
         project.review_tasks = max((project.review_tasks or 0) - 1, 0)
@@ -313,7 +351,8 @@ async def reopen_task(
     task_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write_lifecycle),
 ):
     """v0.6.5: 标注员对已通过任务单方面重开编辑。
     前提：status=completed 且 assignee == 当前用户（admin 兜底）。
@@ -325,11 +364,12 @@ async def reopen_task(
     project = await db.get(Project, task.project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    await _assert_current_project_member(db, project, current_user)
     _assert_effective_task_assignee(
         current_user,
         await _effective_task_assignee_id(db, task),
         action="reopen",
+        project_id=task.project_id,
+        access=access,
     )
     if task.status != "completed":
         raise HTTPException(
@@ -347,6 +387,7 @@ async def reopen_task(
     task.reject_reason = None
     task.reject_reason_type = None
     task.submitted_at = None
+    clear_review_contributor_evidence(task)
 
     if project:
         project.completed_tasks = max((project.completed_tasks or 0) - 1, 0)
@@ -378,11 +419,13 @@ async def reopen_task(
     )
 
     # v0.7.6 · 通知中心 fan-out：原 reviewer 收到 task.reopened
+    # Deferred until after the commit below; see NotificationService.notify.
+    pending_notifications = []
     if original_reviewer_id is not None:
         from app.services.notification import NotificationService
 
         notif_svc = NotificationService(db)
-        await notif_svc.notify_many(
+        pending_notifications = await notif_svc.notify_many(
             user_ids=[original_reviewer_id],
             type="task.reopened",
             target_type="task",
@@ -397,6 +440,8 @@ async def reopen_task(
         )
 
     await db.commit()
+    if pending_notifications:
+        await NotificationService(db).publish_committed(pending_notifications)
     return {
         "status": "reopened",
         "task_id": str(task_id),
@@ -409,7 +454,8 @@ async def accept_rejection(
     task_id: uuid.UUID,
     request: Request,
     db: AsyncSession = Depends(get_db),
-    current_user: User = Depends(require_roles(*_ANNOTATORS)),
+    current_user: User = Depends(get_current_user),
+    access: ProjectAccess = Depends(require_task_annotation_write_lifecycle),
 ):
     """M1 · 标注员接受退回，将 task 从 rejected 转回 in_progress 开始重做。
     不清空 reject_reason（保留审核员退回原因，前端可降级为"重做中"提示）。"""
@@ -419,11 +465,12 @@ async def accept_rejection(
     project = await db.get(Project, task.project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="Task not found")
-    await _assert_current_project_member(db, project, current_user)
     _assert_effective_task_assignee(
         current_user,
         await _effective_task_assignee_id(db, task),
         action="accept rejection",
+        project_id=task.project_id,
+        access=access,
     )
     if task.status != "rejected":
         raise HTTPException(
@@ -431,6 +478,7 @@ async def accept_rejection(
             detail={"reason": "task_not_rejected", "status": task.status},
         )
     task.status = "in_progress"
+    clear_review_contributor_evidence(task)
 
     from app.services.batch import BatchService
 

@@ -31,7 +31,7 @@ import {
 import { ProjectGrid } from "./ProjectGrid";
 import { ProjectPagination } from "./ProjectPagination";
 import { ProjectActionsMenu } from "./ProjectActionsMenu";
-import { buildWorkbenchUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
+import { buildProjectEntryUrl, currentWorkbenchReturnTo } from "@/utils/workbenchNavigation";
 import { projectDisplayType } from "@/utils/projectDisplay";
 import { statSeriesHint, statSparkValues, statTrendFromSeries } from "@/utils/projectStatsSeries";
 import { PageContainer } from "@/components/layout/PageContainer";
@@ -276,7 +276,7 @@ export function DashboardPage() {
   const canManageProject = (p: ProjectResponse): boolean => {
     if (!currentUser) return false;
     if (currentUser.role === "super_admin") return true;
-    return p.owner_id === currentUser.id;
+    return currentUser.role === "project_admin" && p.owner_id === currentUser.id;
   };
 
   const onSettings = (p: ProjectResponse, section?: string) =>
@@ -284,7 +284,11 @@ export function DashboardPage() {
 
   const onOpenProject = (p: ProjectResponse) => {
     if (p.data_type && WORKBENCH_DATA_TYPES.has(p.data_type)) {
-      navigate(buildWorkbenchUrl(p.id, { returnTo: currentWorkbenchReturnTo(location) }));
+      navigate(
+        buildProjectEntryUrl(p.id, p.my_project_role, {
+          returnTo: currentWorkbenchReturnTo(location),
+        }),
+      );
     } else {
       pushToast({
         msg: `项目 "${p.name}" 已打开`,

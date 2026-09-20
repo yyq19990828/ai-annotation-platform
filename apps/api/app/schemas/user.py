@@ -564,7 +564,21 @@ class UserCreate(BaseModel):
     email: str
     name: str
     password: str
-    role: str = "annotator"
+    #: Account/platform role.  Administrator-created ordinary staff default to
+    #: ``employee``; public registration is always a viewer and does not use
+    #: this schema.  Legacy global annotator/reviewer inputs are rejected.
+    role: str = "employee"
+
+    @field_validator("role")
+    @classmethod
+    def _validate_platform_role(cls, value: str) -> str:
+        from app.db.enums import LEGACY_PLATFORM_STAFF_ROLES, PLATFORM_ROLES
+
+        if value in LEGACY_PLATFORM_STAFF_ROLES:
+            raise ValueError("旧全局角色已废弃，请使用 employee")
+        if value not in PLATFORM_ROLES:
+            raise ValueError(f"非法角色: {value}")
+        return value
 
 
 class UserOut(BaseModel):
