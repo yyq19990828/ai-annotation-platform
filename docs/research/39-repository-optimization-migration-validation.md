@@ -67,8 +67,30 @@
 
 ### 2.3 策略单测（`scripts/test_alembic_migration_policy.py`）
 
-16 例（纯逻辑、无数据库）：单/零/多个不可逆、基线不可逆、merge、孤儿、未知父版本、环；
-以及 anchor 守卫的 8 个拒绝/接受场景（缺 owner、开发库、非本机、prod、非 postgres 驱动等）。
+28 例（纯逻辑、无数据库）：单/零/多个不可逆、基线不可逆、**不可逆之上存在可逆后缀**、merge、
+孤儿、未知父版本、环、单/多/零 head；以及 anchor 守卫的拒绝/接受场景（缺 owner、开发库、非本机、
+prod、非 postgres 驱动）和 `create_action`/`drop_action` 归属判定（不存在→创建、自有残留→重建、
+无注释/异主→拒绝；删除时自建未打标的半成品→删除、非本次创建的无注释库/异主库→拒绝）。
+
+### 2.4 评审加固（f299 之后）
+
+- **修订图边界**：`classify_chain` 显式拒绝「不可逆迁移之上还有可逆版本」的形状（其 downgrade
+  无法在不执行不可逆 downgrade 的前提下验证），不再只验证前缀；单测覆盖。
+- **分配即登记**：`create_owned_database` 在 `CREATE DATABASE` 成功后**立即**把库名写入
+  `state.created`，再执行 COMMENT 与校验；COMMENT/校验失败时 `finally` 仍会清理这个半成品库。
+  `--fail-after create` 注入在 COMMENT 之前失败，实测创建 1 库后 `cleanup_errors=[]`、无残留。
+- **存在性 vs 无注释**：`database_state` 返回 `(exists, owner, sessions)`；`create_action`/`drop_action`
+  纯函数区分「不存在 / 自有 / 无注释 / 异主」。异主或无注释的既有库一律拒绝收养，也绝不被删除
+  （实测：预置 `__mv_fresh` 归属 `foreign-owner`，运行失败且该库原样保留）。
+- **尽力清理**：`cleanup` 对每个库/文件分别捕获 `Exception` 并聚合错误，单个 SQLAlchemy/连接异常
+  不再中断其余清理；有任何清理错误或残留都以非零退出并在 `summary` 中报告。
+- **真实 anchor 校验**：`verify_anchor` 在任何派生写库之前，校验基础库真实存在、owner 注释与
+  manifest 一致、连接端点与 manifest 的 postgres host/port 一致，并确认连接解析到该库本身；
+  只凭库名不再足够。
+- **dump 预登记**：`state.dumps` 在 `pg_dump` 写入前登记路径，写入中断也会清理半成品文件。
+- **restore 断言扩充**：在 0173 哨兵列、`users.role` default `annotator`、三名历史用户角色之外，
+  增加成员关系 `annotator` 未被改写、accepted 历史邀请 role/project_role 未被改写、pending 邀请
+  `project_role` 仍为 NULL（证明是转换前快照）。
 
 ## 3. CI caller（交给 P8 owner）
 
@@ -91,10 +113,12 @@
 
 | 检查           | 命令                                                                                                                              | 结果                                                                                                                                                                  |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 策略单测       | `apps/api/.venv/bin/python scripts/test_alembic_migration_policy.py`                                                              | 22 passed（含单 head/多 head、单/多/基线不可逆、merge/孤儿/环/未知父版本、anchor 拒绝、归属冲突判定）[V]                                                              |
+| 策略单测       | `apps/api/.venv/bin/python scripts/test_alembic_migration_policy.py`                                                              | 28 passed（单/多/零 head、单/多/基线不可逆、不可逆之上可逆后缀拒绝、merge/孤儿/环/未知父版本、anchor 拒绝、create/drop 归属判定）[V]                                  |
 | floor 输出     | `apps/api/.venv/bin/python scripts/alembic_reversible_floor.py`                                                                   | `0173`（`--json`：head 0174、irreversible `["0174"]`）[V]                                                                                                             |
 | 完整验证       | `pnpm dev:worktree -- exec --mode test -- bash -lc 'cd apps/api && .venv/bin/python ../../scripts/validate_migrations.py --json'` | `result=passed`；fresh 174 upgrades；reversible 0173→base 173 downgrades→0174；forward/restore 通过；`cleanup_errors=[]`、`leftover_owned_databases=[]`；退出码 0 [V] |
-| 失败清理       | 同上加 `--fail-after forward`                                                                                                     | `result=failed`、created 3 库、`cleanup_errors=[]`、`leftover=[]`、退出码 1 [V]                                                                                       |
+| 分配失败清理   | 同上加 `--fail-after create`（在 COMMENT 之前注入失败）                                                                           | `result=failed`、created 1 库、`cleanup_errors=[]`、`leftover=[]`、退出码 1（半成品库被删除）[V]                                                                      |
+| 整体失败清理   | 同上加 `--fail-after forward`                                                                                                     | `result=failed`、created 3 库、`cleanup_errors=[]`、`leftover=[]`、退出码 1 [V]                                                                                       |
+| 异主冲突不删除 | 预置 `__mv_fresh` 归属 `foreign-owner` 后运行                                                                                     | `result=failed`（拒绝收养）、`created=[]`、`cleanup_errors=[]`，该库运行后仍存在且 owner 不变；随后人工清理 [V]                                                       |
 | 残留检查       | `psql -U user -d postgres -tAc "SELECT datname ... LIKE '%__mv_%'"`                                                               | 无 `__mv_` 库 [V]                                                                                                                                                     |
 | pg 工具/服务器 | `docker exec … psql -tAc "show server_version"`、`pg_dump --version`、`pg_restore --version`                                      | 服务器 16.14 与容器内置 `pg_dump`/`pg_restore` 16.14 同源同版本；本机无宿主客户端，实测走容器后端 [V]                                                                 |
 | 运行库身份     | `pnpm dev:worktree -- doctor --mode test`                                                                                         | 自有库 `aap_wt_c2820af87ec94679_test`（head 0174），owner `aap-worktree:c2820af87ec94679:test:*` [V]                                                                  |

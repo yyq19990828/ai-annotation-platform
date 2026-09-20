@@ -74,6 +74,9 @@ SENTINEL_TABLE_COLUMNS = {
 IRREVERSIBLE_DEFAULT_FLOOR = "annotator"
 HEAD_DEFAULT = "employee"
 
+#: Set by ``--fail-after create`` to inject a failure between CREATE and COMMENT.
+_INJECT_CREATE_FAILURE = False
+
 
 class ValidationError(RuntimeError):
     """Refuse the run rather than touch an unverified database."""
@@ -86,6 +89,7 @@ class Anchor:
     owner: str
     mode: str | None
     dump_dir: Path
+    manifest_postgres: tuple[str, int] | None = None
 
 
 @dataclass
@@ -130,7 +134,8 @@ def resolve_anchor(environ: dict | None = None) -> Anchor:
             raise ValidationError(
                 f"missing {state}; run 'pnpm dev:worktree -- init --mode {mode}' first"
             )
-        resources = json.loads(state.read_text())["resources"]
+        document = json.loads(state.read_text())
+        resources = document["resources"]
         if database != resources["database"]:
             raise ValidationError(
                 "connection string database does not match the owned mode database"
@@ -138,6 +143,12 @@ def resolve_anchor(environ: dict | None = None) -> Anchor:
         owner = resources["owner"]
         if not owner.startswith("aap-worktree:"):
             raise ValidationError("worktree owner tag is malformed")
+        postgres = document.get("postgres") or {}
+        endpoint = (
+            (str(postgres.get("host")), int(postgres.get("port", 5432)))
+            if postgres.get("host")
+            else None
+        )
         dump_dir = Path(resources["directory"]) / "tmp" / "migration-validation"
     else:
         owner = environment.get("AAP_MIGRATION_VALIDATION_OWNER", "")
@@ -152,9 +163,15 @@ def resolve_anchor(environ: dict | None = None) -> Anchor:
             raise ValidationError(
                 f"disposable target database must end with _test/_e2e, got {database!r}"
             )
+        endpoint = None
         dump_dir = Path(environment.get("TMPDIR", "/tmp")) / "aap-migration-validation"
     return Anchor(
-        url=url, base_database=database, owner=owner, mode=mode, dump_dir=dump_dir
+        url=url,
+        base_database=database,
+        owner=owner,
+        mode=mode,
+        dump_dir=dump_dir,
+        manifest_postgres=endpoint,
     )
 
 
@@ -163,6 +180,30 @@ def derived_database(anchor: Anchor, phase: str) -> str:
     if len(name) > 63 or not OWNED_DB_RE.match(name):
         raise ValidationError(f"derived database name is invalid: {name!r}")
     return name
+
+
+async def verify_anchor(anchor: Anchor) -> None:
+    """Prove the base target is the manifest-owned, connectable database."""
+    exists, owner, _ = await database_state(anchor, anchor.base_database)
+    if not exists:
+        raise ValidationError(f"base database {anchor.base_database!r} does not exist")
+    if anchor.mode:
+        if owner != anchor.owner:
+            raise ValidationError(
+                f"base database owner marker {owner!r} does not match the manifest owner"
+            )
+        if anchor.manifest_postgres:
+            actual = (anchor.url.host or "", anchor.url.port or 5432)
+            if actual != anchor.manifest_postgres:
+                raise ValidationError(
+                    f"endpoint {actual} does not match the worktree manifest "
+                    f"{anchor.manifest_postgres}"
+                )
+    current = await fetch_scalar(
+        anchor, anchor.base_database, "SELECT current_database()"
+    )
+    if current != anchor.base_database:
+        raise ValidationError("base database connection resolved elsewhere")
 
 
 # --------------------------------------------------------------------------- #
@@ -178,7 +219,8 @@ def _admin_engine(anchor: Anchor):
     )
 
 
-async def database_owner(anchor: Anchor, name: str) -> tuple[str | None, int]:
+async def database_state(anchor: Anchor, name: str) -> tuple[bool, str | None, int]:
+    """Return (exists, owner_comment, sessions) — existence is explicit."""
     engine = _admin_engine(anchor)
     try:
         async with engine.connect() as connection:
@@ -197,29 +239,53 @@ async def database_owner(anchor: Anchor, name: str) -> tuple[str | None, int]:
                 .first()
             )
             if row is None:
-                return None, 0
-            return row["owner"], int(row["sessions"])
+                return (False, None, 0)
+            return (True, row["owner"], int(row["sessions"]))
     finally:
         await engine.dispose()
 
 
-def database_action(owner: str | None, expected: str) -> str:
-    """Classify an existing database by its ownership comment.
+def create_action(exists: bool, owner: str | None, expected: str) -> str:
+    """``create`` a fresh DB, ``recreate`` our own leftover, else ``refuse``.
 
-    ``None`` -> create fresh; the expected owner -> recreate a leftover from a
-    failed run; any other owner -> refuse (never adopt or drop someone else's
-    database).
+    An existing database without our ownership comment is an unknown-owner
+    collision and is always refused, never adopted or dropped.
     """
-    if owner is None:
+    if not exists:
         return "create"
     if owner != expected:
         return "refuse"
     return "recreate"
 
 
-async def create_owned_database(anchor: Anchor, name: str) -> None:
-    owner, _ = await database_owner(anchor, name)
-    action = database_action(owner, anchor.owner)
+def drop_action(
+    exists: bool, owner: str | None, expected: str, *, created_by_run: bool
+) -> str:
+    if not exists:
+        return "absent"
+    if owner == expected:
+        return "drop"
+    if owner is None and created_by_run:
+        # Allocated by this run but failed before the COMMENT was written.
+        return "drop"
+    return "refuse"
+
+
+async def _drop_database(anchor: Anchor, name: str) -> None:
+    engine = _admin_engine(anchor)
+    try:
+        async with engine.connect() as connection:
+            await connection.exec_driver_sql(f'DROP DATABASE "{name}"')
+    finally:
+        await engine.dispose()
+    exists, _, _ = await database_state(anchor, name)
+    if exists:
+        raise ValidationError(f"database {name} drop did not take effect")
+
+
+async def create_owned_database(anchor: Anchor, state: RunState, name: str) -> None:
+    exists, owner, _ = await database_state(anchor, name)
+    action = create_action(exists, owner, anchor.owner)
     if action == "refuse":
         raise ValidationError(f"refusing to adopt database {name} owned by {owner!r}")
     engine = _admin_engine(anchor)
@@ -228,35 +294,39 @@ async def create_owned_database(anchor: Anchor, name: str) -> None:
             if action == "recreate":
                 await connection.exec_driver_sql(f'DROP DATABASE "{name}"')
             await connection.exec_driver_sql(f'CREATE DATABASE "{name}"')
+    finally:
+        await engine.dispose()
+    # Register before any fallible post-step so a COMMENT/verify failure still
+    # gets the partially created database cleaned up.
+    state.created.append(name)
+    if _INJECT_CREATE_FAILURE and name.endswith("__mv_fresh"):
+        raise ValidationError("injected allocation failure after CREATE")
+    engine = _admin_engine(anchor)
+    try:
+        async with engine.connect() as connection:
+            escaped = anchor.owner.replace("'", "''")
             await connection.exec_driver_sql(
-                f"COMMENT ON DATABASE \"{name}\" IS '{anchor.owner.replace(chr(39), chr(39) * 2)}'"
+                f"COMMENT ON DATABASE \"{name}\" IS '{escaped}'"
             )
     finally:
         await engine.dispose()
-    verified, _ = await database_owner(anchor, name)
-    if verified != anchor.owner:
+    exists, verified, _ = await database_state(anchor, name)
+    if not exists or verified != anchor.owner:
         raise ValidationError(f"database {name} ownership could not be verified")
 
 
-async def drop_owned_database(anchor: Anchor, name: str) -> None:
-    owner, sessions = await database_owner(anchor, name)
-    if owner is None:
+async def drop_created_database(anchor: Anchor, name: str) -> None:
+    exists, owner, sessions = await database_state(anchor, name)
+    action = drop_action(exists, owner, anchor.owner, created_by_run=True)
+    if action == "absent":
         return
-    if owner != anchor.owner:
+    if action == "refuse":
         raise ValidationError(f"refusing to drop database {name} owned by {owner!r}")
     if sessions:
         raise ValidationError(
             f"database {name} still has {sessions} sessions; not forcing"
         )
-    engine = _admin_engine(anchor)
-    try:
-        async with engine.connect() as connection:
-            await connection.exec_driver_sql(f'DROP DATABASE "{name}"')
-    finally:
-        await engine.dispose()
-    remaining, _ = await database_owner(anchor, name)
-    if remaining is not None:
-        raise ValidationError(f"database {name} drop did not take effect")
+    await _drop_database(anchor, name)
 
 
 # --------------------------------------------------------------------------- #
@@ -512,8 +582,7 @@ def pg_restore_database(
 async def phase_fresh(anchor: Anchor, state: RunState) -> None:
     database = derived_database(anchor, "fresh")
     policy = graph_policy()
-    await create_owned_database(anchor, database)
-    state.created.append(database)
+    await create_owned_database(anchor, state, database)
     upgrade_output = run_alembic(anchor, database, "upgrade", "head")
     upgrades = sum(
         1 for line in upgrade_output.splitlines() if "Running upgrade" in line
@@ -536,8 +605,7 @@ async def phase_reversible(anchor: Anchor, state: RunState) -> None:
     floor = policy.reversible_floor
     if floor == policy.head:
         raise ValidationError("no irreversible revision present; nothing to validate")
-    await create_owned_database(anchor, database)
-    state.created.append(database)
+    await create_owned_database(anchor, state, database)
     run_alembic(anchor, database, "upgrade", floor)
     if await current_revision(anchor, database) != [floor]:
         raise ValidationError(f"reversible start is not at floor {floor}")
@@ -746,13 +814,12 @@ async def phase_forward(anchor: Anchor, state: RunState, backend: DumpBackend) -
     database = derived_database(anchor, "forward")
     policy = graph_policy()
     floor = policy.reversible_floor
-    await create_owned_database(anchor, database)
-    state.created.append(database)
+    await create_owned_database(anchor, state, database)
     run_alembic(anchor, database, "upgrade", floor)
     ids = await seed_legacy_rows(anchor, database)
     snapshot = anchor.dump_dir / f"{database}__pre_conversion.dump"
-    pg_dump_database(backend, anchor, database, snapshot)
     state.dumps.append(snapshot)
+    pg_dump_database(backend, anchor, database, snapshot)
     run_alembic(anchor, database, "upgrade", "head")
     await assert_forward_conversion(anchor, database, ids)
     refusal = run_alembic(anchor, database, "downgrade", floor, check=False)
@@ -772,8 +839,7 @@ async def phase_restore(
     database = derived_database(anchor, "restore")
     policy = graph_policy()
     floor = policy.reversible_floor
-    await create_owned_database(anchor, database)
-    state.created.append(database)
+    await create_owned_database(anchor, state, database)
     pg_restore_database(backend, anchor, database, snapshot)
     if await current_revision(anchor, database) != [floor]:
         raise ValidationError("restored snapshot is not at the pre-conversion floor")
@@ -808,21 +874,33 @@ async def phase_restore(
         raise ValidationError(
             "restored snapshot already contains the converted project_role"
         )
+    accepted = await fetch_all(
+        anchor,
+        database,
+        "SELECT role, project_role FROM user_invitations WHERE email = 'mv-accepted@test.local'",
+    )
+    if accepted and (
+        accepted[0]["role"] != "annotator" or accepted[0]["project_role"] is not None
+    ):
+        raise ValidationError(
+            f"restored historical invitation changed: {dict(accepted[0])}"
+        )
     state.phases.append(f"restore:{database}@{floor}")
 
 
 def cleanup(anchor: Anchor, state: RunState) -> list[str]:
+    """Best-effort cleanup of everything this run created, aggregating errors."""
     errors: list[str] = []
     for database in reversed(state.created):
         try:
-            asyncio.run(drop_owned_database(anchor, database))
-        except ValidationError as error:  # keep going, then report
-            errors.append(f"{database}: {error}")
+            asyncio.run(drop_created_database(anchor, database))
+        except Exception as error:  # noqa: BLE001 - keep cleaning the rest
+            errors.append(f"{database}: {type(error).__name__}: {error}")
     for dump in state.dumps:
         try:
             dump.unlink(missing_ok=True)
-        except OSError as error:
-            errors.append(f"{dump}: {error}")
+        except Exception as error:  # noqa: BLE001 - keep cleaning the rest
+            errors.append(f"{dump}: {type(error).__name__}: {error}")
     return errors
 
 
@@ -837,14 +915,17 @@ async def list_owned_databases(anchor: Anchor) -> list[str]:
 
 
 def main(argv: list[str] | None = None) -> int:
+    global _INJECT_CREATE_FAILURE
+
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--fail-after",
-        choices=["fresh", "reversible", "forward"],
+        choices=["create", "fresh", "reversible", "forward"],
         help="test hook: abort after the named phase to prove failure cleanup",
     )
     parser.add_argument("--json", action="store_true", help="emit a JSON summary")
     arguments = parser.parse_args(argv)
+    _INJECT_CREATE_FAILURE = arguments.fail_after == "create"
 
     anchor = resolve_anchor()
     policy = graph_policy()
@@ -855,6 +936,7 @@ def main(argv: list[str] | None = None) -> int:
         "mode": anchor.mode,
     }
     try:
+        asyncio.run(verify_anchor(anchor))
         backend = detect_dump_backend(anchor)
         asyncio.run(phase_fresh(anchor, state))
         if arguments.fail_after == "fresh":

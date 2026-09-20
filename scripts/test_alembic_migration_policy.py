@@ -23,8 +23,9 @@ from alembic_reversible_floor import (  # noqa: E402
 )
 from validate_migrations import (  # noqa: E402
     ValidationError,
-    database_action,
+    create_action,
     derived_database,
+    drop_action,
     resolve_anchor,
 )
 
@@ -49,13 +50,14 @@ class ClassifyChainTests(unittest.TestCase):
         revisions = {"0002": rev("0002", "0001"), "0001": rev("0001", None)}
         self.assertEqual(classify_chain(revisions, "0002").reversible_floor, "0002")
 
-    def test_irreversible_below_head_still_returns_its_parent(self):
+    def test_reversible_suffix_above_irreversible_fails_closed(self):
         revisions = {
             "0175": rev("0175", "0174"),
             "0174": rev("0174", "0173", irreversible=True),
             "0173": rev("0173", None),
         }
-        self.assertEqual(classify_chain(revisions, "0175").reversible_floor, "0173")
+        with self.assertRaises(UnsupportedChain):
+            classify_chain(revisions, "0175")
 
     def test_multiple_irreversible_revisions_fail_closed(self):
         revisions = {
@@ -180,13 +182,39 @@ class AnchorGuardTests(unittest.TestCase):
 
 class DatabaseOwnershipActionTests(unittest.TestCase):
     def test_absent_database_is_created(self):
-        self.assertEqual(database_action(None, "owner"), "create")
+        self.assertEqual(create_action(False, None, "owner"), "create")
 
     def test_owned_leftover_is_recreated(self):
-        self.assertEqual(database_action("owner", "owner"), "recreate")
+        self.assertEqual(create_action(True, "owner", "owner"), "recreate")
+
+    def test_uncommented_existing_database_is_refused(self):
+        self.assertEqual(create_action(True, None, "owner"), "refuse")
 
     def test_foreign_owner_is_refused(self):
-        self.assertEqual(database_action("someone-else", "owner"), "refuse")
+        self.assertEqual(create_action(True, "someone-else", "owner"), "refuse")
+
+    def test_drop_absent_is_noop(self):
+        self.assertEqual(
+            drop_action(False, None, "owner", created_by_run=True), "absent"
+        )
+
+    def test_drop_owned(self):
+        self.assertEqual(
+            drop_action(True, "owner", "owner", created_by_run=True), "drop"
+        )
+
+    def test_drop_partial_create_from_this_run(self):
+        self.assertEqual(drop_action(True, None, "owner", created_by_run=True), "drop")
+
+    def test_drop_uncommented_foreign_database_is_refused(self):
+        self.assertEqual(
+            drop_action(True, None, "owner", created_by_run=False), "refuse"
+        )
+
+    def test_drop_foreign_owner_is_refused(self):
+        self.assertEqual(
+            drop_action(True, "someone-else", "owner", created_by_run=True), "refuse"
+        )
 
 
 if __name__ == "__main__":
