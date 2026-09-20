@@ -17,8 +17,10 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import secrets
 import struct
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 from uuid import UUID
@@ -53,6 +55,84 @@ async def _require_e2e_seed_database(db: AsyncSession = Depends(get_db)) -> None
 
 
 router = APIRouter(dependencies=[Depends(_require_e2e_seed_database)])
+
+
+# ---------------------------------------------------------------------------
+# Owned (per-test) fixture scopes
+#
+# `seed/reset` rebuilds one fixed shared namespace and stays the documented
+# serial exception. Owned fixtures give every test its own deterministic
+# identifiers derived from a short namespace token, so creation and cleanup
+# never touch neighbouring namespaces or ordinary data. Identifiers stay
+# within the column limits: namespace is 4-12 `[a-z0-9]` chars, which bounds
+# `DS-E2E-{ns}` at 19/20, `B-E2E-{ns}` at 18/30 and `T-E2E-{ns}{index:06d}`
+# at 24/30 characters.
+# ---------------------------------------------------------------------------
+
+_OWNED_NAMESPACE_PATTERN = re.compile(r"^[a-z0-9]{4,12}$")
+
+
+@dataclass(frozen=True)
+class _OwnedFixtureScope:
+    """Exact identifiers of one owned E2E fixture namespace."""
+
+    namespace: str
+
+    @property
+    def admin_email(self) -> str:
+        return f"admin-{self.namespace}@e2e.test"
+
+    @property
+    def annotator_email(self) -> str:
+        return f"anno-{self.namespace}@e2e.test"
+
+    @property
+    def reviewer_email(self) -> str:
+        return f"rev-{self.namespace}@e2e.test"
+
+    @property
+    def user_emails(self) -> list[str]:
+        return [self.admin_email, self.annotator_email, self.reviewer_email]
+
+    @property
+    def project_name(self) -> str:
+        return f"E2E Owned {self.namespace}"
+
+    @property
+    def batch_display_id(self) -> str:
+        return f"B-E2E-{self.namespace}"
+
+    @property
+    def dataset_display_id(self) -> str:
+        return f"DS-E2E-{self.namespace}"
+
+    @property
+    def registry_name(self) -> str:
+        return f"E2E SAM Mock Owned {self.namespace}"
+
+    @property
+    def registry_url(self) -> str:
+        return f"http://mock-sam-{self.namespace}.e2e:9999"
+
+    @property
+    def image_key_prefix(self) -> str:
+        return f"e2e/owned/{self.namespace}/image/"
+
+    @property
+    def task_display_prefix(self) -> str:
+        return f"T-E2E-{self.namespace}"
+
+
+def _parse_owned_namespace(namespace: str) -> _OwnedFixtureScope:
+    if not _OWNED_NAMESPACE_PATTERN.fullmatch(namespace or ""):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "code": "e2e_owned_namespace_invalid",
+                "reason": "namespace must match ^[a-z0-9]{4,12}$",
+            },
+        )
+    return _OwnedFixtureScope(namespace=namespace)
 
 
 def _delete_seed_object_prefix(
@@ -129,8 +209,15 @@ def _delete_filtering_seed_objects(storage: Any) -> None:
     )
 
 
-async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
-    """定向删除 E2E fixture，并在当前事务内确认关键残留已清零。"""
+async def _cleanup_e2e_fixtures(
+    db: AsyncSession, owned: _OwnedFixtureScope | None = None
+) -> None:
+    """定向删除 E2E fixture，并在当前事务内确认关键残留已清零。
+
+    ``owned=None`` 清理共享固定命名空间（reset/project-roles/filtering 的收敛语义）；
+    传入 ``owned`` 时所有谓词收窄为该命名空间的精确标识，绝不触及相邻命名空间
+    或普通数据。两种 scope 共用同一删除顺序与同一张表清单，避免出现第二套引擎。
+    """
     import logging
 
     log = logging.getLogger("anno-api.seed_cleanup")
@@ -141,21 +228,30 @@ async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
     #    SAVEPOINT 自动继承。
     await db.execute(text("SET LOCAL \"app.allow_audit_update\" = 'true'"))
 
-    # 1) 找 fixture 项目 / 用户的 id
+    # 1) 找 fixture 项目 / 用户的 id（按 scope 选择谓词）
+    if owned is None:
+        project_selector = "name = 'E2E Demo Project' OR display_id LIKE 'P-E2E-%'"
+        project_params: dict = {}
+        user_selector = "email LIKE '%@e2e.test'"
+        user_params: dict = {}
+    else:
+        project_selector = "name = :owned_project_name"
+        project_params = {"owned_project_name": owned.project_name}
+        user_selector = "email = ANY(:owned_emails)"
+        user_params = {"owned_emails": owned.user_emails}
+
     fixture_proj_rows = (
         await db.execute(
-            text(
-                "SELECT id FROM projects "
-                "WHERE name = 'E2E Demo Project' "
-                "OR display_id LIKE 'P-E2E-%'"
-            )
+            text(f"SELECT id FROM projects WHERE {project_selector}"), project_params
         )
     ).fetchall()
     fixture_project_ids = [r[0] for r in fixture_proj_rows]
     log.info("seed_cleanup · fixture project ids: %s", fixture_project_ids)
 
     fixture_user_rows = (
-        await db.execute(text("SELECT id FROM users WHERE email LIKE '%@e2e.test'"))
+        await db.execute(
+            text(f"SELECT id FROM users WHERE {user_selector}"), user_params
+        )
     ).fetchall()
     fixture_user_ids = [r[0] for r in fixture_user_rows]
     log.info("seed_cleanup · fixture user ids: %s", fixture_user_ids)
@@ -296,29 +392,37 @@ async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
         )
 
     # WebCodecs seed 的 video_chunks 随 dataset_item CASCADE,这里显式双保险,
-    # 确保 E2E 反复 seed 不残留旧 chunk 行。
+    # 确保 E2E 反复 seed 不残留旧 chunk 行。owned scope 只匹配自己的 dataset。
+    if owned is None:
+        dataset_selector = "display_id LIKE 'DS-E2E-%'"
+        dataset_params: dict = {}
+    else:
+        dataset_selector = "display_id = :owned_dataset_display_id"
+        dataset_params = {"owned_dataset_display_id": owned.dataset_display_id}
     await _try_delete(
         "DELETE FROM video_chunks WHERE dataset_item_id IN ("
         " SELECT id FROM dataset_items WHERE dataset_id IN ("
-        "   SELECT id FROM datasets WHERE display_id LIKE 'DS-E2E-%'))"
+        f"   SELECT id FROM datasets WHERE {dataset_selector}))",
+        dataset_params,
     )
 
     # reset 中创建的图像 dataset 不由 project_datasets 反向级联删除；
     # 必须在删 E2E 用户前显式清理，避免 datasets.created_by 拦住用户删除。
-    await _try_delete("DELETE FROM datasets WHERE display_id LIKE 'DS-E2E-%'")
+    await _try_delete(f"DELETE FROM datasets WHERE {dataset_selector}", dataset_params)
 
-    # Project templates are user-owned assets and do not cascade from projects.
-    await _try_delete(
-        "DELETE FROM project_templates WHERE display_id LIKE 'TPL-E2E-FILTER-%'",
-    )
+    if owned is None:
+        # Project templates are user-owned assets and do not cascade from projects.
+        await _try_delete(
+            "DELETE FROM project_templates WHERE display_id LIKE 'TPL-E2E-FILTER-%'",
+        )
 
-    # Direct fixture audit rows must disappear before the actor users.  The
-    # production audit trigger still protects ordinary writes; this is only a
-    # fixture-scoped cleanup predicate.
-    await _try_delete(
-        "DELETE FROM audit_logs WHERE detail_json ->> 'fixture' = 'filtering' "
-        "AND path = '/api/v1/__test/seed/filtering'",
-    )
+        # Direct fixture audit rows must disappear before the actor users.  The
+        # production audit trigger still protects ordinary writes; this is only a
+        # fixture-scoped cleanup predicate.
+        await _try_delete(
+            "DELETE FROM audit_logs WHERE detail_json ->> 'fixture' = 'filtering' "
+            "AND path = '/api/v1/__test/seed/filtering'",
+        )
 
     if fixture_user_ids:
         # 删用户的反向引用，再删用户。表名 / 列名见 v0.8.7+ DB schema：
@@ -345,22 +449,31 @@ async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
             )
         # 用户最后删（前面所有反向引用清干净后，仅靠 ON DELETE SET NULL FK 的字段
         # 会被 PG 自动置 NULL，无 ondelete 的字段需我们已手动删完）。
-        await _try_delete("DELETE FROM users WHERE email LIKE '%@e2e.test'")
+        await _try_delete(f"DELETE FROM users WHERE {user_selector}", user_params)
 
     # v0.23.3 ADR-0050 · mock registry 已有 singleton pool，且 pool 的
     # legacy_instance_id / member 都以 RESTRICT 引用 registry。先删除 mock pool
     # （member 随 pool CASCADE），再删 registry；包含顶栏多后端测试的第二个固定夹具。
     # 否则第二次 reset 会留下旧 registry，
     # 重建时撞 url unique 约束。共享 pool / registry 均不受影响。
+    if owned is None:
+        registry_selector = (
+            "url IN ('http://mock-sam.e2e:9999', 'http://second-toolbar.e2e:9999')"
+        )
+        registry_params: dict = {}
+    else:
+        registry_selector = "url = :owned_registry_url"
+        registry_params = {"owned_registry_url": owned.registry_url}
     await _try_delete(
         "DELETE FROM ml_backend_service_pools WHERE legacy_instance_id IN "
-        "(SELECT id FROM ml_backend_registry "
-        "WHERE url IN ('http://mock-sam.e2e:9999', 'http://second-toolbar.e2e:9999'))"
+        f"(SELECT id FROM ml_backend_registry WHERE {registry_selector})",
+        registry_params,
     )
     # v0.19.0 ADR-0044 · 清旧的 E2E mock registry 行(url unique 约束,
     # 重建必须先删旧)。共享注册项不删,只删本 fixture 自造的 mock url。
     await _try_delete(
-        "DELETE FROM ml_backend_registry WHERE url IN ('http://mock-sam.e2e:9999', 'http://second-toolbar.e2e:9999')"
+        f"DELETE FROM ml_backend_registry WHERE {registry_selector}",
+        registry_params,
     )
 
     await db.flush()
@@ -369,27 +482,45 @@ async def _cleanup_e2e_fixtures(db: AsyncSession) -> None:
     # cleanup 是测试隔离合同的一部分：对象存储失败必须让 teardown 失败，不能只记 warning。
     from app.services.storage import storage_service
 
-    _delete_webcodecs_seed_objects(storage_service)
-    _delete_filtering_seed_objects(storage_service)
+    if owned is None:
+        _delete_webcodecs_seed_objects(storage_service)
+        _delete_filtering_seed_objects(storage_service)
+    else:
+        _delete_seed_object_prefix(
+            storage_service,
+            bucket=storage_service.datasets_bucket,
+            prefix=owned.image_key_prefix,
+            label=f"owned-image-{owned.namespace}",
+        )
     _delete_comment_attachment_seed_objects(storage_service, fixture_annotation_ids)
 
-    residual_row = (
-        (
-            await db.execute(
-                text(
-                    "SELECT "
-                    "(SELECT count(*) FROM users "
-                    " WHERE email LIKE '%@e2e.test') AS users, "
-                    "(SELECT count(*) FROM projects "
-                    " WHERE name = 'E2E Demo Project' "
-                    "    OR display_id LIKE 'P-E2E-%') AS projects, "
-                    "(SELECT count(*) FROM ml_backend_registry "
-                    " WHERE url IN ('http://mock-sam.e2e:9999', 'http://second-toolbar.e2e:9999')) AS ml_backends"
-                )
-            )
+    if owned is None:
+        residual_query = (
+            "SELECT "
+            "(SELECT count(*) FROM users "
+            " WHERE email LIKE '%@e2e.test') AS users, "
+            "(SELECT count(*) FROM projects "
+            " WHERE name = 'E2E Demo Project' "
+            "    OR display_id LIKE 'P-E2E-%') AS projects, "
+            "(SELECT count(*) FROM ml_backend_registry "
+            " WHERE url IN ('http://mock-sam.e2e:9999', 'http://second-toolbar.e2e:9999')) AS ml_backends"
         )
-        .mappings()
-        .one()
+        residual_params: dict = {}
+    else:
+        residual_query = (
+            "SELECT "
+            "(SELECT count(*) FROM users WHERE email = ANY(:owned_emails)) AS users, "
+            "(SELECT count(*) FROM projects WHERE name = :owned_project_name) AS projects, "
+            "(SELECT count(*) FROM ml_backend_registry "
+            " WHERE url = :owned_registry_url) AS ml_backends"
+        )
+        residual_params = {
+            "owned_emails": owned.user_emails,
+            "owned_project_name": owned.project_name,
+            "owned_registry_url": owned.registry_url,
+        }
+    residual_row = (
+        (await db.execute(text(residual_query), residual_params)).mappings().one()
     )
     residuals = {
         key: int(residual_row[key]) for key in ("users", "projects", "ml_backends")
@@ -434,22 +565,52 @@ class SeedReset(BaseModel):
     ml_backend_id: str
 
 
-@router.post(
-    "/seed/reset",
-    response_model=SeedReset,
-    status_code=200,
-    include_in_schema=False,
+@dataclass(frozen=True)
+class _ImageWorkbenchFixture:
+    """Identifiers used by the standard image-workbench fixture builder."""
+
+    admin_email: str
+    annotator_email: str
+    reviewer_email: str
+    project_name: str
+    batch_display_id: str
+    dataset_display_id: str
+    dataset_name: str
+    task_display_prefix: str
+    image_key_prefix: str
+    registry_name: str
+    registry_url: str
+
+
+_BASE_IMAGE_WORKBENCH = _ImageWorkbenchFixture(
+    admin_email="admin@e2e.test",
+    annotator_email="anno@e2e.test",
+    reviewer_email="rev@e2e.test",
+    project_name="E2E Demo Project",
+    batch_display_id="B-E2E-1",
+    dataset_display_id="DS-E2E-IMAGE",
+    dataset_name="E2E Image Dataset",
+    task_display_prefix="T-E2E-",
+    image_key_prefix="e2e/image/",
+    registry_name="E2E SAM Mock",
+    registry_url="http://mock-sam.e2e:9999",
 )
-async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
-    """先清理旧 fixture，再重建固定 E2E 数据（幂等）。"""
+
+
+async def _build_image_workbench_fixture(
+    db: AsyncSession, ids: _ImageWorkbenchFixture
+) -> SeedReset:
+    """Build the standard image workbench fixture for the given identifiers.
+
+    Shared by the destructive shared `seed/reset` and the per-test owned
+    route; both differ only in the identifiers below.
+    """
     from tests.factory import create_user, create_project, create_task
 
-    await _cleanup_e2e_fixtures(db)
-
-    admin = await create_user(db, "super_admin", "admin@e2e.test", "E2E Admin")
-    annotator = await create_user(db, "employee", "anno@e2e.test", "E2E Annotator")
-    reviewer = await create_user(db, "employee", "rev@e2e.test", "E2E Reviewer")
-    project = await create_project(db, owner_id=admin.id, name="E2E Demo Project")
+    admin = await create_user(db, "super_admin", ids.admin_email, "E2E Admin")
+    annotator = await create_user(db, "employee", ids.annotator_email, "E2E Annotator")
+    reviewer = await create_user(db, "employee", ids.reviewer_email, "E2E Reviewer")
+    project = await create_project(db, owner_id=admin.id, name=ids.project_name)
     # Mask E2E 走兼容 polygon 提交；能力握手要求项目显式开启
     # region 工具。保留 bbox 绑定，避免改变其他工作台 E2E 的基础数据。
     bbox_binding = project.tool_bindings.get("bbox", {})
@@ -488,7 +649,7 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     # 任务不可见），工作台显示「该项目暂无任务」。
     batch = TaskBatch(
         project_id=project.id,
-        display_id="B-E2E-1",
+        display_id=ids.batch_display_id,
         name="E2E Default Batch",
         status="annotating",
         annotator_id=annotator.id,
@@ -505,8 +666,8 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     from app.services.storage import storage_service
 
     image_dataset = Dataset(
-        display_id="DS-E2E-IMAGE",
-        name="E2E Image Dataset",
+        display_id=ids.dataset_display_id,
+        name=ids.dataset_name,
         data_type="image",
         file_count=5,
         created_by=admin.id,
@@ -520,7 +681,7 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     tasks = []
     task_created_at = datetime.now(timezone.utc)
     for index in range(5):
-        image_key = f"e2e/image/task-{index + 1}.svg"
+        image_key = f"{ids.image_key_prefix}task-{index + 1}.svg"
         svg = (
             '<svg xmlns="http://www.w3.org/2000/svg" width="64" height="48" '
             'viewBox="0 0 64 48">'
@@ -548,7 +709,9 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
         db.add(item)
         await db.flush()
         t = await create_task(
-            db, project_id=project.id, display_id=f"T-E2E-{index + 1:06d}"
+            db,
+            project_id=project.id,
+            display_id=f"{ids.task_display_prefix}{index + 1:06d}",
         )
         # PostgreSQL now() is shared by this transaction. Distinct timestamps
         # keep the normal image-task ordering independent of random UUIDs.
@@ -578,8 +741,8 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
     )
 
     mock_backend = MLBackendRegistry(
-        name="E2E SAM Mock",
-        url="http://mock-sam.e2e:9999",
+        name=ids.registry_name,
+        url=ids.registry_url,
         state="connected",
         is_interactive=True,
         auth_method="none",
@@ -626,6 +789,87 @@ async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
         task_ids=[str(t.id) for t in tasks],
         ml_backend_id=str(mock_backend.id),
     )
+
+
+@router.post(
+    "/seed/reset",
+    response_model=SeedReset,
+    status_code=200,
+    include_in_schema=False,
+)
+async def seed_reset(db: AsyncSession = Depends(get_db)) -> SeedReset:
+    """先清理旧 fixture，再重建固定 E2E 数据（幂等）。
+
+    共享固定命名空间的破坏性重建：这是已记录的串行例外路径，会收敛所有
+    E2E fixture（含 owned 命名空间）。每个测试私有的数据请改用 `/seed/owned`。
+    """
+    await _cleanup_e2e_fixtures(db)
+    return await _build_image_workbench_fixture(db, _BASE_IMAGE_WORKBENCH)
+
+
+class SeedOwnedRequest(BaseModel):
+    namespace: str
+
+
+@router.post(
+    "/seed/owned",
+    response_model=SeedReset,
+    status_code=200,
+    include_in_schema=False,
+)
+async def seed_owned(
+    payload: SeedOwnedRequest, db: AsyncSession = Depends(get_db)
+) -> SeedReset:
+    """Build this namespace's own image-workbench fixture without touching others.
+
+    Deterministic, retry-safe and non-destructive: identifiers derive from the
+    validated namespace, creation deletes nothing outside the namespace, and a
+    repeat call for the same namespace first removes only that namespace's
+    leftover fixture before rebuilding. Cleanup counterpart:
+    `POST /api/v1/__test/seed/owned-cleanup`.
+    """
+    scope = _parse_owned_namespace(payload.namespace)
+    # Retry on the same namespace must converge: drop only this namespace's
+    # leftovers, then rebuild it. Neighbouring namespaces are untouched.
+    await _cleanup_e2e_fixtures(db, owned=scope)
+    return await _build_image_workbench_fixture(
+        db,
+        _ImageWorkbenchFixture(
+            admin_email=scope.admin_email,
+            annotator_email=scope.annotator_email,
+            reviewer_email=scope.reviewer_email,
+            project_name=scope.project_name,
+            batch_display_id=scope.batch_display_id,
+            dataset_display_id=scope.dataset_display_id,
+            dataset_name=f"E2E Owned {scope.namespace} Image Dataset",
+            task_display_prefix=scope.task_display_prefix,
+            image_key_prefix=scope.image_key_prefix,
+            registry_name=scope.registry_name,
+            registry_url=scope.registry_url,
+        ),
+    )
+
+
+@router.post(
+    "/seed/owned-cleanup",
+    response_model=SeedCleanup,
+    status_code=200,
+    include_in_schema=False,
+)
+async def seed_owned_cleanup(
+    payload: SeedOwnedRequest, db: AsyncSession = Depends(get_db)
+) -> SeedCleanup:
+    """Delete exactly the named namespace's fixture; idempotent and exact.
+
+    Only the namespace's own users, project, batch, dataset, tasks, media
+    objects and mock backend rows are removed. Shared fixtures, neighbouring
+    namespaces and ordinary data are never matched, and residuals fail the
+    request instead of being swallowed.
+    """
+    scope = _parse_owned_namespace(payload.namespace)
+    await _cleanup_e2e_fixtures(db, owned=scope)
+    await db.commit()
+    return SeedCleanup()
 
 
 def _project_role_svg_bytes(index: int) -> bytes:
