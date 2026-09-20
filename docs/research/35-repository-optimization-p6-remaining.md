@@ -143,6 +143,7 @@ pnpm dev:worktree -- exec --mode test -- sh -c \
 | `ccca27993`                 | fix(api): seed 平台身份与显式项目职责 + 聚焦测试                                                                               |
 | `6bc6d5916`                 | fix(web): AdminPeople 平台身份徽章 + 回归                                                                                      |
 | `a54cd17c9`                 | refactor(web): Review 纯 URL 下沉 + UsersPage 去重桩                                                                           |
+| （紧随本行的清理提交）      | chore: 删除旧版本命名测试文件路径 `apps/api/tests/test_v0_7_6.py`                                                              |
 | `本提交`（doc 35 所在提交） | docs: repository-map、testing 分层、26/27/README/TSV 台账与本文件                                                              |
 
 `git diff --check` 通过；`node scripts/check-doc-version-prefix.mjs --staged` 无发现；pre-commit（trailing-whitespace / end-of-file / prettier / ruff / ruff-format）通过。
