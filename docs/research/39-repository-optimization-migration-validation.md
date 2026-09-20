@@ -1,0 +1,114 @@
+# 仓库优化 P8：迁移验证（§7.2）真实回退、前向数据断言与备份恢复
+
+> 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（§7.2 特别复核）
+> 工作树/分支：`/home/hehao/桌面/ai-annotation-platform-worktree-agent-opt-p6-ml`（分支 `worktree-agent-opt-p8-migrations`，根 `3891c550e`）
+> 输入：`scripts/alembic_reversible_floor.py`、`apps/api/alembic/versions/0173_*.py`/`0174_*.py`、
+> `apps/api/tests/test_project_role_migration.py`、`apps/api/tests/test_migration_0173_project_role_preparation.py`
+> 证据图例：**[V]** 本工作树实测；**[GAP]** 未执行/留待 P8 caller 集成
+
+## 0. 结论
+
+1. **旧 round-trip 的问题确认 [V]**：`ci.yml` 的 `upgrade head` → `alembic stamp <floor>` →
+   `downgrade base` → `upgrade head` 中，`stamp` 只改版本记号，不执行被跳过段落的真实
+   schema/data 回退；0174 的不可逆段从未被真实验证（P0 记录 run `35455695341` 也直接暴露了
+   `0174 not reversible`）。
+2. **新的 focused runner [V]**：`scripts/validate_migrations.py` 在**自有一次性库**上分别执行
+   `fresh`（174 步完整 upgrade）、`reversible`（0173 → 真实 `downgrade base` 173 步 → head，
+   全程无 stamp）、`forward`（播种历史行后前向转换断言 + 不可逆 downgrade 拒绝）、
+   `restore`（转换前 `pg_dump` 快照恢复到独立库）四个阶段，全部通过。
+3. **策略 fail-closed [V]**：`scripts/alembic_reversible_floor.py` 重写为可测试的 `classify_chain`
+   纯函数：多 head、merge、孤儿分支、未知父版本、环、多个不可逆迁移、基线处不可逆一律抛
+   `UnsupportedChain` 并以非零退出，不再给出会漏检的 floor；默认 stdout（floor 单行）契约保留，
+   新增 `--json` 输出完整策略。
+4. **清理可证 [V]**：成功与注入失败（`--fail-after forward`）两种路径都只删除本次创建并带归属
+   标记的 `<库名>__mv_*`；运行后 `pg_database` 中无任何 `__mv_` 残留，基础库 schema 未被改动。
+5. **CI caller 已交 P8 owner [GAP]**：`ci.yml` 由 P8 负责接线，替换 stamp 步骤；本地与 CI 命令见
+   §3。`docs-site/dev/how-to/add-migration.md` 已同步为无 stamp 的真实校验说明。
+
+## 1. 范围与边界
+
+- 只改：`scripts/alembic_reversible_floor.py`、新增 `scripts/validate_migrations.py`、
+  新增 `scripts/test_alembic_migration_policy.py`、`docs-site/dev/how-to/add-migration.md`、本文件。
+- 不改：`.github/workflows/**`（P8 owner 接线）、已发布 alembic 迁移、P5/P6/P7/TSV/共享台账。
+- 只在**自有一次性库**上操作：worktree 模式要求 `AAP_WORKTREE_MODE ∈ {test,e2e}` 且
+  `.worktree/<mode>/resources.json` 的 database/owner 与连接串一致；非 worktree 模式要求显式
+  `AAP_MIGRATION_VALIDATION_OWNER` 且库名以 `_test`/`_e2e` 结尾。拒绝非本机 host、
+  `prod`/`annotation`（开发库）、query 参数、非 postgresql 驱动。
+- 迁移入口仍是 `alembic upgrade head`；本工作不重写历史、不改锁文件/生成类型/协议。
+
+## 2. 实现
+
+### 2.1 修订图策略（`alembic_reversible_floor.py`）
+
+`classify_chain(revisions, head)` 从唯一 head 沿 `down_revision` 走到 base，返回
+`ChainPolicy{head, reversible_floor, irreversible, reversible_segment}`：
+
+- 0 个不可逆 → floor = head（等价 `downgrade base`）；
+- 1 个不可逆 → floor = 该迁移的 `down_revision`；`downgrade <floor>` 的路径是
+  `(floor, head]`，其中不含不可逆迁移的 `down_revision` 边界**以上**部分，因此调用方必须
+  `upgrade <floor>` 起步再 `downgrade base`，**不能** `stamp`；
+- > 1 个不可逆、基线处不可逆、merge/多 head/孤儿/环/未知父版本 → `UnsupportedChain`。
+
+### 2.2 验证 runner（`scripts/validate_migrations.py`）
+
+从 `MIGRATION_DATABASE_URL`（或 `DATABASE_URL`）解析本机 anchor，按前缀派生四个库：
+
+| 阶段       | 数据库                  | 真实动作                                           | 关键断言                                                                                                                                                                                                                       |
+| ---------- | ----------------------- | -------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| fresh      | `<base>__mv_fresh`      | `upgrade head`                                     | `alembic_version=head`；0173 哨兵列存在；`users.role` default 含 `employee`                                                                                                                                                    |
+| reversible | `<base>__mv_reversible` | `upgrade 0173` → `downgrade base` → `upgrade head` | 起点 default 含 `annotator`；`downgrade base` 实际执行 173 步（非 stamp）；终点回 head                                                                                                                                         |
+| forward    | `<base>__mv_forward`    | 播种历史行 → `pg_dump` 快照 → `upgrade head`       | 角色转换 employee、inactive 不复活、成员关系不伪造且不被改写、pending invitation 得到 project_role、已接受邀请不被改写、head default employee；`downgrade 0173` 抛 “not reversible” 且版本记号不变                             |
+| restore    | `<base>__mv_restore`    | `pg_restore` 转换前快照                            | 恢复库停在 0173；0173 哨兵列存在；`users.role` default 仍含 `annotator`；历史角色 `annotator/project_admin/reviewer` 原样；成员关系 `annotator` 未被改写；pending invitation 的 `project_role` 仍为 NULL（证明确为转换前快照） |
+
+- 每个库创建时写 `COMMENT ON DATABASE ... IS <owner>`；删除前校验 owner 与无连接，绝不强断未知客户端。
+- `pg_dump`/`pg_restore` 优先用宿主机客户端，否则用发布 5432 端口的本地 Postgres 容器内置客户端
+  （本机无宿主客户端，实测走容器路径）。
+- `finally` 删除全部本次创建库与 dump 文件；`--fail-after {fresh,reversible,forward}` 为失败清理自证开关。
+
+### 2.3 策略单测（`scripts/test_alembic_migration_policy.py`）
+
+16 例（纯逻辑、无数据库）：单/零/多个不可逆、基线不可逆、merge、孤儿、未知父版本、环；
+以及 anchor 守卫的 8 个拒绝/接受场景（缺 owner、开发库、非本机、prod、非 postgres 驱动等）。
+
+## 3. CI caller（交给 P8 owner）
+
+```yaml
+# ci.yml，pytest job（Postgres service 就绪后）
+- name: Migration validation (fresh / reversible / forward / restore)
+  working-directory: apps/api
+  env:
+    AAP_MIGRATION_VALIDATION_OWNER: ci:${{ github.run_id }}
+    MIGRATION_DATABASE_URL: ${{ env.DATABASE_URL }}
+  run: uv run python ../../scripts/validate_migrations.py
+```
+
+要求：`DATABASE_URL` 指向本机一次性库且角色可 `CREATE DATABASE`（CI service `user` 为 superuser）；
+宿主机有 `pg_dump`/`pg_restore` 或 Postgres 在可被 `docker ps` 发现的容器中。替换旧步骤：删除
+`alembic stamp` 两行，保留 `alembic upgrade head`。本地：`pnpm dev:worktree -- init --mode test` 后
+`pnpm dev:worktree -- exec --mode test -- bash -lc 'cd apps/api && .venv/bin/python ../../scripts/validate_migrations.py'`。
+
+## 4. 实测证据
+
+| 检查           | 命令                                                                                                                              | 结果                                                                                                                                                                  |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 策略单测       | `apps/api/.venv/bin/python scripts/test_alembic_migration_policy.py`                                                              | 22 passed（含单 head/多 head、单/多/基线不可逆、merge/孤儿/环/未知父版本、anchor 拒绝、归属冲突判定）[V]                                                              |
+| floor 输出     | `apps/api/.venv/bin/python scripts/alembic_reversible_floor.py`                                                                   | `0173`（`--json`：head 0174、irreversible `["0174"]`）[V]                                                                                                             |
+| 完整验证       | `pnpm dev:worktree -- exec --mode test -- bash -lc 'cd apps/api && .venv/bin/python ../../scripts/validate_migrations.py --json'` | `result=passed`；fresh 174 upgrades；reversible 0173→base 173 downgrades→0174；forward/restore 通过；`cleanup_errors=[]`、`leftover_owned_databases=[]`；退出码 0 [V] |
+| 失败清理       | 同上加 `--fail-after forward`                                                                                                     | `result=failed`、created 3 库、`cleanup_errors=[]`、`leftover=[]`、退出码 1 [V]                                                                                       |
+| 残留检查       | `psql -U user -d postgres -tAc "SELECT datname ... LIKE '%__mv_%'"`                                                               | 无 `__mv_` 库 [V]                                                                                                                                                     |
+| pg 工具/服务器 | `docker exec … psql -tAc "show server_version"`、`pg_dump --version`、`pg_restore --version`                                      | 服务器 16.14 与容器内置 `pg_dump`/`pg_restore` 16.14 同源同版本；本机无宿主客户端，实测走容器后端 [V]                                                                 |
+| 运行库身份     | `pnpm dev:worktree -- doctor --mode test`                                                                                         | 自有库 `aap_wt_c2820af87ec94679_test`（head 0174），owner `aap-worktree:c2820af87ec94679:test:*` [V]                                                                  |
+
+## 5. 限制
+
+- 本地单工作树、单个本机 PostgreSQL 16.14（容器 `postgres:16-alpine`，`pg_dump`/`pg_restore`
+  同为 16.14）；未在 CI 跑（无 push），CI caller 由 P8 owner 集成后再验证。
+- 备份/恢复是**逻辑** `pg_dump -Fc` 快照 + `pg_restore`，不是物理 PITR、不含 WAL 归档、不做
+  异地/远端备份与保留策略演练；证明的是「转换前受保护快照可恢复到同服务器新库」这一文档化路径。
+  若生产恢复依赖外部对象存储与异地副本，那部分不在本 runner 覆盖范围。
+- 历史 `annotation_test`/`annotation_e2e` 在本机未被本 runner 用作目标；CI 上由 service 容器提供，
+  仍是本地容器内的一次性库。
+- 未改动已发布迁移历史；`IRREVERSIBLE` 策略只对当前单一不可逆（0174）成立，未来新增不可逆迁移
+  会命中 fail-closed 分支，需要显式设计新的验证段。
+- `--fail-after` 的失败清理自证只覆盖到 forward 阶段（fresh/reversible/forward 创建的库都被删除）；
+  restore 阶段因先删 forward 库、后用其快照，失败注入未单独枚举，但 `finally` 对所有已创建库统一删除。
