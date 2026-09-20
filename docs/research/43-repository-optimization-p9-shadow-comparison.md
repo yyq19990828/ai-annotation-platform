@@ -108,7 +108,7 @@
 
 ## 6.2 待修复：mask-slice 生命周期夹具的桶所有权守卫（已提交提案）
 
-`apps/web/e2e/fixtures/mask-slice-lifecycle.py` 当前以桶名后缀（`-e2e/_e2e/-test/_test`）判定“独占一次性桶”，但工作树模式的自有桶命名为 `aap-wt-<id>-<mode>-<purpose>`（含 `-e2e-`、不以 `-e2e` 结尾），导致 `mask-slice.spec.ts:682/716` 失败。修复方向：改用**既有的工作树资源所有权机制**（`.worktree/<mode>/resources.json` 的声明桶 + 所有者 + `scripts/worktree_runtime.require_owner` 的标签语义），在无工作树清单时保留旧的 CI 后缀回退；负向校验覆盖共享桶（无所有者标签）、他人所有、未声明桶。保留 GC/版本丢失断言，仅重跑这两个用例。CI 条件差异审计：全仓 e2e 仅 `mask-advanced-operations.spec.ts:334` 一处依赖 `process.env.CI`。
+`apps/web/e2e/fixtures/mask-slice-lifecycle.py` 当前以桶名后缀（`-e2e/_e2e/-test/_test`）判定“独占一次性桶”，但工作树模式的自有桶命名为 `aap-wt-<id>-<mode>-<purpose>`（含 `-e2e-`、不以 `-e2e` 结尾），导致 `mask-slice.spec.ts:682/716` 失败。修复方向：改用**既有的工作树资源所有权机制**（`.worktree/<mode>/resources.json` 的声明桶 + 所有者 + `scripts/worktree_runtime.require_owner` 的标签语义），在无工作树清单时保留旧的 CI 后缀回退；负向校验覆盖共享桶（无所有者标签）、他人所有、未声明桶。保留 GC/版本丢失断言，仅重跑这两个用例。新增回归模块 `apps/api/tests/test_mask_slice_fixture_guard.py`（由既有后端 pytest job 自动发现）只做守卫函数的多正/负例验证；按协调方划分，共享测试清单 TSV 与 research 26/27/45 由最终 P10 集成方回填该文件与计数，P9 不在共享清单内改动。CI 条件差异审计：全仓 e2e 仅 `mask-advanced-operations.spec.ts:334` 一处依赖 `process.env.CI`。
 
 ## 7. 保留与限制
 
