@@ -285,6 +285,7 @@ jobs:
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
       required: ${{ steps.plan.outputs.required }}
+      run-suites: ${{ steps.plan.outputs.run_suites }}
       ml-cpu: ${{ steps.plan.outputs.ml_cpu }}
     steps:
       - uses: actions/checkout@v4
@@ -301,6 +302,9 @@ jobs:
         env:
           E2E_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           E2E_DISPATCH_SCOPE: ${{ inputs.e2e_scope }}
+          # P9 rollback: set the repository variable E2E_SELECTION_MODE=legacy
+          # to restore the frozen pre-P8 selection without a code change.
+          E2E_SELECTION_MODE: ${{ vars.E2E_SELECTION_MODE }}
         run: node scripts/plan-e2e-suites.mjs "$E2E_BASE_SHA" >> "$GITHUB_OUTPUT"
       # Plan §6.7-1: the §6 selection runs as a shadow report only. The matrix
       # (and therefore the stable Frontend E2E gate) stays legacy until P9.
@@ -356,6 +360,7 @@ jobs:
   e2e-suites:
     name: Frontend E2E execution
     needs: [e2e-plan]
+    if: needs.e2e-plan.outputs.run-suites == 'true'
     uses: ./.github/workflows/e2e-run.yml
     with:
       matrix: ${{ needs.e2e-plan.outputs.matrix }}
@@ -378,13 +383,26 @@ jobs:
         if: needs.e2e-plan.outputs.required != ''
         env:
           E2E_REQUIRED: ${{ needs.e2e-plan.outputs.required }}
+          E2E_RUN_SUITES: ${{ needs.e2e-plan.outputs.run-suites }}
         run: |
           printf '%s' "$E2E_REQUIRED" > required-suites.json
-          node scripts/audit-e2e-requirements.mjs required-suites.json suite-status-raw/suite-status
-      - name: Require every E2E suite to pass
+          if [ "$E2E_RUN_SUITES" = "true" ]; then
+            node scripts/audit-e2e-requirements.mjs required-suites.json suite-status-raw/suite-status
+          else
+            # Documented docs-only skip: the manifest must carry an explicit
+            # docs-only classification with a reason (validated by the audit).
+            mkdir -p empty-status
+            node scripts/audit-e2e-requirements.mjs required-suites.json empty-status
+          fi
+      - name: Require every planned E2E suite to pass
         env:
           E2E_PLAN_RESULT: ${{ needs.e2e-plan.result }}
-          E2E_RESULT: ${{ needs.e2e-suites.result }}
+          E2E_SUITES_RESULT: ${{ needs.e2e-suites.result }}
+          E2E_RUN_SUITES: ${{ needs.e2e-plan.outputs.run-suites }}
         run: |
           test "$E2E_PLAN_RESULT" = success
-          test "$E2E_RESULT" = success
+          if [ "$E2E_RUN_SUITES" = "true" ]; then
+            test "$E2E_SUITES_RESULT" = success
+          else
+            test "$E2E_SUITES_RESULT" = skipped
+          fi

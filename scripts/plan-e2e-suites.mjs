@@ -120,9 +120,12 @@ const smoke = [
     suite: "smoke",
     legacyGate: false,
     command:
-      "test:e2e e2e/tests/auth.spec.ts e2e/tests/annotation.spec.ts e2e/tests/employee-project-roles.spec.ts e2e/tests/mask-session-guard.spec.ts --grep '健康检查|正确凭证|错密码|未登录访问|annotator 登录|bbox 真实绘制、选类、落库并刷新恢复|same employee annotates A|opposite project actions are denied|切工具离开 dirty session'",
+      "test:e2e --retries=0 e2e/tests/auth.spec.ts e2e/tests/annotation.spec.ts e2e/tests/employee-project-roles.spec.ts e2e/tests/mask-session-guard.spec.ts --grep '健康检查|正确凭证|错密码|未登录访问|annotator 登录|bbox 真实绘制、选类、落库并刷新恢复|same employee annotates A|opposite project actions are denied|切工具离开 dirty session'",
     built: true,
     scope: "smoke",
+    // §6.7: the bounded core must pass on the first attempt; retries stay a
+    // diagnostic tool for non-core suites only.
+    flakyPolicy: "forbid",
     reason:
       "bounded real chain (reviewer-owned membership: 9 tests / 4 existing files): UI login, real canvas save+refresh, annotator submit→review→complete across two projects, permission denial, dirty-session switch guard",
   },
@@ -698,13 +701,46 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   else if (eventName === "pull_request")
     mlCpu = (paths ?? []).some((path) => mlCpuTriggers.some((prefix) => path.startsWith(prefix)));
   else throw new Error(`Unsupported E2E event for ml-cpu wiring: ${eventName}`);
+
+  // P9 gate switch with a documented rollback: `E2E_SELECTION_MODE=legacy`
+  // restores the frozen pre-P8 selection without a code change.
+  const selectionMode = process.env.E2E_SELECTION_MODE ?? "planned";
+  if (!["planned", "legacy"].includes(selectionMode))
+    throw new Error(`Invalid E2E selection mode: ${selectionMode}`);
+  const legacyGate = planE2ESuites(eventName, paths);
+  const selection = selectSuites(eventName, paths, { dispatchScope });
   const shadow = { ...shadowPlan(eventName, paths, { dispatchScope }), mlCpu };
-  const gate = planE2ESuites(eventName, paths);
+  const plannedEntries = selection.planned
+    .map((suite) => SUITE_CONTRACT.find((entry) => entry.suite === suite))
+    .filter(Boolean);
+  const gate = selectionMode === "legacy" ? legacyGate : { include: plannedEntries };
   console.log(`matrix=${JSON.stringify(gate)}`);
+  // The comparison document always records the frozen legacy set next to the
+  // planned set, so every run leaves old/new evidence behind.
+  console.log(`legacy=${JSON.stringify(legacyGate)}`);
   console.log(
-    `required=${JSON.stringify(gate.include.map((entry) => ({ suite: entry.suite, planned: true })))}`,
+    `required=${JSON.stringify(
+      selection.classification.docsOnly
+        ? {
+            classification: "docs-only",
+            reason:
+              selection.reasons.find((reason) => /docs-only/.test(reason.because))?.because ??
+              "docs-only change",
+            suites: [],
+          }
+        : {
+            classification: "app-code",
+            reason: "planned selection (plan §6.2/§6.3)",
+            suites: plannedEntries.map((entry) => ({
+              suite: entry.suite,
+              planned: true,
+              ...(entry.flakyPolicy ? { flakyPolicy: entry.flakyPolicy } : {}),
+            })),
+          },
+    )}`,
   );
-  // Shadow report for P9: recorded by the planning job, never drives the gate.
+  console.log(`run_suites=${gate.include.length > 0}`);
+  // Shadow report for P9: recorded by the planning job.
   console.log(`shadow=${JSON.stringify(shadow)}`);
   console.log(`ml_cpu=${mlCpu}`);
 }

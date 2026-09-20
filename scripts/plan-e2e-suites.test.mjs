@@ -290,13 +290,28 @@ test("CLI stdout carries exactly the outputs the workflow consumers read", () =>
       "required" in outputs,
       "ci.yml reads steps.plan.outputs.required; the CLI must emit the same key",
     );
-    // Manual full dispatch triggers the delegated CPU contracts; the frozen
-    // legacy required list is all planned:true.
+    // Manual full dispatch triggers the delegated CPU contracts; the required
+    // manifest is the planned selection with the core forbid-flaky policy.
     assert.equal(outputs.ml_cpu, "true");
     assert.equal(JSON.parse(outputs.shadow).mlCpu, true);
+    assert.equal(outputs.run_suites, "true");
+    const requiredManifest = JSON.parse(outputs.required);
+    assert.equal(requiredManifest.classification, "app-code");
     assert.equal(
-      JSON.parse(outputs.required).every((entry) => entry.planned === true),
+      requiredManifest.suites.every((entry) => entry.planned === true),
       true,
+    );
+    assert.equal(
+      requiredManifest.suites.find((entry) => entry.suite === "smoke").flakyPolicy,
+      "forbid",
+    );
+    assert.deepEqual(
+      JSON.parse(outputs.matrix).include.map((entry) => entry.suite),
+      [...broadened],
+    );
+    assert.deepEqual(
+      JSON.parse(outputs.legacy).include.map((entry) => entry.suite),
+      ["visual", "layout-stress"],
     );
 
     const extended = run({
@@ -325,7 +340,12 @@ test("CLI stdout carries exactly the outputs the workflow consumers read", () =>
     const pushShadow = JSON.parse(pushOutputs.shadow);
     assert.equal(pushOutputs.ml_cpu, "true");
     assert.equal(pushShadow.mlCpu, true);
-    assert.equal(JSON.parse(pushOutputs.required).length, 9); // frozen legacy gate: 4 shards + 3 mask + 2 extended
+    assert.equal(pushOutputs.run_suites, "true");
+    assert.equal(JSON.parse(pushOutputs.required).suites.length, 12);
+    assert.deepEqual(
+      JSON.parse(pushOutputs.matrix).include.map((entry) => entry.suite),
+      [...broadened],
+    );
 
     // A PR touching a shared consumer/runner path triggers the CPU caller in
     // both outputs. The fixture keeps base != HEAD: the base is captured
@@ -395,14 +415,21 @@ test("CLI handles deleted and renamed paths, and fails on an unavailable base", 
     assert.equal(result.status, 0, result.stderr);
     const lines = result.stdout.trim().split("\n");
     const matrixLine = lines.find((line) => line.startsWith("matrix="));
+    const legacyLine = lines.find((line) => line.startsWith("legacy="));
     const shadowLine = lines.find((line) => line.startsWith("shadow="));
-    assert.ok(matrixLine && shadowLine, "CLI must emit matrix= and shadow= lines");
+    assert.ok(matrixLine && legacyLine && shadowLine, "CLI must emit matrix/legacy/shadow lines");
+    // P9 switch: the matrix is the planned selection; a rename that deletes a
+    // frontend path is app code with an unmapped destination, so it broadens
+    // to the full planned set. The frozen legacy set rides along for the
+    // comparison.
     assert.deepEqual(
       JSON.parse(matrixLine.slice("matrix=".length)).include.map(({ suite }) => suite),
+      [...broadened],
+    );
+    assert.deepEqual(
+      JSON.parse(legacyLine.slice("legacy=".length)).include.map(({ suite }) => suite),
       [...functional, "visual", "layout-stress"],
     );
-    // The shadow report must ride along on every planning invocation without
-    // changing the gate selection.
     const shadow = JSON.parse(shadowLine.slice("shadow=".length));
     assert.deepEqual(shadow.legacy, [...functional, "visual", "layout-stress"]);
     assert.ok(Array.isArray(shadow.added) && Array.isArray(shadow.removed));
@@ -418,4 +445,99 @@ test("unknown/multi-domain PRs run the delegated ml-cpu contracts, never silentl
   const unknown = shadowPlan("pull_request", ["model-configs/weights.yaml"]);
   assert.equal(unknown.planned, undefined ? [] : unknown.planned);
   assert.ok(unknown.planned.length >= [...functional].length + 2);
+});
+
+test("docs-only PRs plan an explicit allowed skip instead of running suites", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "e2e-docs-skip-"));
+  const script = fileURLToPath(new URL("./plan-e2e-suites.mjs", import.meta.url));
+  const git = (...args) =>
+    execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  try {
+    git("init");
+    git("config", "user.name", "E2E routing test");
+    git("config", "user.email", "test@example.invalid");
+    mkdirSync(join(cwd, "docs-site/user-guide"), { recursive: true });
+    writeFileSync(join(cwd, "docs-site/user-guide/seed.md"), "seed\n");
+    git("add", ".");
+    git("-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "commit", "-m", "seed");
+    const base = git("rev-parse", "HEAD");
+    mkdirSync(join(cwd, "docs-site/user-guide"), { recursive: true });
+    writeFileSync(join(cwd, "docs-site/user-guide/index.md"), "# docs\n");
+    git("add", ".");
+    git("-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "commit", "-m", "docs");
+
+    const result = spawnSync(process.execPath, [script, base], {
+      cwd,
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_EVENT_NAME: "pull_request" },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const outputs = Object.fromEntries(
+      result.stdout
+        .trim()
+        .split("\n")
+        .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
+    );
+    assert.equal(outputs.run_suites, "false");
+    assert.deepEqual(JSON.parse(outputs.matrix).include, []);
+    const manifest = JSON.parse(outputs.required);
+    assert.equal(manifest.classification, "docs-only");
+    assert.equal(manifest.suites.length, 0);
+    assert.ok(manifest.reason.trim().length > 0);
+    // Legacy comparison still records what the frozen gate would have run.
+    assert.deepEqual(
+      JSON.parse(outputs.legacy).include.map(({ suite }) => suite),
+      [...functional],
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("E2E_SELECTION_MODE=legacy restores the frozen selection for rollback", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "e2e-rollback-"));
+  const script = fileURLToPath(new URL("./plan-e2e-suites.mjs", import.meta.url));
+  try {
+    const result = spawnSync(process.execPath, [script], {
+      cwd,
+      encoding: "utf8",
+      env: {
+        ...process.env,
+        GITHUB_EVENT_NAME: "push",
+        E2E_SELECTION_MODE: "legacy",
+      },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const outputs = Object.fromEntries(
+      result.stdout
+        .trim()
+        .split("\n")
+        .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
+    );
+    assert.deepEqual(
+      JSON.parse(outputs.matrix).include.map(({ suite }) => suite),
+      [...functional, "visual", "layout-stress"],
+    );
+    assert.equal(outputs.run_suites, "true");
+
+    const invalid = spawnSync(process.execPath, [script], {
+      cwd,
+      encoding: "utf8",
+      env: { ...process.env, GITHUB_EVENT_NAME: "push", E2E_SELECTION_MODE: "sideways" },
+    });
+    assert.notEqual(invalid.status, 0);
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
+});
+
+test("bounded smoke runs without retries and forbids flaky passes", () => {
+  const smoke = SUITE_CONTRACT.find((entry) => entry.suite === "smoke");
+  assert.ok(smoke, "smoke suite must exist in the contract");
+  assert.equal(smoke.flakyPolicy, "forbid");
+  assert.match(smoke.command, /--retries=0/);
+  assert.equal(
+    SUITE_CONTRACT.some((entry) => entry.flakyPolicy === "forbid" && entry.suite !== "smoke"),
+    false,
+  );
 });
