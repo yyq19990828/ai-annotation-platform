@@ -6,7 +6,6 @@ import {
   useRef,
   useState,
   type ComponentProps,
-  type ReactNode,
 } from "react";
 import { isWorkbenchInteractionBlocked } from "./workbenchInteractionGuards";
 import { useWorkbenchAiRequest } from "./useWorkbenchAiRequest";
@@ -146,8 +145,7 @@ import type {
   VideoTimelineChapterControls,
 } from "../stage/VideoPlaybackOverlay";
 import type { VideoLoopRegion } from "../stage/videoNavigationState";
-import { VideoTrackSidebar, trackRangesOverlap } from "../stage/VideoTrackSidebar";
-import type { VideoTrackGapMode } from "../stage/VideoTrackComposeDialog";
+import { VideoTrackSidebar } from "../stage/VideoTrackSidebar";
 import type { TrackFilter } from "../stage/VideoTrackPanel";
 import { VideoTrackerPropagateDialog } from "../stage/VideoTrackerPropagateDialog";
 import {
@@ -160,11 +158,9 @@ import {
   type MaskConversionDialogRequest,
 } from "../stage/MaskConversionDialog";
 import {
-  isAnyVideoSingleFrame,
   isVideoBbox,
   isVideoMask,
   isVideoMaskTrack,
-  isVideoPointsTrack,
   isVideoPolylineTrack,
   isVideoTrack,
   resolveTrackAtFrame,
@@ -187,19 +183,8 @@ import { loadAbortableImage } from "../stage/useAbortableImage";
 import { WorkbenchOverlays } from "../shell/WorkbenchOverlays";
 import type { ClassPickerAttrEditing } from "../shell/ClassPickerPopover";
 import { WorkbenchLayout } from "../shell/WorkbenchLayout";
-import {
-  SelectionCardPlaceholder,
-  type SelectedAnnotationCardProps,
-} from "../shell/SelectedAnnotationCard";
+import type { SelectedAnnotationCardProps } from "../shell/SelectedAnnotationCard";
 import { getMissingRequired } from "../shell/AttributeForm";
-import { ImageSelectionCardContent } from "../shell/ImageSelectionCardContent";
-import { ImageBatchCardContent } from "../shell/ImageBatchCardContent";
-import { VideoBoxBatchCardContent } from "../shell/VideoBoxBatchCardContent";
-import { VideoTrackBatchCardContent } from "../shell/VideoTrackBatchCardContent";
-import { AIPredictionCardContent } from "../shell/selectionCard/AIPredictionCardContent";
-import { VideoFrameBoxCardContent } from "../shell/selectionCard/VideoFrameBoxCardContent";
-import { VideoPointsTrackCardContent } from "../shell/selectionCard/VideoPointsTrackCardContent";
-import { ConversionBatchCardContent } from "../shell/selectionCard/ConversionBatchCardContent";
 import type { PetSelectionSourceKind, WorkbenchPetContext } from "../shell/pet/usePetState";
 import type { FloatingPanelRect } from "../shell/FloatingPanelShell";
 import { isCurrentAuthOwner, useAuthStore } from "@/stores/authStore";
@@ -242,6 +227,7 @@ import { maskEditBlockReason } from "./canEditMask";
 import { MaskToolbar } from "../shell/MaskToolbar";
 import { useMaskPrimaryActionOwner } from "./useMaskPrimaryActionOwner";
 import { MaskConfirmDialogs } from "../shell/MaskConfirmDialogs";
+import { SelectionCardContent } from "../shell/SelectionCardContent";
 import { useVideoAnnotationActions } from "../stages/video/useVideoAnnotationActions";
 import { maskSliceUnavailableReason } from "../stage/shared/geometry/maskMutationDraft";
 import {
@@ -4832,277 +4818,73 @@ export function useWorkbenchShellModel({
   const selectionCard = useMemo<SelectedAnnotationCardProps | null>(() => {
     if (!selectionCardEligible || selectionCount < 1) return null;
     const multi = selectionCount > 1;
-    const ann = selectedAnnotationForPanel;
     const title = multi
       ? `${selectionCount} 个已选中 · 批量`
-      : (selectedAiBox?.cls ?? ann?.class_name ?? "选中标注");
-    let children: ReactNode;
-    if (multi && stageKind === "image") {
-      // 图片多选:批量操作(改类 / 合并 / 锁定 / 隐藏 / 删除)收进浮卡,取代退役的贴框浮条。
-      const selectedAnns = userBoxes.filter((b) => selectedIds.includes(b.id));
-      const allLocked = selectedAnns.length > 0 && selectedAnns.every((a) => a.is_locked);
-      const allHidden = selectedAnns.length > 0 && selectedAnns.every((a) => a.is_hidden);
-      const conversionSourceType = selectedAnns[0]?.geometry?.type;
-      const canBatchConvert = Boolean(
-        conversionSourceType &&
-        selectedAnns.every((item) => item.geometry?.type === conversionSourceType) &&
-        ["polygon", "multi_polygon", "raster_mask"].includes(conversionSourceType) &&
-        (conversionSourceType === "raster_mask" || imageMaskPersistenceMode === "native") &&
-        !selectedAnns.some((item) => item.is_locked),
-      );
-      children = (
-        <ImageBatchCardContent
-          count={selectionCount}
-          readOnly={isLocked}
-          allLocked={allLocked}
-          allHidden={allHidden}
-          onChangeClass={handleStartBatchChangeClass}
-          onJoin={handleJoinSelectedPolygons}
-          onToggleLock={() => handleBatchPatchFlag("is_locked")}
-          onToggleHidden={() => handleBatchPatchFlag("is_hidden")}
-          onDelete={handleBatchDelete}
-          onClear={() => setSelectedId(null)}
-          onConvert={canBatchConvert ? () => openAnnotationConversion(selectedIds) : undefined}
-        />
-      );
-    } else if (multi && stageKind === "video") {
-      // 视频多选:单帧框(video_bbox)走 selectedIds,给批量卡(改类 / 锁 / 隐藏 / 删除 + 聚合为轨迹);
-      // 轨迹多选走右栏 roster 的 selectedTrackIds,不进 selectedIds,浮卡保持精简占位。
-      const selectedAnns = visibleAnnotationsData.filter((a) => selectedIds.includes(a.id));
-      const allVideoBbox =
-        selectedAnns.length > 0 && selectedAnns.every((a) => a.geometry.type === "video_bbox");
-      if (allVideoBbox) {
-        const allLocked = selectedAnns.every((a) => a.is_locked);
-        const allHidden = selectedAnns.every((a) => a.is_hidden);
-        children = (
-          <VideoBoxBatchCardContent
-            count={selectionCount}
-            readOnly={isLocked}
-            allLocked={allLocked}
-            allHidden={allHidden}
-            onChangeClass={handleStartBatchChangeClass}
-            onToggleLock={() => handleBatchPatchFlag("is_locked")}
-            onToggleHidden={() => handleBatchPatchFlag("is_hidden")}
-            onDelete={handleBatchDelete}
-            onAggregate={() =>
-              handleVideoComposeTracks({
-                operation: "aggregate_bboxes",
-                annotationIds: selectedIds,
-                deleteSources: true,
-              })
-            }
-            onClear={() => setSelectedId(null)}
-          />
-        );
-      } else {
-        const sourceType = selectedAnns[0]?.geometry.type;
-        const sameConvertibleSource = Boolean(
-          sourceType &&
-          ["video_polygon", "video_track_polygon", "video_track_mask"].includes(sourceType) &&
-          selectedAnns.every((item) => item.geometry.type === sourceType) &&
-          !selectedAnns.some((item) => item.is_locked),
-        );
-        children = sameConvertibleSource ? (
-          <ConversionBatchCardContent
-            count={selectionCount}
-            sourceType={sourceType!}
-            readOnly={isLocked}
-            onConvert={() => openAnnotationConversion(selectedIds)}
-            onClear={() => setSelectedId(null)}
-          />
-        ) : (
-          <SelectionCardPlaceholder summary={`已选中 ${selectionCount} 个标注。`} />
-        );
-      }
-    } else if (multi) {
-      children = <SelectionCardPlaceholder summary={`已选中 ${selectionCount} 个标注。`} />;
-    } else if (selectedAiBox) {
-      // AI 预测分支(图片端专属):置信度条 + 来源/候选序号 + 采纳/精修/忽略,直连模型既有 handler。
-      children = (
-        <AIPredictionCardContent
-          box={selectedAiBox}
-          imageWidth={imageWidth}
-          imageHeight={imageHeight}
-          attributeSchema={toolView.attributeSchema}
-          readOnly={isLocked}
-          onAccept={acceptPredictionFromCard}
-          onReject={rejectPredictionFromCard}
-          onRefine={handleRefinePrediction}
-        />
-      );
-    } else if (stageKind === "video") {
-      if (ann && isAnyVideoSingleFrame(ann)) {
-        // 视频单帧标注 (bbox / polygon / polyline / rotated_bbox):不属任何轨迹、会被轨迹面板
-        // 过滤掉,改用专属单帧卡(帧定位 + 指标 + 属性)。v0.21.26 起覆盖全部单帧几何。
-        children = (
-          <VideoFrameBoxCardContent
-            annotation={ann}
-            imageWidth={imageWidth}
-            imageHeight={imageHeight}
-            fps={videoFps}
-            attributeSchema={toolView.attributeSchema}
-            readOnly={isLocked}
-            onSeekFrame={setVideoFrameIndex}
-            onChangeClass={handleStartChangeClass}
-            onDelete={handleDeleteBox}
-            onUpdateAttributes={handleUpdateAttributes}
-            onConvert={ann.geometry.type === "video_polygon" ? openAnnotationConversion : undefined}
-            onEditMask={isVideoMask(ann) ? () => requestVideoTool("mask") : undefined}
-          />
-        );
-      } else if (ann && (isVideoPointsTrack(ann) || isVideoMaskTrack(ann))) {
-        // v0.21.26 · 点集轨迹 (polygon / polyline track):简化卡(指标 + 改类 / 显隐 / 锁 / 删整条),
-        // 取代此前空白卡。完整关键帧编辑仍归 v0.21.20 多几何 track epic,不复用 bbox 轨迹卡。
-        children = (
-          <VideoPointsTrackCardContent
-            annotation={ann}
-            frameIndex={videoFrameIndex}
-            imageWidth={imageWidth}
-            imageHeight={imageHeight}
-            fps={videoFps}
-            readOnly={isLocked}
-            hidden={hiddenVideoTrackIds.has(ann.geometry.track_id)}
-            locked={lockedVideoTrackIds.has(ann.geometry.track_id)}
-            onSeekFrame={setVideoFrameIndex}
-            onChangeClass={handleStartChangeClass}
-            onDelete={handleDeleteBox}
-            onToggleHidden={toggleHiddenVideoTrack}
-            onToggleLock={toggleLockedVideoTrack}
-            onEditMask={isVideoMaskTrack(ann) ? () => requestVideoTool("mask-track") : undefined}
-            onPropagate={isVideoMaskTrack(ann) ? () => openPropagateDialog(ann) : undefined}
-            onConvert={
-              ann.geometry.type === "video_track_polygon" || isVideoMaskTrack(ann)
-                ? openAnnotationConversion
-                : undefined
-            }
-            maskActions={isVideoMaskTrack(ann) ? videoMaskKeyframeActions : undefined}
-          />
-        );
-      } else if (videoBatchTracks.length >= 2) {
-        // v0.21.16 WS3 · 多选 ≥2 条轨迹 → 浮卡渲染批量卡 (与右栏 roster 批量条对等), 不再退化为
-        // 「最后选中那条」的单卡。选择态由 roster 实例上报的 videoBatchTracks 镜像驱动。
-        const ids = videoBatchTracks.map((t) => t.id);
-        const sameClass =
-          videoBatchTracks.length === 2 &&
-          videoBatchTracks[0].class_name === videoBatchTracks[1].class_name;
-        const canMerge = sameClass;
-        const canJoin = sameClass && !trackRangesOverlap(videoBatchTracks[0], videoBatchTracks[1]);
-        const countHint = `需恰好选中 2 条轨迹（当前 ${videoBatchTracks.length} 条）`;
-        const mergeReason = canMerge
-          ? null
-          : videoBatchTracks.length !== 2
-            ? countHint
-            : "两条轨迹需同类";
-        const joinReason = canJoin
-          ? null
-          : videoBatchTracks.length !== 2
-            ? countHint
-            : !sameClass
-              ? "两条轨迹需同类"
-              : "两条轨迹的可见帧区间不能重叠";
-        const setBatchHidden = (hidden: boolean) =>
-          videoBatchTracks.forEach((t) => {
-            if (hiddenVideoTrackIds.has(t.geometry.track_id) !== hidden)
-              toggleHiddenVideoTrack(t.geometry.track_id);
-          });
-        const setBatchLocked = (locked: boolean) =>
-          videoBatchTracks.forEach((t) => {
-            if (lockedVideoTrackIds.has(t.geometry.track_id) !== locked)
-              toggleLockedVideoTrack(t.geometry.track_id);
-          });
-        // 全选中才算「已隐藏 / 已锁定」→ 切换按钮翻转为反向动作; 部分选中时仍显示正向动作(与图片侧一致)。
-        const allTracksHidden = videoBatchTracks.every((t) =>
-          hiddenVideoTrackIds.has(t.geometry.track_id),
-        );
-        const allTracksLocked = videoBatchTracks.every((t) =>
-          lockedVideoTrackIds.has(t.geometry.track_id),
-        );
-        children = (
-          <VideoTrackBatchCardContent
-            count={videoBatchTracks.length}
-            readOnly={isLocked}
-            classes={classes}
-            canMerge={canMerge}
-            canJoin={canJoin}
-            mergeDisabledReason={mergeReason}
-            joinDisabledReason={joinReason}
-            allHidden={allTracksHidden}
-            allLocked={allTracksLocked}
-            onChangeClass={(cls) => handleVideoBatchRename(videoBatchTracks, cls)}
-            onBatchTrack={
-              isLocked
-                ? undefined
-                : () => openPropagateDialog(videoBatchTracks as TrackerSourceAnnotation[])
-            }
-            onToggleHidden={() => setBatchHidden(!allTracksHidden)}
-            onToggleLock={() => setBatchLocked(!allTracksLocked)}
-            onMerge={() =>
-              handleVideoComposeTracks({ operation: "merge_tracks", annotationIds: ids })
-            }
-            onJoin={(gapMode: VideoTrackGapMode) =>
-              handleVideoComposeTracks({ operation: "join_tracks", annotationIds: ids, gapMode })
-            }
-            onDelete={() => {
-              void (async () => {
-                const confirmed = await confirmDialog({
-                  tone: "danger",
-                  title: `删除 ${videoBatchTracks.length} 条轨迹？`,
-                  confirmLabel: "删除",
-                });
-                if (!confirmed) return;
-                // 等待决定期间部分轨迹可能已被删除;过滤后仍非空才提交 (删除已消失项只会报错)。
-                const stillPresent = videoBatchTracks.filter((t) =>
-                  annotationsRef.current.some((ann) => ann.id === t.id),
-                );
-                if (stillPresent.length > 0) handleVideoBatchDelete(stillPresent);
-              })();
-            }}
-            onClear={() => handleSelectBox(null)}
-          />
-        );
-      } else if (ann && isVideoTrack(ann)) {
-        // 视频 bbox 轨迹:单轨迹两层信息卡(轨迹整体 + 当前帧 + 关键帧表/导航 + 属性),
-        // 共享同一构建器/回调;轨迹清单与多选批量留在右栏 roster。
-        children = renderVideoTrackSidebar("current", "card");
-      } else {
-        // v0.21.26 · 兜底:未被上面任何分支覆盖的视频几何也给占位摘要 (类别 + type),
-        // 不再落到 renderVideoTrackSidebar 的 null 空卡。
-        children = (
-          <SelectionCardPlaceholder
-            summary={ann ? `类别 ${ann.class_name} · ${ann.geometry.type}` : "已选中 1 个标注。"}
-          />
-        );
-      }
-    } else if (ann && stageKind === "image") {
-      children = (
-        <ImageSelectionCardContent
-          annotation={ann}
-          imageWidth={imageWidth}
-          imageHeight={imageHeight}
-          attributeSchema={toolView.attributeSchema}
-          readOnly={isLocked}
-          onChangeClass={handleStartChangeClass}
-          onToggleFlag={handlePatchShapeFlag}
-          onDelete={handleDeleteBox}
-          onUpdateAttributes={handleUpdateAttributes}
-          rasterMaskStatus={imageRasterMasks.statusById.get(ann.id)}
-          onRetryRasterMask={imageRasterMasks.retry}
-          onEditRasterMask={
-            imageMaskPersistenceMode === "native" ? enterImageRasterMaskEdit : undefined
-          }
-          onConvertRegionToRaster={
-            imageMaskPersistenceMode === "native" ? openAnnotationConversion : undefined
-          }
-          onConvertRasterToRegion={openAnnotationConversion}
-        />
-      );
-    } else {
-      children = (
-        <SelectionCardPlaceholder
-          summary={ann ? `类别 ${ann.class_name} · ${ann.geometry.type}` : "已选中 1 个标注。"}
-        />
-      );
-    }
+      : (selectedAiBox?.cls ?? selectedAnnotationForPanel?.class_name ?? "选中标注");
+    // 内容分派（含批量转换资格、轨迹合并/拼接资格等本地判定）归 shell 组件；
+    // 装配层只提供标题、窗口位置与折叠偏好。
+    const children = (
+      <SelectionCardContent
+        stageKind={stageKind}
+        isLocked={isLocked}
+        multi={multi}
+        count={selectionCount}
+        ann={selectedAnnotationForPanel}
+        selectedAiBox={selectedAiBox}
+        selectedIds={selectedIds}
+        imageWidth={imageWidth}
+        imageHeight={imageHeight}
+        videoFps={videoFps}
+        videoFrameIndex={videoFrameIndex}
+        setVideoFrameIndex={setVideoFrameIndex}
+        attributeSchema={toolView.attributeSchema}
+        imageMaskPersistenceMode={imageMaskPersistenceMode}
+        userBoxes={userBoxes}
+        visibleAnnotations={visibleAnnotationsData}
+        videoBatchTracks={videoBatchTracks}
+        annotationsSnapshot={annotationsRef.current}
+        classes={classes}
+        hiddenVideoTrackIds={hiddenVideoTrackIds}
+        lockedVideoTrackIds={lockedVideoTrackIds}
+        rasterMaskStatus={
+          selectedAnnotationForPanel
+            ? imageRasterMasks.statusById.get(selectedAnnotationForPanel.id)
+            : undefined
+        }
+        rasterMaskRetry={imageRasterMasks.retry}
+        videoMaskKeyframeActions={videoMaskKeyframeActions}
+        renderTrackCard={renderVideoTrackSidebar("current", "card")}
+        setSelectedId={setSelectedId}
+        handleSelectBox={handleSelectBox}
+        requestVideoTool={requestVideoTool}
+        onStartBatchChangeClass={handleStartBatchChangeClass}
+        onJoinSelectedPolygons={handleJoinSelectedPolygons}
+        onBatchPatchFlag={handleBatchPatchFlag}
+        onBatchDelete={handleBatchDelete}
+        onVideoBatchDelete={handleVideoBatchDelete}
+        onBatchTrack={() => openPropagateDialog(videoBatchTracks)}
+        onComposeTracks={handleVideoComposeTracks}
+        onVideoBatchRename={handleVideoBatchRename}
+        onStartChangeClass={handleStartChangeClass}
+        onDeleteBox={handleDeleteBox}
+        onUpdateAttributes={handleUpdateAttributes}
+        onPatchShapeFlag={handlePatchShapeFlag}
+        acceptPrediction={acceptPredictionFromCard}
+        rejectPrediction={rejectPredictionFromCard}
+        refinePrediction={handleRefinePrediction}
+        openAnnotationConversion={openAnnotationConversion}
+        enterImageRasterMaskEdit={enterImageRasterMaskEdit}
+        toggleHiddenVideoTrack={toggleHiddenVideoTrack}
+        toggleLockedVideoTrack={toggleLockedVideoTrack}
+        openPropagateDialog={(source) =>
+          openPropagateDialog(
+            Array.isArray(source)
+              ? (source as TrackerSourceAnnotation[])
+              : (source as TrackerSourceAnnotation),
+          )
+        }
+      />
+    );
     return {
       title,
       position: floatingSelectionPosition,
