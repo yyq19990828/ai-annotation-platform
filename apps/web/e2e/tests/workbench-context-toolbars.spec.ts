@@ -67,29 +67,41 @@ function removeTestImages(taskId: string, annotationId?: string) {
       "python",
       "-c",
       `
-import asyncio, os, sys, uuid
+import asyncio, os, re, sys, uuid
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import create_async_engine
 from app.services.storage import StorageService
 task_id = str(uuid.UUID(sys.argv[1]))
+annotation_id = str(uuid.UUID(sys.argv[2])) if len(sys.argv) > 2 else None
 url = make_url(os.environ["PLAYWRIGHT_E2E_DATABASE_URL"])
 assert (url.database or "").endswith(("_e2e", "_test"))
+def assert_absent(storage, bucket, key):
+    assert not storage.client.list_objects_v2(Bucket=bucket, Prefix=key).get("Contents"), f"leftover {bucket}/{key}"
 async def cleanup():
     engine = create_async_engine(url)
+    # One shared client for every deletion and postcondition check in this run.
+    storage = StorageService()
     try:
         async with engine.begin() as connection:
             file_path = await connection.scalar(text("SELECT file_path FROM tasks WHERE id=:id"), {"id": task_id})
-        storage = StorageService()
-        # Only this test's replacement PNG (inside the task's owned prefix) is
-        # removed; the seed SVG itself is left to fixture teardown.
-        if file_path and os.path.basename(file_path).startswith("context-toolbar-"):
-            storage.client.delete_object(Bucket=storage.datasets_bucket, Key=file_path)
+        if file_path:
+            # Delete only this test's replacement PNG, at the exact owned
+            # namespace and exact taskId filename derived from the row; the seed
+            # SVG is left to fixture teardown.
+            replacement = re.fullmatch(
+                rf"e2e/owned/([a-z0-9]{{4,12}})/image/context-toolbar-{re.escape(task_id)}[.]png",
+                file_path,
+            )
+            if replacement:
+                storage.client.delete_object(Bucket=storage.datasets_bucket, Key=file_path)
+                assert_absent(storage, storage.datasets_bucket, file_path)
+        if annotation_id is not None:
+            key = f"roi-crops/secondary/{annotation_id}/0.jpg"
+            storage.client.delete_object(Bucket=storage.import_bucket, Key=key)
+            assert_absent(storage, storage.import_bucket, key)
     finally:
         await engine.dispose()
-if len(sys.argv) > 2:
-    annotation_id = str(uuid.UUID(sys.argv[2]))
-    StorageService().client.delete_object(Bucket=StorageService().import_bucket, Key=f"roi-crops/secondary/{annotation_id}/0.jpg")
 asyncio.run(cleanup())
 `,
       taskId,

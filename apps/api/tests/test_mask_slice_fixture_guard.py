@@ -29,9 +29,12 @@ GuardError = _module.GuardError
 assert_owned_disposable_bucket = _module.assert_owned_disposable_bucket
 
 
-def _resources(root: Path, *, owner: str = "aap-worktree:abc:e2e:def") -> dict:
+def _resources(
+    root: Path, *, owner: str = "aap-worktree:abc:e2e:def", mode: str = "e2e"
+) -> dict:
     return {
         "root": str(root),
+        "mode": mode,
         "owner": owner,
         "database": "aap_wt_abc_e2e",
         "buckets": {"MINIO_BUCKET": "aap-wt-abc-e2e-annotations"},
@@ -64,14 +67,17 @@ def test_worktree_rejects_unrecognized_modes(mode: str) -> None:
         )
 
 
-def test_worktree_rejects_foreign_owner_tag() -> None:
+@pytest.mark.parametrize(
+    "owner_tag", ["aap-worktree:other:e2e:zzz", "malformed", "aap-worktree:abc"]
+)
+def test_worktree_rejects_foreign_or_malformed_owner_tag(owner_tag: str) -> None:
     with pytest.raises(GuardError):
         assert_owned_disposable_bucket(
             mode="e2e",
             resources=_resources(_repo_root()),
             database="aap_wt_abc_e2e",
             bucket="aap-wt-abc-e2e-annotations",
-            owner_tag="aap-worktree:other:e2e:zzz",
+            owner_tag=owner_tag,
         )
 
 
@@ -83,6 +89,29 @@ def test_worktree_rejects_missing_owner_tag() -> None:
             database="aap_wt_abc_e2e",
             bucket="aap-wt-abc-e2e-annotations",
             owner_tag=None,
+        )
+
+
+@pytest.mark.parametrize("owner", [None, ""])
+def test_worktree_rejects_missing_or_empty_manifest_owner(owner: str | None) -> None:
+    with pytest.raises(GuardError, match="no owner tag"):
+        assert_owned_disposable_bucket(
+            mode="e2e",
+            resources=_resources(_repo_root(), owner=owner),
+            database="aap_wt_abc_e2e",
+            bucket="aap-wt-abc-e2e-annotations",
+            owner_tag="aap-worktree:abc:e2e:def",
+        )
+
+
+def test_worktree_rejects_manifest_from_another_mode() -> None:
+    with pytest.raises(GuardError, match="another mode"):
+        assert_owned_disposable_bucket(
+            mode="e2e",
+            resources=_resources(_repo_root(), mode="test"),
+            database="aap_wt_abc_e2e",
+            bucket="aap-wt-abc-e2e-annotations",
+            owner_tag="aap-worktree:abc:e2e:def",
         )
 
 

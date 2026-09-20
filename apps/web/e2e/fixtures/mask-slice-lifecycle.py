@@ -48,8 +48,13 @@ def assert_owned_disposable_bucket(
             raise GuardError(f"worktree GC helper refuses mode {mode!r}")
         if not resources:
             raise GuardError("worktree mode requires the active resources manifest")
+        if resources.get("mode") != mode:
+            raise GuardError("resources manifest was created for another mode")
         if resources.get("root") != str(_REPO_ROOT):
             raise GuardError("resources manifest belongs to another checkout")
+        owner = resources.get("owner")
+        if not owner:
+            raise GuardError("resources manifest has no owner tag")
         if database != resources.get("database"):
             raise GuardError("database does not match the active worktree resource")
         if bucket != (resources.get("buckets") or {}).get("MINIO_BUCKET"):
@@ -58,7 +63,7 @@ def assert_owned_disposable_bucket(
             owned = require_owner(
                 "MINIO_BUCKET",
                 {"owner": owner_tag} if owner_tag is not None else None,
-                str(resources.get("owner")),
+                str(owner),
             )
         except WorktreeError as exc:
             raise GuardError(str(exc)) from exc
