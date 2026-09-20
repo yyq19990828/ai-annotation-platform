@@ -208,7 +208,7 @@ test("注入 token 跳 UI 登录", async ({ page, seed }) => {
 `current_database()`，数据库名不以 `_e2e` 或 `_test` 结尾时拒绝所有
 seed/login/cleanup 请求。production 即使设置开关也不挂载路由。
 
-**fixture 用法**：`reset()` 返回固定结构（admin/annotator/reviewer 三个邮箱 + 项目 id + 5 个任务 id）；密码统一 `Test1234`。新增数据用 `apps/api/tests/factory.py` 的 `create_user / create_project / create_task / create_batch`。
+**fixture 用法**：`reset()` 返回固定结构（admin/annotator/reviewer 三个邮箱 + 项目 id + 5 个任务 id）；密码统一 `Test1234`。新增数据用 `apps/api/tests/factory.py` 的 `create_user / create_project / create_task / create_batch / create_membership`。用户工厂只创建平台身份；`create_membership` 显式创建项目成员与职责，两者分开，工厂不会从平台角色推断 membership。批量 `add_all`、需要跨会话并发 seed 或固定 `id` / `version` 的场景仍按需内联构造。
 
 筛选验收使用 `seed.filtering()`，它先重置基础 fixture，再返回类型化 manifest：同对象/跨对象属性、必填条件嵌套组、检测与追踪候选组合、101 项分页、Scene 逻辑轨迹和管理列表数据。`e2e/fixtures/filtering.ts` 提供同一入口。视频预测中的最小 shape 只验证指标；工作台几何交互通过产品预测导入 API 添加有效的带帧候选。点云 fixture 包含真实 PCD 字节和可解析的相机内外参。
 
