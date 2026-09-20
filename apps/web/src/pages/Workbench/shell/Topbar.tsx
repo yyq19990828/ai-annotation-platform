@@ -200,7 +200,7 @@ export function Topbar({
           event.stopPropagation();
         }
       }}
-      className="h-7 min-w-0 w-32 max-w-full rounded border border-border bg-card px-2 text-xs text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+      className="h-7 min-w-0 w-32 max-w-full rounded border border-border bg-card px-2 text-xs text-foreground focus-visible:ring-2 focus-visible:ring-ring @max-[1000px]:hidden"
     >
       <option value="">选择分段</option>
       {videoSegments.map((segment) => (
@@ -263,8 +263,10 @@ export function Topbar({
           </span>
         </div>
 
-        {/* 中：任务标识 + 任务导航 + 状态相关主操作（整体居中） */}
-        <div className="flex flex-1 items-center justify-center gap-1.5 min-w-0 [&>button]:shrink-0 @max-[700px]:gap-0.5 @max-[700px]:[&>button]:w-7 @max-[700px]:[&>button]:p-0">
+        {/* 中：任务标识 + 任务导航 + 状态相关主操作（整体居中）。
+             `min-w-max` 让中段永不压缩到内容以下；空间不足时由左侧项目名先收缩，
+             避免 shrink-0 的元数据/按钮溢出压到相邻控件（见 workbench-topbar.spec）。 */}
+        <div className="flex flex-1 min-w-max items-center justify-center gap-1.5 [&>button]:shrink-0 @max-[1000px]:[&>button]:w-7 @max-[1000px]:[&>button]:p-0 @max-[700px]:gap-0.5">
           <div className="flex items-center gap-2.5 min-w-0 @max-[700px]:hidden">
             <span className="mono shrink-0 text-xs text-muted-foreground @max-[1400px]:hidden">
               {projectDisplayId}
@@ -280,7 +282,7 @@ export function Topbar({
               {task?.file_name ?? "—"}
             </span>
             {indexLabel && (
-              <span className="mono shrink-0 px-2 py-0.5 text-xs font-medium text-muted-foreground tracking-[0.2px] bg-muted border border-border rounded-full">
+              <span className="mono shrink-0 px-2 py-0.5 text-xs font-medium text-muted-foreground tracking-[0.2px] bg-muted border border-border rounded-full @max-[900px]:hidden">
                 {indexLabel}
               </span>
             )}
@@ -322,7 +324,7 @@ export function Topbar({
                 title="通过 (A)"
               >
                 <Icon name="check" size={13} />
-                <span className="@max-[700px]:hidden">通过</span>
+                <span className="@max-[1000px]:hidden">通过</span>
               </Button>
               <Button
                 variant="danger"
@@ -334,7 +336,7 @@ export function Topbar({
                 title="退回 (R)"
               >
                 <Icon name="x" size={12} />
-                <span className="@max-[700px]:hidden">退回</span>
+                <span className="@max-[1000px]:hidden">退回</span>
               </Button>
             </>
           ) : isReview ? (
@@ -347,7 +349,7 @@ export function Topbar({
               title={canWithdraw ? "撤回提交，回到编辑态" : "审核员已介入，无法撤回"}
             >
               <Icon name="chevLeft" size={13} />
-              <span className="@max-[700px]:hidden">撤回提交</span>
+              <span className="@max-[1000px]:hidden">撤回提交</span>
             </Button>
           ) : isCompleted ? (
             <Button
@@ -359,7 +361,7 @@ export function Topbar({
               title="重开任务，回到编辑态"
             >
               <Icon name="edit" size={13} />
-              <span className="@max-[700px]:hidden">继续编辑</span>
+              <span className="@max-[1000px]:hidden">继续编辑</span>
             </Button>
           ) : (
             <>
@@ -373,7 +375,7 @@ export function Topbar({
                 data-testid="workbench-submit"
               >
                 <Icon name="check" size={13} />
-                <span className="@max-[700px]:hidden">{submitLabel}</span>
+                <span className="@max-[1000px]:hidden">{submitLabel}</span>
               </Button>
               {onSkip && (
                 <Button
@@ -385,7 +387,7 @@ export function Topbar({
                   data-testid="workbench-skip"
                 >
                   <Icon name="x" size={12} />
-                  <span className="@max-[700px]:hidden">跳过</span>
+                  <span className="@max-[1000px]:hidden">跳过</span>
                 </Button>
               )}
             </>
@@ -400,7 +402,7 @@ export function Topbar({
             <Icon name="chevRight" size={13} />
           </Button>
 
-          <div className="flex shrink-0 items-center gap-1.5 @max-[700px]:hidden">
+          <div className="flex shrink-0 items-center gap-1.5 @max-[1000px]:hidden">
             {smartItems.length > 0 && (
               <DropdownMenu
                 items={smartItems}
@@ -500,10 +502,10 @@ export function Topbar({
               <NotificationsPopover navigate={onNotificationNavigate} />
             </Suspense>
           )}
-          <div className="flex items-center gap-1.5 @max-[700px]:hidden">
+          <div className="flex items-center gap-1.5 @max-[1000px]:hidden">
             {/* 与主界面 TopBar 一致:版本号可点击,随时查看当前版本更新内容。
                 窄屏工作台顶栏已无横向余量(见 workbench-topbar.spec 的防重叠断言),
-                故与文件名同断点收起;≤700px 时改由「更多工具」菜单提供入口。 */}
+                故随中段压缩一并收起;≤1000px 时改由「更多工具」菜单提供入口。 */}
             <Button
               variant="ghost"
               size="sm"
@@ -550,7 +552,7 @@ export function Topbar({
               </Button>
             )}
           </div>
-          <div className="hidden @max-[700px]:block">
+          <div className="hidden @max-[1000px]:block">
             <DropdownMenu
               footer={videoSegmentSelect}
               items={[
