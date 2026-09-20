@@ -13,7 +13,7 @@
 3. **ReviewPage 纯 URL 规则下沉 [V]**：新增 `reviewUrlState.ts`（读取 / 比较作用域、选批次、清 assignee、回概览、开合任务抽屉），页面只保留装配；保留 P3 已论证的异步迟到响应 mock 边界。UsersPage 去掉重复的 `ApiError` 假类；其 MSW 化为**有据延后**（§3.3）。
 4. **provenance 清理 [V]**：`gpu_arbitration/ledger` 6 处「Extracted verbatim from legacy …」叙事删除，`check_removed_service_modules.mjs` 的 5 项 `PROVENANCE_FILES` 白名单同步删除（扫描器保持绿）；该扫描器 allowlist 里不存在的根路径改为真实路径 `apps/api/scripts/check_removed_service_modules.py`。SDK / scripts / config / instruction 的版本叙事按「当前契约保留、历史叙事删除」清理。
 5. **两条 P4 复核候选均为有据 KEEP [V]**：通知「列表 vs 投递」谓词差异被请求期认证挡住（停用账号无法到达列表路径）；`mask_repair_rollback` 的信号取消不回填领域行是有意契约。均未改语义。
-6. **测试清单缺口修复 [V]**：TSV 从 1042 行补录到 **1127** 行（ML backend 70 + 共享 5 + P1/P3/P4 新增 4 + 截图 spec 4 + 本阶段自产测试 2），并在最终提交 HEAD 上以双向比对证明无残余缺口；`protocol_v2`（163 passed）与`mask_utils`（41 passed）的 CPU 实测补齐。
+6. **测试清单缺口修复 [V]**：TSV 从 1042 行补录到 **1128** 行（ML backend 70 + 共享 5 + P1/P3/P4 新增 4 + 截图 spec 4 + 本阶段自产测试 2），并在最终提交 HEAD 上以双向比对证明无残余缺口；`protocol_v2`（163 passed）与`mask_utils`（41 passed）的 CPU 实测补齐。
 7. **文档 [V]**：新增 `docs-site/dev/concepts/repository-map.md`（模块归属与调用链），`docs-site/dev/testing.md` 增加分层归属与 ML/shared 未接线事实。
 
 ## 1. seed：平台身份与项目职责（缺陷修复 + 独立提交）
@@ -124,9 +124,9 @@ pnpm dev:worktree -- exec --mode test -- sh -c \
 
 ## 7. 测试清单补录与共享包 CPU 实测
 
-- TSV **1127** 行（ci-wired 1023 / script-wired 15 / not-wired 89），分层计数可加和；双向比对（tracked 测试路径 ↔ 清单，显式排除 vendor / fixtures / conftest / `__init__` / generated / node_modules / checkpoints）在**最终提交 HEAD** 上重跑后**无残余缺口**；[26§9] 记录了缺口成因分类。
-- 补录明细：ML backend 70（合并 2 个重复套件后的当前路径）、`backend_runtime` 下沉套件 1（`replacement` 列记录 old→new）、`protocol_v2` 4、P1/P4 新增后端测试 2、P3 新增前端测试 2、截图 spec 4、**本阶段自产测试 2**（`test_seed_demo_memberships.py`、`reviewUrlState.test.ts`，收口时回填）。
-- 收口比对同时确认清单中 5 行支持文件（`apps/api/tests/{conftest,factory,_avatar_storage,__init__}.py`、`scripts/test-orca-worktree-setup.py`）是 P0 已登记的测试基建 / CI 可执行入口，不属于发现缺口（[26§9.1]）。
+- TSV **1128** 行（ci-wired 1024 / script-wired 15 / not-wired 89），分层计数可加和；双向比对（tracked 测试路径 ↔ 清单，显式排除 vendor / fixtures / conftest / `__init__` / generated / node_modules / checkpoints）在**最终提交 HEAD** 上重跑后**无残余缺口**；[26§9] 记录了缺口成因分类。
+- 补录明细：ML backend 70（合并 2 个重复套件后的当前路径）、`backend_runtime` 下沉套件 1（`replacement` 列记录 old→new）、`protocol_v2` 4、P1/P4 新增后端测试 2、P3 新增前端测试 2、截图 spec 4、**本阶段自产测试 2**（`test_seed_demo_memberships.py`、`reviewUrlState.test.ts`，收口时回填）、**P7 新建 1**（`test_seed_owned.py`，rebase 后回填）。
+- 收口比对确认清单中 4 行测试支撑模块（`apps/api/tests/{conftest,factory,_avatar_storage,__init__}.py`）是 P0 已登记的测试基建，不属于发现缺口（[26§9.1]）。`scripts/test-orca-worktree-setup.py` 是**真正的可运行测试脚本**（`ci.yml` 直接 `uv run python`，非 unittest discover），已登记为 `worktree-runtime` / `ci-wired`；首版说明误列为支撑文件，已在发现模式补上连字符 `test-*.py` 后更正，总数仍为 1127。
 - 共享包 CPU 实测：`apps/_shared/protocol_v2` 163 passed / 0 skip；`apps/_shared/mask_utils` 41 passed / 0 skip（各自 `.venv`，`pytest -q`）。
 
 ## 7.1 历史死链清理（`--historical-links` 由红转绿）
@@ -143,22 +143,25 @@ pnpm dev:worktree -- exec --mode test -- sh -c \
 
 ## 9. 提交与复核
 
-| 提交                        | 内容                                                                                                                           |
-| --------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
-| `7d07ac48e`                 | chore: provenance/守护脚本/指令清理（ledger docstrings、mjs allowlist、CLAUDE.md、SDK、config/CI 注释、`test_v0_7_6.py` 改名） |
-| `ccca27993`                 | fix(api): seed 平台身份与显式项目职责 + 聚焦测试                                                                               |
-| `6bc6d5916`                 | fix(web): AdminPeople 平台身份徽章 + 回归                                                                                      |
-| `a54cd17c9`                 | refactor(web): Review 纯 URL 下沉 + UsersPage 去重桩                                                                           |
-| `bfa86247f`                 | docs: repository-map、testing 分层、26/27/README/TSV 台账与本文件                                                              |
-| `ff9fc1b88`                 | chore: 删除旧版本命名测试文件路径 `apps/api/tests/test_v0_7_6.py`                                                              |
-| `本提交`（doc 35 所在提交） | docs: TSV 收口至 1127 行（补录 2 个自产测试）+ 历史死链清理（`--historical-links` 绿）+ 本文件收口更新                         |
+| 提交                        | 内容                                                                                                                                         |
+| --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `33cb40970`                 | chore: provenance/守护脚本/指令清理（ledger docstrings、mjs allowlist、CLAUDE.md、SDK、config/CI 注释、`test_v0_7_6.py` 改名）               |
+| `a6bdf3c94`                 | fix(api): seed 平台身份与显式项目职责 + 聚焦测试                                                                                             |
+| `dc782f793`                 | fix(web): AdminPeople 平台身份徽章 + 回归                                                                                                    |
+| `e7570f40e`                 | refactor(web): Review 纯 URL 下沉 + UsersPage 去重桩                                                                                         |
+| `60add232f`                 | docs: repository-map、testing 分层、26/27/README/TSV 台账与本文件                                                                            |
+| `1518ee254`                 | chore: 删除旧版本命名测试文件路径 `apps/api/tests/test_v0_7_6.py`                                                                            |
+| `4d0244dd3`                 | docs: TSV 收口至 1127 行（补录 2 个自产测试）+ 历史死链清理（`--historical-links` 绿）+ 本文件收口更新                                       |
+| `本提交`（doc 35 所在提交） | docs: 把 `scripts/test-orca-worktree-setup.py` 归为可运行测试 + rebase 到 root `b8b45797e` 后补录 P7 的 `test_seed_owned.py`（合计 1128 行） |
 
 `git diff --check` 通过；`node scripts/check-doc-version-prefix.mjs --staged` 无发现；pre-commit（trailing-whitespace / end-of-file / prettier / ruff / ruff-format）通过。
+
+> 本表 SHA 为 P6 分支 rebase 到已接受 P7 root `b8b45797e` **之后**的值（rebase 无冲突；旧 SHA 已随变基重写）。P7 引入的 `apps/api/tests/test_seed_owned.py` 已在 rebase 后回填清单（见 §7）。
 
 ## 10. 未完成与归属
 
 - **P5（未动）**：Workbench 收敛及其 `workbench-shell.md` / `video-annotation-workbench.md` 文档；`repository-map.md` 对 Workbench 只描述当前装配路径，最终归属待 P5 交付后在台账对账。
-- **P7（未动）**：`apps/web/e2e/**`、`_test_seed*`、seed 路由测试与浏览器夹具文档；断言/超时失败家族分诊。
+- **P7（已接受并 rebase）**：P6 分支已 rebase 到 P7 root `b8b45797e`，双方改动无冲突；P7 的 `_test_seed*`、`apps/web/e2e/**` 与新增 `test_seed_owned.py` 保持 P7 语义，P6 未改其文件（仅把 `test_seed_owned.py` 回填进共享测试清单）。
 - **P8（未动）**：workflow / planner / 构建变更；交接输入：89 个 not-wired 文件（含 `protocol_v2` 4 个、依赖 `numpy` 仅 mask 编解码用）。历史死链已在本阶段清理：`check_removed_service_modules.mjs` 默认与 `--historical-links` 模式均 exit 0（[35§7.1]）。
 - **UsersPage 整体 MSW 化**：有据延后（§3.3）。
 - **`test_project_attribute_schema_and_batch_reset.py` 的硬编码 `display_id=T-{i}`**：该文件与 `next_display_id` 的 `T-<seq>` 命名在同一库上互斥，属既有测试脆弱性（P2 验收库当时为空库）；本轮只记录，不夹带改测试语义。

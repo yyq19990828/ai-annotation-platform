@@ -101,7 +101,7 @@
 
 **清单级发现（P0-A 写“4 个”但列 5 个名字的校正）**：真实情况是 `scripts/` 下 4 个 `.test.mjs`，其中 3 个接入 CI，`image-reference-utils.test.mjs` 未接入；`apps/web/scripts/` 下的测试另有归属——`media-derivation.test.mjs` 由 `node --test`（npm script）运行且被 vitest 排除，其余 4 个（check-bundle-size、video-bench、video-request-errors、video-timeline-seek）为 vitest 风格、被 vitest 收集（[V] `vite.config.ts` test.exclude L84 及注释），随 CI Frontend verification 运行。初稿“两个未接入 CI”的说法就此修正。
 
-**机器可读测试文件清单**：`docs/research/data/26-repository-test-file-inventory.tsv`（P6 收口后 1127 个测试文件，列 `path/layer/runner/dependency/decision/reason/replacement/status`；decision 一律 `KEEP`、reason 一律 `pending-review`，P0 不做删除决定；status 为静态接线状态：ci-wired 1023 / script-wired 15 / not-wired 89。补录范围与分层计数见 §9）。由短脚本对 `git ls-files` 做确定性模式发现生成（只读，未执行任何测试）；TSV 路径集合与独立 `git ls-files` 多模式计数逐行比对一致。
+**机器可读测试文件清单**：`docs/research/data/26-repository-test-file-inventory.tsv`（P6 收口后 1128 个测试文件，列 `path/layer/runner/dependency/decision/reason/replacement/status`；decision 一律 `KEEP`、reason 一律 `pending-review`，P0 不做删除决定；status 为静态接线状态：ci-wired 1024 / script-wired 15 / not-wired 89。补录范围与分层计数见 §9）。由短脚本对 `git ls-files` 做确定性模式发现生成（只读，未执行任何测试）；TSV 路径集合与独立 `git ls-files` 多模式计数逐行比对一致。
 
 **发现口径与限制**：仅文件级发现，不枚举测试函数/参数化用例，不含执行结果、耗时或历史失败类型；只覆盖已知名单（CI workflow 与 package.json 命令引用的模式 + `apps/_shared` 两处 tests 目录），命名不符这些模式的测试文件会漏报；fixtures/conftest/helper 不计入。P0 时点的 not-wired 14 个文件是 `apps/_shared/backend_runtime/tests`（8）、`apps/_shared/mask_utils/tests`（5）与 `scripts/image-reference-utils.test.mjs`（1）；P6 补录后的完整接线状态见 §9。
 
@@ -289,11 +289,28 @@ ml-backend 70 / ml-backend-shared 13 / ml-examples 2 / python-sdk 25 /
 repo-scripts 4 / screenshots-tooling 12 / worktree-runtime 8；
 接线状态 ci-wired 1023 / script-wired 15 / not-wired 89，分层与接线计数均可加和。
 
-**支持文件口径**：清单沿用 P0 的「fixtures/conftest/helper 不计入」发现规则，但保留了
-P0 时点已写入的 5 行支持文件（`apps/api/tests/{conftest,factory,_avatar_storage,__init__}.py`
-与 `scripts/test-orca-worktree-setup.py`）——前四者是 P0 复核时人工登记的测试基建行，
-后者是 CI 通过 `unittest discover` 实际运行的可执行入口脚本。双向比对在发现侧显式排除
-这些支持文件，因此它们**不是缺口**；本阶段不改这 5 行的归类。
+rebase 到已接受的 P7 root（`b8b45797e`）后再次比对，P7 新建的后端回归
+`apps/api/tests/test_seed_owned.py`（owned 种子夹具契约，15 例）同样未回填，已补录为
+backend-api / ci-wired。最终合计 **1128** 行：backend-api 363 / docs-tooling 2 /
+e2e-browser 67 / frontend-tooling 5 / frontend-unit 552 / mask-utils-shared 5 /
+ml-backend 70 / ml-backend-shared 13 / ml-examples 2 / python-sdk 25 /
+repo-scripts 4 / screenshots-tooling 12 / worktree-runtime 8；
+接线状态 ci-wired 1024 / script-wired 15 / not-wired 89，分层与接线计数均可加和。
+
+**支持文件与可执行脚本口径**：清单沿用 P0 的「fixtures/conftest/helper 不计入」发现规则，
+保留了 P0 时点已写入的 4 行测试支撑模块：
+`apps/api/tests/{conftest,factory,_avatar_storage,__init__}.py`。它们是 P0 复核时人工登记的
+测试基建行；双向比对在发现侧显式排除这 4 类路径，因此它们**不是缺口**，本阶段不改其归类。
+
+与之相对，`scripts/test-orca-worktree-setup.py` **不是**支撑文件：它是可执行断言脚本
+（文件头写明 `python3 scripts/test-orca-worktree-setup.py`），
+`.github/workflows/ci.yml`「Worktree runtime and setup tests」步骤以
+`uv run python ../../scripts/test-orca-worktree-setup.py` 直接运行它，**不经过**
+`unittest discover`（该 discover 只匹配 `test_worktree*.py`）。它已在清单中登记为
+`worktree-runtime` / `standalone python script` / `ci-wired`，是**真正的可运行测试入口**。
+首版收口说明把它误列为「支持/入口脚本」，根因是发现侧模式只写了 `test_*.py`，漏了连字符形式
+`test-*.py`；收口复核已把该模式补入发现规则，补入后双向比对仍为 **1127 行、0 缺口**，
+多出的这一项不再出现在「清单独有」一侧。
 
 接线状态仍是**静态读取**（workflow 与 `package.json` 检索），不是执行证据；
 补录行的 CPU 可运行性证据见 `docs/research/34`（ML/shared）与 35。
