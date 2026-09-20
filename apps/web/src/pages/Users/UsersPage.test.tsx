@@ -70,20 +70,13 @@ vi.mock("@/stores/authStore", () => ({
 }));
 
 // --- usersApi (for exportUsers, adminResetPassword) ---
+// `ApiError` is imported by the page from `@/api/client`, so only that module
+// carries the fake class; the users API mock stays request-shaped only.
 const mockExportUsers = vi.fn();
 vi.mock("@/api/users", () => ({
   usersApi: {
     exportUsers: (...args: unknown[]) => mockExportUsers(...args),
     adminResetPassword: vi.fn(),
-  },
-  ApiError: class ApiError extends Error {
-    status: number;
-    detailRaw: unknown;
-    constructor(msg: string, status: number, detailRaw?: unknown) {
-      super(msg);
-      this.status = status;
-      this.detailRaw = detailRaw;
-    }
   },
 }));
 
