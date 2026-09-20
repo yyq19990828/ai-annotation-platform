@@ -2,8 +2,19 @@ name: E2E extended
 
 on:
   schedule:
+    # Nightly full verification (plan §6.2). The scope is passed explicitly
+    # below instead of being implied by the event name.
     - cron: "0 19 * * *" # 03:00 Asia/Shanghai
   workflow_dispatch:
+    inputs:
+      scope:
+        description: "E2E scope for the manual run"
+        required: false
+        default: extended
+        type: choice
+        options:
+          - extended
+          - full
 
 permissions:
   contents: read
@@ -18,13 +29,17 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      required: ${{ steps.plan.outputs.required }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Select extended suites
+      - name: Select suites for the requested scope
         id: plan
+        env:
+          E2E_SCHEDULE_SCOPE: ${{ github.event_name == 'schedule' && 'full' || '' }}
+          E2E_DISPATCH_SCOPE: ${{ inputs.scope }}
         run: node scripts/plan-e2e-suites.mjs >> "$GITHUB_OUTPUT"
 
   suites:

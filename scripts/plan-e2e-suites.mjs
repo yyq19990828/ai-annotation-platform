@@ -430,12 +430,31 @@ function triggeredSharedContracts(appCode) {
  * using `planE2ESuites` for the matrix and records the diff for P9.
  */
 export function selectSuites(eventName, paths, options = {}) {
-  if (eventName === "push" || eventName === "schedule") {
+  if (eventName === "schedule") {
+    // §6.7-5: the scheduled entry states its scope explicitly. Full is the
+    // default nightly contract; an explicit extended-only nightly is possible
+    // but must be requested and is reported as such.
+    const scope = process.env.E2E_SCHEDULE_SCOPE ?? "full";
+    if (!["extended", "full"].includes(scope))
+      throw new Error(`Invalid nightly E2E scope: ${scope} (expected extended or full)`);
+    if (scope === "extended")
+      return {
+        planned: extended.map(({ suite }) => suite),
+        classification: { event: "schedule", note: "nightly extended-only explicitly requested" },
+        reasons: [
+          {
+            suite: "visual+layout-stress",
+            selected: true,
+            because: "nightly scope set to extended-only",
+          },
+        ],
+        warnings: [],
+      };
     return {
       planned: allSuites.map(({ suite }) => suite),
       classification: {
-        event: eventName,
-        note: "explicit full scope: bounded smoke + full functional shards + extended (plan §6.2)",
+        event: "schedule",
+        note: "explicit full scope: bounded smoke + full functional shards + dedicated contracts + extended (plan §6.2)",
       },
       reasons: [
         {
@@ -451,6 +470,23 @@ export function selectSuites(eventName, paths, options = {}) {
               "legacy gate runs extended-only for schedule; the shadow full selection is a proposed change for P9, not applied",
             ]
           : [],
+    };
+  }
+  if (eventName === "push") {
+    return {
+      planned: allSuites.map(({ suite }) => suite),
+      classification: {
+        event: "push",
+        note: "explicit full scope: bounded smoke + full functional shards + dedicated contracts + extended",
+      },
+      reasons: [
+        {
+          suite: "all",
+          selected: true,
+          because: "post-merge verification is the explicit full scope",
+        },
+      ],
+      warnings: [],
     };
   }
   if (eventName === "workflow_dispatch") {
