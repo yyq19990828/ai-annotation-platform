@@ -68,6 +68,7 @@
         {
           "title": "expected failure is recorded",
           "ok": true,
+          "id": "062f01e57020dbda5f09-0bba74c14e1e8e89be08",
           "file": "expected-failure.spec.ts",
           "tests": [
             {

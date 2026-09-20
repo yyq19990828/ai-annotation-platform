@@ -1,6 +1,9 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { spawnSync } from "node:child_process";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
 import { buildSummary, main } from "./summarize-e2e-results.mjs";
@@ -28,12 +31,13 @@ test("failed fixture: unexpected status, timeout-free failure and a recorded fir
     outcome: "failure",
     report: loadFixture("failed"),
   });
-  assert.match(text, /\| 0 \| 1 \| 0 \| 0 \|/);
+  assert.match(text, /\| 0 \| 1 \| 0 \| 0 \| 0 \| 5\.7 \|/);
   assert.match(
     text,
-    /First failure: failed\.spec\.ts › fails with a stable reason \(project chromium, attempt 0\)/,
+    /First failure: failed\.spec\.ts › fails with a stable reason \[.+\] \(project chromium, attempt 0\) — Error: expect\(received\)\.toBe\(expected\)/,
   );
-  assert.match(text, /retryOutcome.*none|retryOutcome.*failed/s);
+  // Both attempts failed (retries:1), so the retry outcome is a failure too.
+  assert.match(text, /\[retry outcome: failed\]/);
 });
 
 test("flaky fixture: retry-then-passed is counted separately from first-attempt", () => {
@@ -133,4 +137,30 @@ test("a missing report with a failed outcome is reported without failing the ste
 test("usage error exits 2", () => {
   const code = main([], {}, { stdout: [], stderr: { write: () => {} } });
   assert.equal(code, 2);
+});
+
+test("CLI subprocess writes a parseable status artifact and exits 0", () => {
+  const script = fileURLToPath(new URL("./summarize-e2e-results.mjs", import.meta.url));
+  const outDir = mkdtempSync(join(tmpdir(), "e2e-summary-cli-"));
+  const statusDir = join(outDir, "suite-status");
+  mkdirSync(statusDir, { recursive: true });
+  const report = loadFixture("passed");
+  const reportPath = join(outDir, "e2e-results.json");
+  writeFileSync(reportPath, JSON.stringify(report));
+  const summaryPath = join(outDir, "summary.md");
+  const result = spawnSync(process.execPath, [script, "smoke", "success", reportPath], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      E2E_STATUS_OUT: join(statusDir, "smoke.json"),
+      GITHUB_STEP_SUMMARY: summaryPath,
+    },
+  });
+  assert.equal(result.status, 0, result.stderr);
+  const status = JSON.parse(readFileSync(join(statusDir, "smoke.json"), "utf8"));
+  assert.equal(status.suite, "smoke");
+  assert.equal(status.outcome, "success");
+  assert.equal(typeof status.stats.expected, "number");
+  assert.ok(readFileSync(summaryPath, "utf8").includes("Outcome: success"));
+  rmSync(outDir, { recursive: true, force: true });
 });

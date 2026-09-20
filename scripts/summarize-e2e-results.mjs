@@ -48,6 +48,7 @@ function summarizeTests(report) {
           notRun += 1;
           continue;
         }
+        const lastStatus = last?.status;
         switch (test.status) {
           case "expected":
             firstAttemptPassed += 1;
@@ -57,6 +58,8 @@ function summarizeTests(report) {
             break;
           case "unexpected":
             failed += 1;
+            if (lastStatus === "timedout") timeout += 1;
+            if (lastStatus === "interrupted") interrupted += 1;
             break;
           default:
             break;
@@ -65,12 +68,8 @@ function summarizeTests(report) {
         // including flaky tests, whose final status alone would hide it.
         if (!firstFailure && (test.status === "unexpected" || test.status === "flaky")) {
           const firstAttempt = attempts[0];
-          const lastStatus = last?.status;
-          if (test.status === "unexpected") {
-            if (lastStatus === "timedout") timeout += 1;
-            if (lastStatus === "interrupted") interrupted += 1;
-          }
           firstFailure = {
+            id: spec.id,
             file: spec.file,
             title: spec.title,
             projectId: test.projectId,
@@ -122,7 +121,7 @@ export function buildSummary({ suite, outcome, report, prepSeconds, runSeconds, 
       ? `\nPrep: ${Number(prepSeconds).toFixed(0)}s · Execution: ${Number(runSeconds).toFixed(0)}s${buildSeconds !== undefined ? ` · Build: ${Number(buildSeconds).toFixed(0)}s` : ""}\n`
       : "";
   const firstFailureLine = attempts.firstFailure
-    ? `\nFirst failure: ${attempts.firstFailure.file} › ${attempts.firstFailure.title} (project ${attempts.firstFailure.projectId}, attempt ${attempts.firstFailure.retry}) — ${attempts.firstFailure.reason}\n`
+    ? `\nFirst failure: ${attempts.firstFailure.file} › ${attempts.firstFailure.title} [${attempts.firstFailure.id}] (project ${attempts.firstFailure.projectId}, attempt ${attempts.firstFailure.retry}) — ${attempts.firstFailure.reason} [retry outcome: ${attempts.firstFailure.retryOutcome}]\n`
     : "";
   const text =
     heading +
@@ -184,6 +183,7 @@ export function cli() {
     stderr: process.stderr,
     appendFileSync,
     readFileSync,
+    writeFileSync,
     existsSync,
     summaryPath: process.env.GITHUB_STEP_SUMMARY,
   };

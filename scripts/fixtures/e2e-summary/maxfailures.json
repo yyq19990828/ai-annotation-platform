@@ -72,6 +72,7 @@
         {
           "title": "first fails",
           "ok": false,
+          "id": "7f7757b8ca057c670ee7-3f49c22cbd2ca26c6f42",
           "file": "maxfailures-a.spec.ts",
           "tests": [
             {
@@ -111,6 +112,7 @@
         {
           "title": "never runs due to max-failures",
           "ok": true,
+          "id": "9154d60c172ed2d91559-6c4a26042e96a5a85abb",
           "file": "maxfailures-b.spec.ts",
           "tests": [
             {

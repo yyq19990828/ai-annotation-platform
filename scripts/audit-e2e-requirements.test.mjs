@@ -11,11 +11,24 @@ test("passed, failed, cancelled, setup-failure and missing are accounted fail-cl
   try {
     writeFileSync(
       join(dir, "smoke.json"),
-      JSON.stringify({ outcome: "success", stats: { expected: 9, unexpected: 0 } }),
+      JSON.stringify({
+        suite: "smoke",
+        outcome: "success",
+        stats: { expected: 9, unexpected: 0, flaky: 0, skipped: 0 },
+      }),
     );
-    writeFileSync(join(dir, "default-one.json"), JSON.stringify({ outcome: "failure" }));
-    writeFileSync(join(dir, "mask-native.json"), JSON.stringify({ outcome: "cancelled" }));
-    writeFileSync(join(dir, "visual.json"), JSON.stringify({ outcome: "setup-failure" }));
+    writeFileSync(
+      join(dir, "default-one.json"),
+      JSON.stringify({ suite: "default-one", outcome: "failure" }),
+    );
+    writeFileSync(
+      join(dir, "mask-native.json"),
+      JSON.stringify({ suite: "mask-native", outcome: "cancelled" }),
+    );
+    writeFileSync(
+      join(dir, "visual.json"),
+      JSON.stringify({ suite: "visual", outcome: "setup-failure" }),
+    );
     const audit = auditE2ERequirements({
       requiredSuites: [
         { suite: "smoke", planned: true },
@@ -47,13 +60,32 @@ test("passed, failed, cancelled, setup-failure and missing are accounted fail-cl
 test("docs-allowed skips never block while unplanned skips do", () => {
   const dir = mkdtempSync(join(tmpdir(), "e2e-audit-"));
   try {
-    writeFileSync(join(dir, "smoke.json"), JSON.stringify({ outcome: "success" }));
-    writeFileSync(join(dir, "mask-native.json"), JSON.stringify({ outcome: "skipped" }));
+    writeFileSync(
+      join(dir, "smoke.json"),
+      JSON.stringify({
+        suite: "smoke",
+        outcome: "success",
+        stats: { expected: 9, unexpected: 0, flaky: 0, skipped: 0 },
+      }),
+    );
+    writeFileSync(
+      join(dir, "mask-native.json"),
+      JSON.stringify({ suite: "mask-native", outcome: "skipped" }),
+    );
     const withReason = auditE2ERequirements({
-      requiredSuites: [
-        { suite: "smoke", planned: true },
-        { suite: "mask-native", planned: false, docsAllowedSkip: true },
-      ],
+      requiredSuites: {
+        classification: "docs-only",
+        reason: "docs-only change (whitelisted markdown/docs-site paths); no app E2E required",
+        suites: [
+          { suite: "smoke", planned: true },
+          {
+            suite: "mask-native",
+            planned: false,
+            docsAllowedSkip: true,
+            reason: "dedicated matrix intentionally not run",
+          },
+        ],
+      },
       statusDir: dir,
     });
     assert.equal(withReason.ok, true);
@@ -122,4 +154,54 @@ test("CLI fails closed on unreadable artifacts and missing inputs", () => {
     main(["req.json", "missing-dir"], { stderr: { write: () => {} }, existsSync: () => false }),
     2,
   );
+});
+
+test("audit rejects malformed completion artifacts fail-closed", () => {
+  const dir = mkdtempSync(join(tmpdir(), "e2e-audit-malformed-"));
+  try {
+    writeFileSync(
+      join(dir, "smoke.json"),
+      JSON.stringify({
+        suite: "smoke",
+        outcome: "success",
+        stats: { expected: 1, unexpected: 0, flaky: 0, skipped: 0 },
+      }),
+    );
+    writeFileSync(
+      join(dir, "default-one.json"),
+      JSON.stringify({ suite: "default-one", outcome: "success" }),
+    );
+    writeFileSync(
+      join(dir, "mask-native.json"),
+      JSON.stringify({
+        suite: "some-other-suite",
+        outcome: "success",
+        stats: { expected: 1, unexpected: 0, flaky: 0, skipped: 0 },
+      }),
+    );
+    writeFileSync(join(dir, "mask-readonly.json"), "{not json");
+    writeFileSync(
+      join(dir, "visual.json"),
+      JSON.stringify({ suite: "visual", outcome: "hitched-a-ride" }),
+    );
+    const audit = auditE2ERequirements({
+      requiredSuites: [
+        { suite: "smoke", planned: true },
+        { suite: "default-one", planned: true },
+        { suite: "mask-native", planned: true },
+        { suite: "mask-readonly", planned: true },
+        { suite: "visual", planned: true },
+      ],
+      statusDir: dir,
+    });
+    assert.equal(audit.ok, false);
+    const bySuite = Object.fromEntries(audit.rows.map((row) => [row.suite, row.state]));
+    assert.equal(bySuite.smoke, "passed");
+    assert.equal(bySuite["default-one"], "malformed-success");
+    assert.equal(bySuite["mask-native"], "suite-mismatch");
+    assert.equal(bySuite["mask-readonly"], "unreadable");
+    assert.equal(bySuite.visual, "unknown-outcome");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

@@ -110,19 +110,12 @@ jobs:
       - name: alembic upgrade head
         working-directory: apps/api
         run: uv run alembic upgrade head
-      - name: alembic round-trip (upgrade-then-downgrade-then-upgrade)
+      - name: Migration validation (fresh / reversible / forward / restore)
         working-directory: apps/api
-        run: |
-          # 0174+ migrations marked IRREVERSIBLE refuse to downgrade by design;
-          # stamp past them (data-only no-ops on this fresh database) so every
-          # reversible migration below the floor is still exercised both ways.
-          FLOOR=$(uv run python ../../scripts/alembic_reversible_floor.py)
-          echo "Reversible floor: $FLOOR"
-          if [ "$FLOOR" != "$(uv run alembic heads | awk '{print $1}')" ]; then
-            uv run alembic stamp "$FLOOR"
-          fi
-          uv run alembic downgrade base
-          uv run alembic upgrade head
+        env:
+          AAP_MIGRATION_VALIDATION_OWNER: ci:${{ github.run_id }}
+          MIGRATION_DATABASE_URL: ${{ env.DATABASE_URL }}
+        run: uv run python ../../scripts/validate_migrations.py
       - name: OpenAPI snapshot drift check
         working-directory: apps/api
         run: |
@@ -135,6 +128,11 @@ jobs:
         run: >-
           uv run pytest -q --cov=app --cov-report=xml --cov-report=term-missing
           --durations=30 --junitxml=pytest-results.xml
+      # P6 交接：migration policy 纯规则测试（scripts/ 下不被 apps/api pytest
+      # 收集），在此以同一 venv 显式运行。
+      - name: Migration policy pure tests
+        working-directory: apps/api
+        run: uv run python ../../scripts/test_alembic_migration_policy.py
       - name: Upload backend test results
         uses: actions/upload-artifact@v4
         if: always()

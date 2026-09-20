@@ -128,27 +128,60 @@ export function auditE2ERequirements({ requiredSuites: requiredInput, statusDir 
         rows.push({ suite, state: "unreadable", detail: String(error) });
         continue;
       }
-      const outcome = status.outcome;
-      if (outcome === "success") rows.push({ suite, state: "passed", detail: status });
-      else if (outcome === "skipped")
+      // Artifact identity: the completion artifact must name its own suite,
+      // carry a known outcome, and back a success with numeric stats (a bare
+      // {outcome:"success"} without evidence is rejected fail-closed).
+      if (status.suite !== suite) {
+        rows.push({ suite, state: "suite-mismatch", detail: status.suite ?? null });
+        continue;
+      }
+      if (
+        !["success", "failure", "timedout", "cancelled", "setup-failure", "skipped"].includes(
+          status.outcome,
+        )
+      ) {
+        rows.push({ suite, state: "unknown-outcome", detail: status.outcome ?? null });
+        continue;
+      }
+      if (status.outcome === "success") {
+        const stats = status.stats ?? {};
+        const numeric = ["expected", "unexpected", "flaky", "skipped"].every(
+          (key) => typeof stats[key] === "number",
+        );
+        if (!numeric) {
+          rows.push({ suite, state: "malformed-success", detail: "success without numeric stats" });
+          continue;
+        }
+        rows.push({ suite, state: "passed", detail: status });
+        continue;
+      }
+      if (status.outcome === "skipped") {
         rows.push({ suite, state: docsAllowedSkip ? "docs-allowed-skip" : "skipped-not-run" });
-      else
-        rows.push({
-          suite,
-          state:
-            outcome === "cancelled"
-              ? "cancelled"
-              : outcome === "setup-failure"
-                ? "setup-failure"
-                : "failed",
-          detail: status,
-        });
+        continue;
+      }
+      rows.push({
+        suite,
+        state:
+          status.outcome === "cancelled"
+            ? "cancelled"
+            : status.outcome === "setup-failure"
+              ? "setup-failure"
+              : "failed",
+        detail: status,
+      });
     }
-    const blockers = rows.filter((row) =>
-      ["missing", "failed", "cancelled", "setup-failure", "skipped-not-run", "unreadable"].includes(
-        row.state,
-      ),
-    );
+    const blockingStates = [
+      "missing",
+      "failed",
+      "cancelled",
+      "setup-failure",
+      "skipped-not-run",
+      "unreadable",
+      "suite-mismatch",
+      "unknown-outcome",
+      "malformed-success",
+    ];
+    const blockers = rows.filter((row) => blockingStates.includes(row.state));
     return { rows, blockers, ok: blockers.length === 0 };
   }
 }
