@@ -1,7 +1,7 @@
 # 仓库优化 P7：E2E 用例下沉、fixture 命名空间隔离与请求失败分类收敛
 
 > 盘点日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P7 工作包）
-> 基线提交：`0144b734c`（P0+P1 整合点）；集成基线随后包含 P2/P3（origin `963633e47008`）
+> 基线提交：`0144b734c`（P0+P1 整合点）；工作分支已 rebase 到根工作树当前 HEAD `3a94e7560`，其上含 P2 直连模型 fixture、P3 前端测试边界、P4 后端规则归属
 > 证据图例：**[V]** 本工作树实际执行/逐条核对；**[M]** 运行时探针；**[GAP]** 未执行或留待后续阶段
 
 ## 0. 结论
@@ -142,7 +142,7 @@ presign URL 指向 `/minio/...`，由 Vite dev server 代理到对象存储；�
 - [GAP] worker>1 并发收益验证：按计划 §6.4-4 属隔离验收后的独立步骤；本阶段维持 workers=1（launcher 单会话串行边界）。
 - [保留] `seed/reset`/`seed/cleanup` 共享路径：兼容既有后端测试与截图 profile 流程的已记录串行例外；宽谓词收敛语义（含清扫 owned 命名空间）为其定义的一部分。
 - [保留] `mask-advanced-operations` #4 的 CI/default skip 条件：Vite dev server 提供源码 Worker 模块的前提未变。
-- 集成前需 rebase 到 origin 当前 HEAD（P2/P3 已并入），并对 P2 迁移后的 direct-model fixture 重新运行 `test_seed_owned.py`/seed 家族测试。
+- 已 rebase 到根工作树当前 HEAD `3a94e7560`（含 P2/P3/P4）并重跑：seed 家族（`test_seed_owned.py`、`test_seed_router.py`、`test_filter_seed.py`、`test_screenshot_seed_catalog.py`）82 例 exit 0；几何/RLE/分类器单测 56 passed；确认 rebase 后无 `seed.reset(` 残留与旧 helper 引用。
 - 远程 CI 未运行（不推送）；所有证据来自本工作树 owned 资源的实际执行。
 
 ## 7. 回退边界
