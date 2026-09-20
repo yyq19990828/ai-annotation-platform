@@ -23,6 +23,8 @@ import { useAdminPeople, useAdminPersonDetail } from "@/hooks/useDashboard";
 import { useProjects } from "@/hooks/useProjects";
 import { usePermissions } from "@/hooks/usePermissions";
 import { REJECT_REASON_TYPE_LABELS } from "@/pages/Review/rejectReasonTypes";
+import { ROLE_LABELS } from "@/constants/roles";
+import type { PlatformRole } from "@/types";
 import { dashboardApi, type AdminPersonItem } from "@/api/dashboard";
 import { tasksApi } from "@/api/tasks";
 import { useToastStore } from "@/components/ui/Toast";
@@ -43,6 +45,29 @@ const ROLE_OPTS = [
   { v: "annotator", label: "标注员" },
   { v: "reviewer", label: "审核员" },
 ];
+
+/**
+ * Platform account role label.  The card never renders a raw enum and never
+ * compares the platform role to a project duty (that comparison is always false
+ * after the employee cutover).
+ */
+export function platformRoleLabel(role: string): string {
+  return ROLE_LABELS[role as PlatformRole] ?? role;
+}
+
+type BadgeVariant = "default" | "accent" | "ai" | "danger";
+
+/** Badge colour by platform account role (not by project duty). */
+export const PLATFORM_ROLE_BADGE_VARIANT: Record<string, BadgeVariant> = {
+  super_admin: "danger",
+  project_admin: "accent",
+  employee: "ai",
+  viewer: "default",
+};
+
+export function platformRoleBadgeVariant(role: string): BadgeVariant {
+  return PLATFORM_ROLE_BADGE_VARIANT[role] ?? "default";
+}
 const PERIOD_OPTS = [
   { v: "today", label: "今日" },
   { v: "7d", label: "最近 7 天" },
@@ -342,7 +367,9 @@ function PersonCard({ item, onClick }: { item: AdminPersonItem; onClick: () => v
               />
             </div>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-              <Badge variant={item.role === "annotator" ? "accent" : "ai"}>{item.role}</Badge>
+              <Badge variant={platformRoleBadgeVariant(item.role)}>
+                {platformRoleLabel(item.role)}
+              </Badge>
               {item.project_count} 项目
             </div>
           </div>
