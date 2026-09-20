@@ -505,7 +505,7 @@ export function Topbar({
           <div className="flex items-center gap-1.5 @max-[1000px]:hidden">
             {/* 与主界面 TopBar 一致:版本号可点击,随时查看当前版本更新内容。
                 窄屏工作台顶栏已无横向余量(见 workbench-topbar.spec 的防重叠断言),
-                故随中段压缩一并收起;≤1000px 时改由「更多工具」菜单提供入口。 */}
+                故随中段压缩一并收起;<1000px 时改由「更多工具」菜单提供入口。 */}
             <Button
               variant="ghost"
               size="sm"

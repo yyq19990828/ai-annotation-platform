@@ -12,8 +12,8 @@
 2. **修复 [V]**（`apps/web/src/pages/Workbench/shell/Topbar.tsx`，最小生产改动，无重设计）：
    - 中段由 `min-w-0` 改为 `min-w-max`：永不压缩到内容以下；空间不足时改为收缩左侧项目名（其项目名本就是 `min-w-0 truncate`，可安全让位），消除「压缩后溢出」这一路径。
    - 新增容器 `<1000px` 分层：状态相关主操作（提交 / 通过 / 退回 / 撤回 / 继续编辑 / 跳过）收起为保留 `aria-label`/`title` 的图标按钮；位置徽章在 `<900px` 与前后的文件名同步省略；快捷键、智能切题、主题、版本更新、Bug 反馈、设置收进「更多工具」（更多菜单由 `<700px` 提前到 `<1000px` 出现）。
-   - 视频分段选择器同样在 `<1000px` 收起，仅保留「更多工具」页脚中的同一实例，避免出现两份。
-3. **验收 [V]**：在新构建产物上，既有 `workbench-topbar.spec.ts` 在 6 个宽度（1440/1280/1024/800/640/375）`--retries=0` **1 passed**（JSON `expected=1 / unexpected=0 / flaky=0`）；追加的边界探针覆盖断点 ±1px 与最长 24 字符任务 ID，`overlaps=[]`、`outside=[]`；审核模式与任务位置可达性同样通过。
+   - 视频分段选择器同样在 `<1000px` 收起：该元素在 DOM 中仍渲染两处（标识组内联 + 「更多工具」页脚），`<1000px` 时仅「更多工具」页脚中的实例可见，避免同时出现两个可见控件。
+3. **验收 [V]**：在新构建产物上，既有 `workbench-topbar.spec.ts` 在 6 个宽度（1440/1280/1024/800/640/375）`--retries=0` **1 passed**（JSON `expected=1 / unexpected=0 / flaky=0`）；追加的边界探针覆盖断点 ±1px 与最长 24 字符任务 ID，`overlaps=[]`、`outside=[]`；审核模式与任务位置可达性同样通过。被复核指出的窄宽度视频分段选择器（真实视频任务 + 真实分段）在 800px / 375px 实测：DOM 中仍有两处实例，`<1000px` 时只有「更多工具」门户中的一处可见，且选择分段会更新 `activeVideoSegmentId`。
 
 ## 1. 复现与证据
 
@@ -58,25 +58,26 @@
 
 ## 4. 变更文件
 
-| 文件                                                     | 变更                                                                                                                                                     |
-| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `apps/web/src/pages/Workbench/shell/Topbar.tsx`          | 中段 `min-w-0`→`min-w-max`；主操作按钮压缩与位置徽章、更多菜单的分层提前到 `<1000px` / `<900px`；视频分段选择器 `<1000px` 收起为仅菜单实例；更新入口注释 |
-| `docs-site/user-guide/workbench/index.md`                | 顶部栏窄宽度行为说明：不重叠、按钮收图标、次要入口收「更多工具」、任务位置仍见任务队列                                                                   |
-| `CHANGELOG.md`                                           | Unreleased · Fixed 一条用户可见说明                                                                                                                      |
-| `docs/research/49-repository-optimization-topbar-fix.md` | 本文                                                                                                                                                     |
+| 文件                                                     | 变更                                                                                                                                                                             |
+| -------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `apps/web/src/pages/Workbench/shell/Topbar.tsx`          | 中段 `min-w-0`→`min-w-max`；主操作按钮压缩与位置徽章、更多菜单的分层提前到 `<1000px` / `<900px`；视频分段选择器 `<1000px` 时仅菜单中一个可见实例（元素仍渲染两处）；更新入口注释 |
+| `docs-site/user-guide/workbench/index.md`                | 顶部栏窄宽度行为说明：不重叠、按钮收图标、次要入口收「更多工具」、任务位置仍见任务队列                                                                                           |
+| `CHANGELOG.md`                                           | Unreleased · Fixed 一条用户可见说明                                                                                                                                              |
+| `docs/research/49-repository-optimization-topbar-fix.md` | 本文                                                                                                                                                                             |
 
 未改动：`workbench-topbar.spec.ts`（保留原 6 宽度与全部断言）、`measureTopbar`、Markdown 所有者文件、共享清单、Markdown/Projects 用户指南。
 
 ## 5. 验证
 
-- **构建 [V]**：`OPENAPI_URL=<本 checkout>/apps/api/openapi.snapshot.json pnpm --filter @anno/web build --mode e2e`，退出码 0；source+mode 指纹 `023c84d48afd719c9272d1052713f272647b8d13f75f7a8dd7c224918403416a`（`git HEAD` + `apps/web/{src,e2e,public,index.html,package.json,vite.config.ts,playwright.config.ts}` 文件哈希 + `apps/api/openapi.snapshot.json` 的 sha256 再哈希）；`dist/index.html` sha256 `0840132e3a251f2393a8172618acd5687e21bad9eb2cbb41a3e61f90bcf94ac4`；codegen 未产生额外的生成类型改动。
-- **既有 e2e（实际构建产物，`--retries=0`）[V]**：`workbench-topbar.spec.ts` **1 passed**（JSON `expected=1 / unexpected=0 / flaky=0`）。
-- **边界回归探针（实际构建产物，24 字符 ID）[V]**：18 个宽度（含断点 ±1px）全部 `overlaps=[] / outside=[]`。
-- **静态检查 [V]**：`apps/web` `Topbar.test.tsx` 9 passed；`tsc --noEmit` 通过；`eslint Topbar.tsx` 通过；`prettier --check` 通过；`pnpm --filter @anno/web lint:css-tokens` 通过。
+- **构建 [V]**：`OPENAPI_URL=<本 checkout>/apps/api/openapi.snapshot.json pnpm --filter @anno/web build --mode e2e`，退出码 0。首次修复构建指纹 `023c84d48afd719c9272d1052713f272647b8d13f75f7a8dd7c224918403416a`；该产物清理后，本次复核重新构建，源码+模式指纹 `cc9c2a9eed64c9eeb341ea09c2b3b6eda2b96fab230ade40b8d8ecbb0a828e99`（仅注释变更），`dist/index.html` sha256 `0840132e3a251f2393a8172618acd5687e21bad9eb2cbb41a3e61f90bcf94ac4`（与首次一致）。指纹 = `git HEAD` + `apps/web/{src,e2e,public,index.html,package.json,vite.config.ts,playwright.config.ts}` 文件哈希 + `apps/api/openapi.snapshot.json` 的 sha256 再哈希；**下述所有复核结果均来自这次重建产物，而非 P9 旧共享产物 `253b54a0`（它只用于修复前复现）**。codegen 未产生额外的生成类型改动。
+- **既有 e2e（重建产物，`--retries=0`）[V]**：`workbench-topbar.spec.ts` **1 passed**（JSON `expected=1 / unexpected=0 / flaky=0`）。
+- **边界回归探针（重建产物，24 字符 ID）[V]**：18 个宽度（含断点 ±1px）全部 `overlaps=[] / outside=[]`。
+- **窄宽度视频分段选择器（重建产物，800px / 375px，真实视频任务 + 真实 `/video/segments` 分段）[V]**：两处都 `inlineDisplay="none"`；打开「更多工具」前 `total=1 / visible=0`（内联副本不可见），打开后 `total=2 / visible=1`（仅门户页脚副本可见）；选择分段后识别为真实认领，`activeVideoSegmentId` 更新为所选分段 id，服务端该分段 `locked_by` 为当前标注员。探针经 `page.route` 把真实响应的 `collaboration_enabled` 单字段改为 true（其余字段/分段均来自真实后端），原因见 §6。
+- **静态检查 [V]**：`apps/web` `Topbar.test.tsx` 9 passed（含「更多工具」菜单页脚原生 select 的键盘焦点语义）；`tsc --noEmit` 通过；`eslint Topbar.tsx` 通过；`prettier --check` 通过；`pnpm --filter @anno/web lint:css-tokens` 通过。
 
 ## 6. 边界与限制
 
-- 仅覆盖并验证图片 `annotate` 与 `review` 两种顶部栏状态；点云 / 视频的其它工具条不在本次范围。视频分段选择器已在 `<1000px` 收进「更多工具」，但视频变体的其它长内容组合未做专门扫描。
+- 仅覆盖并验证图片 `annotate` 与 `review` 两种顶部栏状态；点云 / 视频的其它工具条不在本次范围。视频分段选择器已在重建产物的 800px / 375px 实测：元素在 DOM 中渲染两处（标识组内联 + 「更多工具」门户页脚），`<1000px` 时仅门户实例可见。该探针使用真实视频任务与真实分段，仅把真实响应中的 `collaboration_enabled` 单字段改为 true —— 因为 `seed.owned()` 夹具项目是 image-det，现有 seed 助手与公共项目更新都无法为它开启 `video_collaboration`（该开关要求空的 video-track 项目），两个视频 seed 路由又都要求项目已有批次 + 任务；其余字段、分段与认领接口均为真实后端。视频变体的其它长内容组合仍未专门扫描。
 - 未运行远端 CI（未 push）；结论来自本工作树自有一次性环境与真实构建产物。
 - 不改动 `workbench-topbar.spec.ts` 的宽度集合与断言强度；边界证据以本文件记录。
 - 审核模式 `>1100px` 的 79px 高度为既有 `ReviewerMiniPanel` 行为，本次不涉及。
@@ -84,5 +85,6 @@
 ## 7. 复发防护口径
 
 - **几何回归**：既有 800px 用例锁定根因（标识组溢出压到提交按钮）；本次新增的边界证据覆盖断点 1000/900/700 两侧与 24 字符 ID 上限。
+- **视频选择器回归**：`<1000px` 内联副本保持隐藏、仅「更多工具」门户实例可见且选择后更新状态；`≥1000px` 继续使用内联实例。
 - **可达性**：主操作在收起为图标后仍保留 `aria-label` / `title`；位置徽章收起后，任务队列标题继续显示当前位置。
 - **修法约束**：不使用截断任务 ID、不隐藏必需动作、不弱化既有断言；中段用 `min-w-max` 明确「优先让项目名收缩」，避免再次出现「压缩后溢出」。
