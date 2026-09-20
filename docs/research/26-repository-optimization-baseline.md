@@ -101,9 +101,9 @@
 
 **清单级发现（P0-A 写“4 个”但列 5 个名字的校正）**：真实情况是 `scripts/` 下 4 个 `.test.mjs`，其中 3 个接入 CI，`image-reference-utils.test.mjs` 未接入；`apps/web/scripts/` 下的测试另有归属——`media-derivation.test.mjs` 由 `node --test`（npm script）运行且被 vitest 排除，其余 4 个（check-bundle-size、video-bench、video-request-errors、video-timeline-seek）为 vitest 风格、被 vitest 收集（[V] `vite.config.ts` test.exclude L84 及注释），随 CI Frontend verification 运行。初稿“两个未接入 CI”的说法就此修正。
 
-**机器可读测试文件清单**：`docs/research/data/26-repository-test-file-inventory.tsv`（1042 个测试文件，列 `path/layer/runner/dependency/decision/reason/replacement/status`；decision 一律 `KEEP`、reason 一律 `pending-review`，P0 不做删除决定；status 为静态接线状态：ci-wired 1017 / script-wired 11 / not-wired 14）。由短脚本对 `git ls-files` 做确定性模式发现生成（只读，未执行任何测试）；TSV 路径集合与独立 `git ls-files` 多模式计数逐行比对一致。
+**机器可读测试文件清单**：`docs/research/data/26-repository-test-file-inventory.tsv`（P6 补录后 1125 个测试文件，列 `path/layer/runner/dependency/decision/reason/replacement/status`；decision 一律 `KEEP`、reason 一律 `pending-review`，P0 不做删除决定；status 为静态接线状态：ci-wired 1021 / script-wired 15 / not-wired 89。补录范围与分层计数见 §9）。由短脚本对 `git ls-files` 做确定性模式发现生成（只读，未执行任何测试）；TSV 路径集合与独立 `git ls-files` 多模式计数逐行比对一致。
 
-**发现口径与限制**：仅文件级发现，不枚举测试函数/参数化用例，不含执行结果、耗时或历史失败类型；只覆盖已知名单（CI workflow 与 package.json 命令引用的模式 + `apps/_shared` 两处 tests 目录），命名不符这些模式的测试文件会漏报；fixtures/conftest/helper 不计入。not-wired 的 14 个文件是 `apps/_shared/backend_runtime/tests`（8）、`apps/_shared/mask_utils/tests`（5）与 `scripts/image-reference-utils.test.mjs`（1）——当前没有任何 workflow 或命令引用（[V] 全仓检索），是否纳管留 P8 决定。
+**发现口径与限制**：仅文件级发现，不枚举测试函数/参数化用例，不含执行结果、耗时或历史失败类型；只覆盖已知名单（CI workflow 与 package.json 命令引用的模式 + `apps/_shared` 两处 tests 目录），命名不符这些模式的测试文件会漏报；fixtures/conftest/helper 不计入。P0 时点的 not-wired 14 个文件是 `apps/_shared/backend_runtime/tests`（8）、`apps/_shared/mask_utils/tests`（5）与 `scripts/image-reference-utils.test.mjs`（1）；P6 补录后的完整接线状态见 §9。
 
 ## 4. 计划第 3 节不变量 → 现有测试映射
 
@@ -204,18 +204,18 @@
 
 ## 6. 改造候选（P0 盘点级；未做任何改动）
 
-| #   | 候选                                                                                                             | 证据                                                                                                                                                              | 归属阶段                                                                   |
-| --- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| 1   | `httpx_client_bound` 别名（conftest L203-204）                                                                   | [V] 69 个测试文件引用；`apps/api/app` 零命中                                                                                                                      | P2                                                                         |
-| 2   | `_install_legacy_class_kwargs_shim`（conftest L76/101）                                                          | [V] 定义+调用点仅此两处                                                                                                                                           | P2                                                                         |
-| 3   | `coalesce_legacy_into_tool_bindings`                                                                             | [A] 生产路由活跃调用（projects/project_templates/seed/factory）                                                                                                   | **保留**在兼容边界；仅去测试侧依赖（P2）                                   |
-| 4   | 前端测试中 `"annotator"` 字符串命中（20 文件，候选清单）                                                         | [A]（含 `ProjectDataManagerPage.flow.test.tsx`）；`"annotator"` 仍是合法项目职责名（[V] `apps/web/src/types/index.ts` L15、`constants/roles.ts` `PROJECT_ROLES`） | **P1 逐条分类**（平台角色残留 → 修数据；项目职责合法使用 → 保留），P3 结构 |
-| 5   | `signals.py` 重复生命周期（`_mark_failed`/`_mark_cancelled`）                                                    | [V] 225 行、结构重复；零直接测试（见 C6 GAP）                                                                                                                     | P4（先 P1 补保护）                                                         |
-| 6   | 7 个 spec 内联 `ERR_ABORTED` 分类                                                                                | [V] 文件清单与共享 helper 并存                                                                                                                                    | P7 域（仅记录）                                                            |
-| 7   | 活动文件版本叙事（conftest/vitest.setup/vite.config/playwright.config/helpers.ts/signals.py/ci.yml/e2e-run.yml） | [A] 抽查命中（conftest L67“v0.10.22”、alias L203“v0.6.5” [V]）                                                                                                    | P6 + `CLAUDE.md` 指导修正                                                  |
-| 8   | `useWorkbenchShellModel.tsx` 8919 行混合 model                                                                   | [V] 行数；领域模块已存在（`useWorkbenchTaskFlow`、`useMaskEditorSession`）                                                                                        | P5                                                                         |
-| 9   | `ProjectDataManagerPage.flow.test.tsx` 946 行高 mock 流程测试                                                    | [A]                                                                                                                                                               | P3（REWRITE/MOVE_DOWN）                                                    |
-| 10  | `test_v0_7_6.py`（版本命名测试文件）                                                                             | [V] 文件存在；内容未逐行审                                                                                                                                        | P2/P6 审阅清单（不凭名删）                                                 |
+| #   | 候选                                                                                                             | 证据                                                                                                                                                              | 归属阶段                                                                                                                                                                        |
+| --- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1   | `httpx_client_bound` 别名（conftest L203-204）                                                                   | [V] 69 个测试文件引用；`apps/api/app` 零命中                                                                                                                      | P2                                                                                                                                                                              |
+| 2   | `_install_legacy_class_kwargs_shim`（conftest L76/101）                                                          | [V] 定义+调用点仅此两处                                                                                                                                           | P2                                                                                                                                                                              |
+| 3   | `coalesce_legacy_into_tool_bindings`                                                                             | [A] 生产路由活跃调用（projects/project_templates/seed/factory）                                                                                                   | **保留**在兼容边界；仅去测试侧依赖（P2）                                                                                                                                        |
+| 4   | 前端测试中 `"annotator"` 字符串命中（20 文件，候选清单）                                                         | [A]（含 `ProjectDataManagerPage.flow.test.tsx`）；`"annotator"` 仍是合法项目职责名（[V] `apps/web/src/types/index.ts` L15、`constants/roles.ts` `PROJECT_ROLES`） | **P1 逐条分类**（平台角色残留 → 修数据；项目职责合法使用 → 保留），P3 结构                                                                                                      |
+| 5   | `signals.py` 重复生命周期（`_mark_failed`/`_mark_cancelled`）                                                    | [V] 225 行、结构重复；零直接测试（见 C6 GAP）                                                                                                                     | P4（先 P1 补保护）                                                                                                                                                              |
+| 6   | 7 个 spec 内联 `ERR_ABORTED` 分类                                                                                | [V] 文件清单与共享 helper 并存                                                                                                                                    | P7 域（仅记录）                                                                                                                                                                 |
+| 7   | 活动文件版本叙事（conftest/vitest.setup/vite.config/playwright.config/helpers.ts/signals.py/ci.yml/e2e-run.yml） | [A] 抽查命中（conftest L67“v0.10.22”、alias L203“v0.6.5” [V]）                                                                                                    | P6 + `CLAUDE.md` 指导修正                                                                                                                                                       |
+| 8   | `useWorkbenchShellModel.tsx` 8919 行混合 model                                                                   | [V] 行数；领域模块已存在（`useWorkbenchTaskFlow`、`useMaskEditorSession`）                                                                                        | P5                                                                                                                                                                              |
+| 9   | `ProjectDataManagerPage.flow.test.tsx` 946 行高 mock 流程测试                                                    | [A]                                                                                                                                                               | P3（REWRITE/MOVE_DOWN）                                                                                                                                                         |
+| 10  | `test_v0_7_6.py`（版本命名测试文件）                                                                             | [V] 文件存在；内容未逐行审                                                                                                                                        | **P6 已关闭**：改名为 `test_project_attribute_schema_and_batch_reset.py`（内容用现行 fixture/模型，头部版本叙事删除；`docs-site/dev/concepts/batch-module.md` 与 TSV 同步更新） |
 
 明确不是候选 [A]：`plan-e2e-suites.*`（有测试且被执行过）、`apps/_shared/backend_runtime`、SDK 测试、几何套件、worktree 脚本、`e2e-run.yml` 结构、快照/媒体（GEN）。
 
@@ -231,7 +231,7 @@
 - [V] `scripts/alembic_reversible_floor.py` 在 HEAD 存在。
 - [V] 计划文件入轨的 prettier 格式化与等价性校验（见第 8 节）。
 - [V] 复审修正（本提交）：按 `TEST_DATABASE_URL` 优先序更正测试库解析表述（§1.1、§3、C8）；`"annotator"` 命中改判为待分类候选（§2、§4-C1、§6-4）；`check-bundle-size` 等 `apps/web/scripts` 测试接线归属更正（vitest 收集，§3/§8）。
-- [V] 机器可读测试文件清单生成（`docs/research/data/26-repository-test-file-inventory.tsv`，1042 文件；只读 `git ls-files` 模式发现，未执行测试；行数/分层/接线计数经脚本输出、TSV 内容与独立 `git ls-files` 计数三方核对一致）。
+- [V] 机器可读测试文件清单生成（`docs/research/data/26-repository-test-file-inventory.tsv`，1042 文件；只读 `git ls-files` 模式发现，未执行测试；行数/分层/接线计数经脚本输出、TSV 内容与独立 `git ls-files` 计数三方核对一致）。P6 补录后为 1125 文件，差异与原因见 §9。
 
 明确未执行 **[GAP]**（留待对应阶段，不在 P0 冒充）：
 
@@ -254,3 +254,29 @@
 | SOUND 声明强度                 | 部分表述近似“已审”                  | 全文降为“清单级盘点 + 热点文件复核”，见第 0 节声明                                                                                                                             |
 
 计划文件入轨说明：未跟踪的 `docs/plans/1789880018_repository-optimization-plan.md` 按协调方授权在本工作树执行 `prettier --write`（仅表格对齐空格），572 行不变；去空白 + 表格分隔行规范化后与原件哈希一致（`b9d3b944…`），措辞与语义零改动；原件检出未触碰。
+
+## 9. P6 补录：测试清单缺口修复（2026-09-20，本提交）
+
+P6 主工作包对 TSV 做了一次「全量 tracked 测试路径 ↔ 清单」双向比对（模式覆盖
+`*.test.ts(x)` / `*.spec.ts(x)` / `*.test.mjs` / `test_*.py`，显式排除
+`/vendor/`、`/fixtures/`、`conftest`、`__init__`、`/generated/`、`node_modules`、
+`/checkpoints/`），据此补录 83 行，而不是按已知名单追加：
+
+| 缺口                                                                                                                   | 行数 | 说明                                                                                                                                                                                 |
+| ---------------------------------------------------------------------------------------------------------------------- | ---: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 五个 ML backend 的 `tests/test_*.py`                                                                                   |   70 | P0 发现已知名单未含 backend 本地 tests；P6 ML 阶段合并 2 个逐字节相同的 `managed_pool` 套件后，当前 tracked 为 70（grounded-sam2 19 / sam3 20 / yolo 16 / rapidocr 7 / onnxtools 8） |
+| `apps/_shared/backend_runtime/tests/test_managed_pool_concurrency.py`                                                  |    1 | 由上述 2 个套件下沉而来，`replacement` 列记录 old → new 映射                                                                                                                         |
+| `apps/_shared/protocol_v2/tests/test_*.py`                                                                             |    4 | `test_lifecycle` / `test_mask_codec` / `test_schemas` / `test_vocab`，P0 时点即未收录                                                                                                |
+| `apps/api/tests/test_worker_signals.py`、`test_project_access_predicates.py`                                           |    2 | P1 / P4 阶段新增文件未回填清单                                                                                                                                                       |
+| `apps/web/src/pages/Projects/ProjectDataManagerPage.schemaError.test.tsx`、`apps/web/src/test/apiRequestGuard.test.ts` |    2 | P3 阶段新增文件未回填清单                                                                                                                                                            |
+| `apps/web/e2e/screenshots/*.spec.ts`（4 个）                                                                           |    4 | 截图捕获流水线的 Playwright spec，P0 只收录了 `_helpers/*.test.ts`                                                                                                                   |
+
+补录后合计 **1125** 行，分层计数之和一致：backend-api 361 / docs-tooling 2 /
+e2e-browser 67 / frontend-tooling 5 / frontend-unit 551 / mask-utils-shared 5 /
+ml-backend 70 / ml-backend-shared 13 / ml-examples 2 / python-sdk 25 /
+repo-scripts 4 / screenshots-tooling 12 / worktree-runtime 8。
+接线状态：ci-wired 1021 / script-wired 15 / not-wired 89。
+
+接线状态仍是**静态读取**（workflow 与 `package.json` 检索），不是执行证据；
+补录行的 CPU 可运行性证据见 `docs/research/34`（ML/shared）与 35。
+`apps/_shared/protocol_v2` 的 CPU 测试结果见 `docs/research/35`。

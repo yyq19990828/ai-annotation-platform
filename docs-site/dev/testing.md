@@ -22,6 +22,30 @@ last_reviewed: 2026-07-23
 
 按这个比例分配精力。**不要**为单一函数写 E2E、也不要为页面跳转写单元测试。
 
+### 分层归属与运行入口
+
+| 层           | 保护什么                                    | 运行入口                                                                                        | 真值来源                      |
+| ------------ | ------------------------------------------- | ----------------------------------------------------------------------------------------------- | ----------------------------- |
+| 后端纯规则   | 授权谓词、作业终态分派、schema 归一等纯函数 | `cd apps/api && uv run pytest <file>`                                                           | 无需数据库                    |
+| 后端集成     | 事务、行锁、成员并发、通知顺序              | `pnpm dev:worktree -- exec --mode test -- bash -lc 'cd apps/api && .venv/bin/python -m pytest'` | worktree 自有 `aap_wt_*_test` |
+| 前端纯规则   | URL 编解码、几何、状态机                    | `pnpm --filter @anno/web test <file>`                                                           | 无                            |
+| 前端页面集成 | 页面装配与 API 边界契约                     | 同上（页面目录）                                                                                | MSW                           |
+| 浏览器       | 真实画布、渲染、长链路                      | `pnpm test:e2e`（见下文）                                                                       | 隔离服务                      |
+| SDK / 示例   | 对外契约与文档示例                          | `packages/python-sdk`、`docs-site/dev/examples/*`                                               | OpenAPI snapshot              |
+
+两条当前事实：
+
+- ML backend 与 `apps/_shared` 三个共享包（`backend_runtime` / `mask_utils` /
+  `protocol_v2`）的 `tests/` 目前**没有**接入任何 workflow 或 npm script（本仓只读检索），
+  只能本地运行：在 `apps/<backend>` 下 `uv run --extra dev pytest -q`。
+  各 backend 的 `pyproject.toml` 通过 `pythonpath` 注入 `../_shared/*/src`，共享包无需 editable
+  安装；注意各 backend 可解析的共享包**并不相同**（图像/视频 backend 含 `mask_utils`）。
+  直接 `import torch` 的用例是 CPU tensor + fake predictor，安装 CPU wheel 即可执行，
+  不需要 GPU、权重或网络。
+- 页面测试优先在 MSW API 边界描述响应（`src/test/renderWithProviders.tsx` 与
+  `src/test/dataManagerApi.ts` 是样板）；同一纯规则不要在页面测试里重复断言，
+  已下沉的规则写在对应 `*UrlState.test.ts`。
+
 ## 后端：pytest
 
 ### 跑

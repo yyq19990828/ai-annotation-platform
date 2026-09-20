@@ -346,7 +346,7 @@ apps/api/tests/test_users_delete_transfer.py	backend-api	pytest apps/api (pnpm d
 apps/api/tests/test_users_role_matrix.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
 apps/api/tests/test_users_visibility_scope.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
 apps/api/tests/test_v0_7_2.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
-apps/api/tests/test_v0_7_6.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
+apps/api/tests/test_project_attribute_schema_and_batch_reset.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
 apps/api/tests/test_v0_7_8.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
 apps/api/tests/test_validate_gpu_arbitration.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
 apps/api/tests/test_video_canonical.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
@@ -1041,3 +1041,86 @@ scripts/test_worktree_filtering.py	worktree-runtime	python -m unittest discover 
 scripts/test_worktree_maintenance.py	worktree-runtime	python -m unittest discover scripts 'test_worktree*.py'	disposable owned docker/postgres resources	KEEP	pending-review		ci-wired
 scripts/test_worktree_review.py	worktree-runtime	python -m unittest discover scripts 'test_worktree*.py'	disposable owned docker/postgres resources	KEEP	pending-review		ci-wired
 scripts/test_worktree_runtime.py	worktree-runtime	python -m unittest discover scripts 'test_worktree*.py'	disposable owned docker/postgres resources	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_box_seg_predictor.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_device_fallback.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_embedding_cache.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_gpu_lifecycle.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_interactive_multimask.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_interactive_schema.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_lifecycle_endpoints.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_mask_ai_observability.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_multi_polygon_output.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_native_mask_schema.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_pool_observability_v14_14.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_predict_text_output_modes.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_protocol_v21.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_setup_protocol_v2_models.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_setup_variants.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_simplify_tolerance_injection.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_validate_managed_lifecycle.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_video_pool_observability.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_video_predictor.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_coerce_exemplars.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_device_policy.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_embedding_cache.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_gpu_lifecycle.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_gpu_lifecycle_contract.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_idle_unload.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_interactive_schema.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_lifecycle_endpoints.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_mask_ai_observability.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_pool_status_v14_14.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_predictor_exemplar.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_protocol_v21.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_pvs_mask_seed.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_schemas_exemplar.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_setup_protocol_v2_models.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_setup_variants.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_validate_managed_lifecycle.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_video_continuation_prompt.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_video_mask_rle.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/sam3-backend/tests/test_video_session_cleanup.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
+apps/yolo-backend/tests/test_class_whitelist.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
+apps/yolo-backend/tests/test_gpu_lifecycle.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
+apps/yolo-backend/tests/test_gpu_lifecycle_endpoints.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
+apps/yolo-backend/tests/test_model_pool_concurrency.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
+apps/yolo-backend/tests/test_model_registry.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
+apps/yolo-backend/tests/test_open_text.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
+apps/yolo-backend/tests/test_open_text_predict.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
+apps/yolo-backend/tests/test_pool_observability.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
+apps/yolo-backend/tests/test_predict_contract.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
+apps/yolo-backend/tests/test_predict_request_validation.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
+apps/yolo-backend/tests/test_predictor_concurrency.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
+apps/yolo-backend/tests/test_protocol_v21.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
+apps/yolo-backend/tests/test_setup_shape.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
+apps/yolo-backend/tests/test_tracker_aggregate.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
+apps/yolo-backend/tests/test_validate_managed_lifecycle.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
+apps/yolo-backend/tests/test_warmup_and_health.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
+apps/rapidocr-backend/tests/test_catalog_params.py	ml-backend	pytest (local)	none/optional onnxruntime	KEEP	pending-review		not-wired
+apps/rapidocr-backend/tests/test_engine_pool_concurrency.py	ml-backend	pytest (local)	none/optional onnxruntime	KEEP	pending-review		not-wired
+apps/rapidocr-backend/tests/test_gpu_lifecycle.py	ml-backend	pytest (local)	none/optional onnxruntime	KEEP	pending-review		not-wired
+apps/rapidocr-backend/tests/test_gpu_lifecycle_endpoints.py	ml-backend	pytest (local)	none/optional onnxruntime	KEEP	pending-review		not-wired
+apps/rapidocr-backend/tests/test_predictor_runtime.py	ml-backend	pytest (local)	none/optional onnxruntime	KEEP	pending-review		not-wired
+apps/rapidocr-backend/tests/test_provider_probe.py	ml-backend	pytest (local)	none/optional onnxruntime	KEEP	pending-review		not-wired
+apps/rapidocr-backend/tests/test_validate_managed_lifecycle.py	ml-backend	pytest (local)	none/optional onnxruntime	KEEP	pending-review		not-wired
+apps/onnxtools-backend/tests/test_attribute_schema.py	ml-backend	pytest (local)	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		not-wired
+apps/onnxtools-backend/tests/test_gpu_lifecycle.py	ml-backend	pytest (local)	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		not-wired
+apps/onnxtools-backend/tests/test_gpu_lifecycle_endpoints.py	ml-backend	pytest (local)	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		not-wired
+apps/onnxtools-backend/tests/test_handle_pool_concurrency.py	ml-backend	pytest (local)	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		not-wired
+apps/onnxtools-backend/tests/test_predictor_lazy.py	ml-backend	pytest (local)	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		not-wired
+apps/onnxtools-backend/tests/test_predictor_mapping.py	ml-backend	pytest (local)	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		not-wired
+apps/onnxtools-backend/tests/test_provider_probe.py	ml-backend	pytest (local)	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		not-wired
+apps/onnxtools-backend/tests/test_validate_managed_lifecycle.py	ml-backend	pytest (local)	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		not-wired
+apps/_shared/backend_runtime/tests/test_managed_pool_concurrency.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review	replaces apps/grounded-sam2-backend/tests/test_managed_pool_concurrency.py + apps/sam3-backend/tests/test_managed_pool_concurrency.py (P6 pool consolidation)	not-wired
+apps/_shared/protocol_v2/tests/test_lifecycle.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review		not-wired
+apps/_shared/protocol_v2/tests/test_mask_codec.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review		not-wired
+apps/_shared/protocol_v2/tests/test_schemas.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review		not-wired
+apps/_shared/protocol_v2/tests/test_vocab.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review		not-wired
+apps/api/tests/test_project_access_predicates.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
+apps/api/tests/test_worker_signals.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
+apps/web/src/pages/Projects/ProjectDataManagerPage.schemaError.test.tsx	frontend-unit	vitest (pnpm --filter @anno/web test)	none (MSW)	KEEP	pending-review		ci-wired
+apps/web/src/test/apiRequestGuard.test.ts	frontend-unit	vitest (pnpm --filter @anno/web test)	none (MSW)	KEEP	pending-review		ci-wired
+apps/web/e2e/screenshots/canvas-rendering.spec.ts	screenshots-tooling	playwright (apps/web package.json screenshots:*)	docs media seed + isolated screenshot services	KEEP	pending-review		script-wired
+apps/web/e2e/screenshots/flows/flows.spec.ts	screenshots-tooling	playwright (apps/web package.json screenshots:*)	docs media seed + isolated screenshot services	KEEP	pending-review		script-wired
+apps/web/e2e/screenshots/regression/regression.spec.ts	screenshots-tooling	playwright (apps/web package.json screenshots:*)	docs media seed + isolated screenshot services	KEEP	pending-review		script-wired
+apps/web/e2e/screenshots/screenshots.spec.ts	screenshots-tooling	playwright (apps/web package.json screenshots:*)	docs media seed + isolated screenshot services	KEEP	pending-review		script-wired
