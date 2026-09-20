@@ -312,6 +312,11 @@ test("问题状态通知为审核员打开对应审核工作台并保留字段�
 test("失效讨论地址和跨项目任务不会永久加载或先显示错误画布", async ({ page, seed }) => {
   test.setTimeout(120_000);
   const data = await setup(page, seed);
+  // The foreign project below is deliberately named like the shared fixture but
+  // is owned by this namespace's admin, so it must be removed before the owned
+  // pre-clean: `projects.owner_id` would otherwise block the user delete with a
+  // misleading residual.
+  let foreignProjectId: string | null = null;
   try {
     const root = await createIssue(page, data, data.task_ids[0], "校验地址问题");
     for (const query of [
@@ -336,6 +341,7 @@ test("失效讨论地址和跨项目任务不会永久加载或先显示错误�
         },
       }),
     );
+    foreignProjectId = foreign.id;
     const foreignCanvasReads: string[] = [];
     page.on("request", (request) => {
       if (new URL(request.url()).pathname === `/api/v1/tasks/${data.task_ids[0]}/annotations`)
@@ -377,8 +383,20 @@ test("失效讨论地址和跨项目任务不会永久加载或先显示错误�
     );
     await expect(editor(page)).toHaveText("无效链接不能更换当前草稿目标");
   } finally {
-    await page.close();
-    await seed.owned();
+    // Remove the foreign project and prove it completed before the owned
+    // pre-clean runs; page cleanup must still happen if that assertion fails.
+    try {
+      if (foreignProjectId) {
+        const deleted = await page.request.delete(
+          `${API_BASE}/api/v1/projects/${foreignProjectId}`,
+          { headers: auth(data.token) },
+        );
+        expect(deleted.status()).toBe(204);
+      }
+    } finally {
+      await page.close();
+      await seed.owned();
+    }
   }
 });
 
