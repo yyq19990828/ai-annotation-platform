@@ -13,7 +13,7 @@ test.afterEach(({ page }) => {
 });
 
 async function prepare(request: APIRequestContext, seed: SeedAPI, required = false) {
-  const data = await seed.reset();
+  const data = await seed.owned();
   const headers = { Authorization: `Bearer ${await seed.accessToken(data.admin_email)}` };
   const response = await request.get(`${API_BASE}/api/v1/projects/${data.project_id}`, { headers });
   expect(response.ok()).toBe(true);

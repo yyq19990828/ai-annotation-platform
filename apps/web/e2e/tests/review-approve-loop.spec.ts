@@ -23,7 +23,7 @@ test.describe("review approve loop", () => {
     seed,
     request,
   }) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
 
     // 1. 真实标注 + 提交，冻结完整的 review contributor 证据。
     //    不能用 advance_task：它绕过工作流，review 证据保持 unknown 会被自审守卫拒绝。

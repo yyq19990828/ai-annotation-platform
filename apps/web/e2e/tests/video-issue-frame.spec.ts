@@ -104,7 +104,7 @@ async function graphicsEvidence(browser: Browser, page: Page) {
 const test = base.extend<{ issueCase: IssueCase; videoFixture: string }>({
   videoFixture: [MAIN_FIXTURE, { option: true }],
   issueCase: async ({ page, request, seed, browser, videoFixture }, provideFixture, testInfo) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     const video = await seed.videoWebCodecs(data.project_id, { fixture: videoFixture });
     const token = await seed.accessToken(data.admin_email);
     await json(
@@ -261,7 +261,7 @@ const test = base.extend<{ issueCase: IssueCase; videoFixture: string }>({
           await page.unrouteAll({ behavior: "ignoreErrors" });
           if (!page.isClosed()) await page.goto("about:blank");
         } finally {
-          await seed.reset();
+          await seed.owned();
         }
       }
     }

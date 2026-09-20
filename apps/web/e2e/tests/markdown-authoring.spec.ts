@@ -36,7 +36,7 @@ async function prepareGuide(
   seed: SeedAPI,
   content = originalGuide,
 ) {
-  const data = await seed.reset();
+  const data = await seed.owned();
   const token = await seed.accessToken(data.admin_email);
   const headers = { Authorization: `Bearer ${token}` };
   const url = `${API}/projects/${data.project_id}`;
@@ -953,7 +953,7 @@ test.describe("shared Markdown authoring", () => {
     request,
     seed,
   }, testInfo) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     const headers = { Authorization: `Bearer ${await seed.accessToken(data.admin_email)}` };
     await seed.injectToken(page, data.admin_email);
     await page.goto("/project-templates");
@@ -1013,7 +1013,7 @@ test.describe("shared Markdown authoring", () => {
     request,
     seed,
   }, testInfo) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     await seed.injectToken(page, data.admin_email);
     await page.goto("/bugs");
     await page.getByTitle("报告 Bug / 提交反馈").click();

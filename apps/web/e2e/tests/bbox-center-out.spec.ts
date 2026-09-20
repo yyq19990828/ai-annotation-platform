@@ -73,7 +73,7 @@ const nativeSetup = {
 const test = base.extend<{ centerCase: Case; withCandidate: boolean }>({
   withCandidate: [false, { option: true }],
   centerCase: async ({ page, request, seed, browser, withCandidate }, provideFixture, testInfo) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     const taskId = data.task_ids[0];
     const headers = { Authorization: `Bearer ${await seed.accessToken(data.admin_email)}` };
     const project = await json<{ tool_bindings: Record<string, unknown> }>(
@@ -231,7 +231,7 @@ const test = base.extend<{ centerCase: Case; withCandidate: boolean }>({
         page.removeAllListeners("request");
         await page.unrouteAll({ behavior: "ignoreErrors" });
         if (!page.isClosed()) await page.goto("about:blank");
-        await seed.reset();
+        await seed.owned();
       }
     }
   },

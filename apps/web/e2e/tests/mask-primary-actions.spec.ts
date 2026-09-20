@@ -119,7 +119,7 @@ test.describe("Mask phase primary actions", () => {
       seed,
       request,
     }) => {
-      const data = await seed.reset();
+      const data = await seed.owned();
       const taskId = data.task_ids[0];
       const fixture = await seed.injectRasterMask({ taskId, userEmail: data.annotator_email });
       const token = await seed.accessToken(data.annotator_email);
@@ -147,7 +147,7 @@ test.describe("Mask phase primary actions", () => {
     seed,
     request,
   }) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({
       taskId,
@@ -196,7 +196,7 @@ test.describe("Mask phase primary actions", () => {
     seed,
     request,
   }) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({ taskId, userEmail: data.annotator_email });
     const token = await seed.accessToken(data.annotator_email);
@@ -256,7 +256,7 @@ test.describe("Mask phase primary actions", () => {
     seed,
     request,
   }) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     await seed.configureRasterMask(data.project_id, true);
     const { task_id: taskId } = await seed.videoTask(data.project_id);
     const fixture = await seed.nativeMaskCandidate(taskId);
@@ -346,7 +346,7 @@ test.describe("Mask phase primary actions", () => {
     seed,
     request,
   }) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({ taskId, userEmail: data.annotator_email });
     const token = await seed.accessToken(data.annotator_email);
@@ -382,7 +382,7 @@ test.describe("Mask phase primary actions", () => {
     seed,
     request,
   }) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({
       taskId,
@@ -433,7 +433,7 @@ test.describe("Mask phase primary actions", () => {
         window as typeof window & { __E2E_MASK_TILE_MAX_BYTES__?: number }
       ).__E2E_MASK_TILE_MAX_BYTES__ = 327776;
     });
-    const data = await seed.reset();
+    const data = await seed.owned();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({
       taskId,

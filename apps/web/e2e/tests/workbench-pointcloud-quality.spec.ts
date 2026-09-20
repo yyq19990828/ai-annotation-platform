@@ -186,7 +186,7 @@ test.describe("workbench point-cloud quality", () => {
     request,
     seed,
   }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     const token = await seed.accessToken("admin@e2e.test");
     const taskId = lidar.lidar_task_ids[0];
@@ -232,7 +232,7 @@ test.describe("workbench point-cloud quality", () => {
   });
 
   test("nuScenes 时间轴标记、定位、处置与 3D 讨论锚点形成闭环", async ({ page, request, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     const token = await seed.accessToken("admin@e2e.test");
     const taskId = lidar.lidar_task_ids[0];

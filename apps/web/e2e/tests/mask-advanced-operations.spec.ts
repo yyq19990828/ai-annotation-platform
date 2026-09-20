@@ -180,7 +180,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     request,
     seed,
   }) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({ taskId, userEmail: data.annotator_email });
     const token = await seed.accessToken(data.annotator_email);
@@ -248,7 +248,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
   });
 
   test("2. 4/8 邻域与 flood fill 只修改命中的连通区域", async ({ page, request, seed }) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({
       taskId,
@@ -295,7 +295,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     request,
     seed,
   }) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({
       taskId,
@@ -342,7 +342,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
       "源码 Worker 模块需由 Vite 开发服务提供，在 native Mask 矩阵执行",
     );
     test.setTimeout(90_000);
-    const data = await seed.reset();
+    const data = await seed.owned();
     await seed.injectToken(page, data.admin_email);
     await page.goto("/dashboard");
 
@@ -437,7 +437,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     seed,
   }) => {
     test.setTimeout(90_000);
-    const data = await seed.reset();
+    const data = await seed.owned();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({
       taskId,
@@ -492,7 +492,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
 
   test("6a. join 保留 hole/小岛与 lineage", async ({ page, request, seed }) => {
     test.setTimeout(90_000);
-    const data = await seed.reset();
+    const data = await seed.owned();
     const taskId = data.task_ids[0];
     const donut = await seed.injectRasterMask({
       taskId,
@@ -550,7 +550,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
   });
 
   test("6b. 锁定重叠对象阻止严格提交", async ({ page, seed, request }) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     const taskId = data.task_ids[0];
     const primary = await seed.injectRasterMask({
       taskId,
@@ -586,7 +586,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     seed,
   }) => {
     test.setTimeout(90_000);
-    const data = await seed.reset();
+    const data = await seed.owned();
     const taskId = data.task_ids[0];
     const primary = await seed.injectRasterMask({ taskId, userEmail: data.annotator_email });
     const sameClass = await seed.injectRasterMask({ taskId, userEmail: data.annotator_email });
@@ -654,7 +654,7 @@ test.describe("v0.23.9 Mask 高级编辑发布矩阵", () => {
     request,
     seed,
   }) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     const taskId = data.task_ids[0];
     const fixture = await seed.injectRasterMask({
       taskId,

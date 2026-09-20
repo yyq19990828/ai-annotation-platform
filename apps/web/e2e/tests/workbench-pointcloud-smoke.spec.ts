@@ -21,7 +21,7 @@ test("point-mask visibility removes and restores painted points without changing
   seed,
 }) => {
   test.setTimeout(120_000);
-  await seed.reset();
+  await seed.owned();
   const lidar = await seed.seedLidar();
   const taskId = lidar.lidar_task_ids[0];
   const pointIndices = Array.from({ length: lidar.lidar_point_count }, (_, index) => index);
@@ -166,7 +166,7 @@ test.describe("workbench pointcloud smoke (WebGL go/no-go)", () => {
     page,
     seed,
   }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     // super_admin 可见全部项目/任务,免去 batch 可见性/分派的额外铺设。
     await seed.injectToken(page, "admin@e2e.test");

@@ -32,7 +32,7 @@ async function json<T>(response: APIResponse | Response): Promise<T> {
 
 const test = base.extend<{ boundaryCase: Case }>({
   boundaryCase: async ({ page, request, seed, browser }, provideFixture, testInfo) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     const taskId = data.task_ids[0];
     const headers = { Authorization: `Bearer ${await seed.accessToken(data.admin_email)}` };
     const project = await json<{ tool_bindings: Record<string, unknown> }>(
@@ -163,7 +163,7 @@ const test = base.extend<{ boundaryCase: Case }>({
         page.removeAllListeners("request");
         await page.unrouteAll({ behavior: "ignoreErrors" });
         if (!page.isClosed()) await page.goto("about:blank");
-        await seed.reset();
+        await seed.owned();
       }
     }
   },

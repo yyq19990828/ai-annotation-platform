@@ -8,7 +8,7 @@ test("secondary inference is available to annotators and absent from review work
   seed,
 }) => {
   test.setTimeout(90_000);
-  const data = await seed.reset();
+  const data = await seed.owned();
   const taskId = data.task_ids[0];
   const leaveWorkbench = async (email: string) => {
     await page.goto("about:blank");

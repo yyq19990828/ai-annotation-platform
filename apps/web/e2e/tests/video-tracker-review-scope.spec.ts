@@ -88,7 +88,7 @@ async function preview(request: APIRequestContext, fixture: ReviewCase, jobId: s
 
 const test = base.extend<{ reviewCase: ReviewCase }>({
   reviewCase: async ({ page, request, seed }, provide, testInfo) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     const httpErrors: ApiFailure[] = [];
     const consoleErrors: Array<{ path: string; message: string }> = [];
     const pageErrors: string[] = [];
@@ -187,7 +187,7 @@ const test = base.extend<{ reviewCase: ReviewCase }>({
       try {
         await page.goto("about:blank");
       } finally {
-        await seed.reset();
+        await seed.owned();
       }
     }
   },

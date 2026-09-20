@@ -13,7 +13,7 @@ const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
 const apiRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../../api");
 
 function prepareRasterImage(taskId: string) {
-  // seed.reset() uses SVGs; the actual ROI pipeline needs a decodable raster.
+  // The seed fixture uses SVGs; the actual ROI pipeline needs a decodable raster.
   execFileSync(
     "uv",
     [
@@ -88,7 +88,7 @@ test("secondary capsule preserves configuration and real child writes across col
   seed,
 }, testInfo) => {
   test.setTimeout(120_000);
-  const data = await seed.reset();
+  const data = await seed.owned();
   const token = await seed.accessToken(data.admin_email);
   const taskId = data.task_ids[0];
   const backend = await startAiRequestBackend({ secondary: true });
@@ -272,7 +272,7 @@ test("secondary capsule preserves configuration and real child writes across col
         await detach?.();
       } finally {
         await backend.close();
-        await seed.reset();
+        await seed.owned();
       }
     }
   }

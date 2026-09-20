@@ -9,7 +9,7 @@ test("快捷键面板：几何、搜索、改绑、冲突与焦点恢复", async
   test.setTimeout(90_000);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  const data = await seed.reset();
+  const data = await seed.owned();
   await seed.injectToken(page, data.admin_email);
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto(`/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`);

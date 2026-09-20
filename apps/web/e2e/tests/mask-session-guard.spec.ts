@@ -13,7 +13,7 @@ import { test, expect } from "../fixtures/seed";
 
 test.describe("mask session guard (v0.23.5 WS-B/C)", () => {
   test("未涂抹时 Enter 不提交; 涂抹后 Enter 提交一次", async ({ page, seed }) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     await seed.advanceTask({
       taskId: data.task_ids[0],
       toStatus: "pending",
@@ -78,7 +78,7 @@ test.describe("mask session guard (v0.23.5 WS-B/C)", () => {
   });
 
   test("涂抹后切工具离开 dirty session 弹未保存提示", async ({ page, seed }) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     await seed.advanceTask({
       taskId: data.task_ids[0],
       toStatus: "pending",

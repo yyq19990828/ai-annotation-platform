@@ -513,6 +513,38 @@ async def test_owned_cleanup_exposes_residuals_on_partial_failure(
     assert (await _cleanup_owned(httpx_client, A)).status_code == 200
 
 
+async def test_legacy_shared_filtering_cleanup_reports_exact_failures(
+    httpx_client, caplog
+):
+    """Bounded reproducer for the shared filtering teardown (legacy exception).
+
+    Guards the cleanup contract end to end: the shared `/seed/cleanup` must
+    return success with zero residuals after a legacy `/seed/filtering` build,
+    and any delete failure must surface in the response detail instead of
+    being swallowed silently.
+    """
+    import logging
+
+    build = await httpx_client.post("/api/v1/__test/seed/filtering")
+    assert build.status_code == 200, build.text
+    manifest = build.json()
+
+    with caplog.at_level(logging.WARNING, logger="anno-api.seed_cleanup"):
+        cleanup = await httpx_client.post("/api/v1/__test/seed/cleanup")
+    assert cleanup.status_code == 200, cleanup.text
+
+    assert (
+        await httpx_client.post(
+            "/api/v1/__test/seed/login",
+            json={"email": manifest["user_emails"]["admin"]},
+        )
+    ).status_code == 404
+    skips = [
+        r.getMessage() for r in caplog.records if "seed_cleanup skip" in r.getMessage()
+    ]
+    assert skips == [], f"legacy cleanup swallowed delete failures: {skips}"
+
+
 async def test_owned_routes_stay_hidden_from_openapi(httpx_client, app_module):
     for path in ("/api/v1/__test/seed/owned", "/api/v1/__test/seed/owned-cleanup"):
         route = next(
@@ -520,3 +552,177 @@ async def test_owned_routes_stay_hidden_from_openapi(httpx_client, app_module):
         )
         assert route.include_in_schema is False
         assert path not in app_module.openapi()["paths"]
+
+
+async def test_owned_filtering_fixture_is_namespaced_and_converges(
+    httpx_client, db_session: AsyncSession
+):
+    """The filtering fixture honours one namespace and cleans up exactly.
+
+    Covers the display-id mapping (`_test_seed_filters.py`) end to end through
+    the route: built rows use `P-FI-*`/`DS-FI-*` owned ids, cleanup removes
+    them including the fixture's templates and audit rows, and a neighbouring
+    namespace stays intact.
+    """
+    from sqlalchemy import select
+
+    from app.db.models.audit_log import AuditLog
+    from app.db.models.project import Project
+    from app.db.models.project_template import ProjectTemplate
+
+    body_a = await httpx_client.post(
+        "/api/v1/__test/seed/filtering", json={"namespace": A}
+    )
+    assert body_a.status_code == 200, body_a.text
+    manifest_a = body_a.json()
+    assert manifest_a["image"]["project_id"]
+
+    project_a_id = uuid.UUID(manifest_a["image"]["project_id"])
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(Project)
+            .where(
+                Project.id == project_a_id,
+                Project.display_id == f"P-FI-I-{A}",
+            )
+        )
+        == 1
+    )
+
+    body_b = await httpx_client.post(
+        "/api/v1/__test/seed/filtering", json={"namespace": B}
+    )
+    assert body_b.status_code == 200, body_b.text
+    manifest_b = body_b.json()
+
+    assert (await _cleanup_owned(httpx_client, A)).status_code == 200
+
+    assert (
+        await db_session.scalar(
+            select(func.count()).select_from(Project).where(Project.id == project_a_id)
+        )
+        == 0
+    )
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(ProjectTemplate)
+            .where(ProjectTemplate.display_id.in_([f"TPLFI-A-{A}", f"TPLFI-B-{A}"]))
+        )
+        == 0
+    )
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(AuditLog)
+            .where(AuditLog.detail_json["namespace"].astext == A)
+        )
+        == 0
+    )
+    # Neighbour B: all of its fixture projects survive cleanup of A.
+    surviving = [
+        uuid.UUID(manifest_b[section]["project_id"])
+        for section in ("image", "video", "paging", "lidar")
+    ]
+    assert (
+        await db_session.scalar(
+            select(func.count()).select_from(Project).where(Project.id.in_(surviving))
+        )
+        == 4
+    )
+
+
+async def test_owned_lidar_fixture_is_namespaced(
+    httpx_client, db_session: AsyncSession
+):
+    from app.db.models.dataset import Dataset
+    from app.db.models.project import Project
+    from sqlalchemy import func
+
+    await _build_owned(httpx_client, A)
+    lidar = await httpx_client.post("/api/v1/__test/seed/lidar", json={"namespace": A})
+    assert lidar.status_code == 200, lidar.text
+    body = lidar.json()
+    lidar_project_id = uuid.UUID(body["lidar_project_id"])
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(Project)
+            .where(Project.id == lidar_project_id, Project.name == f"E2E Lidar {A}")
+        )
+        == 1
+    )
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(Dataset)
+            .where(Dataset.display_id == f"DS-LDR-{A}")
+        )
+        == 1
+    )
+
+    assert (await _cleanup_owned(httpx_client, A)).status_code == 200
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(Project)
+            .where(Project.id == lidar_project_id)
+        )
+        == 0
+    )
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(Dataset)
+            .where(Dataset.display_id == f"DS-LDR-{A}")
+        )
+        == 0
+    )
+
+
+async def test_owned_project_roles_fixture_is_namespaced(
+    httpx_client, db_session: AsyncSession
+):
+    from sqlalchemy import select
+
+    from app.db.models.project import Project
+    from app.db.models.user import User
+
+    body = await httpx_client.post(
+        "/api/v1/__test/seed/project-roles", json={"namespace": A}
+    )
+    assert body.status_code == 200, body.text
+    data = body.json()
+
+    assert data["employee_email"] == f"employee-{A}@e2e.test"
+    assert data["projects"]["a"]["project_role"] == "annotator"
+    assert data["projects"]["b"]["project_role"] == "reviewer"
+    assert data["projects"]["c"]["project_role"] is None
+    names = [
+        row[0]
+        for row in (
+            await db_session.execute(
+                select(Project.name).where(
+                    Project.name.like(f"E2E Project Roles % {A}")
+                )
+            )
+        ).fetchall()
+    ]
+    assert sorted(names) == sorted(f"E2E Project Roles {key} {A}" for key in "ABCD")
+
+    assert (await _cleanup_owned(httpx_client, A)).status_code == 200
+    assert (
+        await db_session.scalar(
+            select(func.count())
+            .select_from(User)
+            .where(User.email == f"employee-{A}@e2e.test")
+        )
+        == 0
+    )
+    assert (
+        await db_session.scalar(
+            select(func.count()).select_from(Project).where(Project.name.in_(names))
+        )
+        == 0
+    )

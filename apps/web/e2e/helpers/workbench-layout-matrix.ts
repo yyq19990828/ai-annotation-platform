@@ -156,7 +156,7 @@ export function registerWorkbenchLayoutMatrixTests(kinds: readonly LayoutMatrixK
             test.setTimeout(reorders === 50 ? 180_000 : 90_000);
             const stageTimeout = reorders === 50 ? STRESS_STAGE_TIMEOUT_MS : undefined;
             const context: WorkspaceContext = `${mode}:${kind}`;
-            const data = await seed.reset();
+            const data = await seed.owned();
             let projectId = data.project_id;
             let taskId = data.task_ids[0];
             if (kind === "video") taskId = (await seed.videoTask(projectId)).task_id;

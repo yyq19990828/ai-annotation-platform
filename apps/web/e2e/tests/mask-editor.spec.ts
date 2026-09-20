@@ -15,7 +15,7 @@ import { test, expect } from "../fixtures/seed";
 
 test.describe("mask editor (I11)", () => {
   test("空白 mask → Enter 提交一个原生 Mask annotation", async ({ page, seed }) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     await seed.advanceTask({
       taskId: data.task_ids[0],
       toStatus: "pending",
@@ -67,7 +67,7 @@ test.describe("mask editor (I11)", () => {
   });
 
   test("AI prediction polygon 精修 → 确认后新原生 Mask 入库", async ({ page, seed }) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     await seed.advanceTask({
       taskId: data.task_ids[0],
       toStatus: "pending",
@@ -180,7 +180,7 @@ test.describe("mask editor (I11)", () => {
   });
 
   test("mask 工具 hotkey 全集：B / E / 滚轮 / Esc", async ({ page, seed }) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     await seed.advanceTask({
       taskId: data.task_ids[0],
       toStatus: "pending",

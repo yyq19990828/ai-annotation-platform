@@ -6,7 +6,7 @@ const player = (page: Page) => page.locator("[data-scene-playback]");
 const play = (page: Page) => page.getByTestId("scene-timeline-play");
 
 async function prepare(page: Page, seed: SeedAPI) {
-  await seed.reset();
+  await seed.owned();
   const data = await seed.seedLidar();
   await seed.injectToken(page, "admin@e2e.test");
   if (process.env.PLAYWRIGHT_POINTCLOUD_WEBGPU === "1") {

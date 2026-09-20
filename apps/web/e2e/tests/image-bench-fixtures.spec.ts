@@ -19,7 +19,7 @@ const SIZE = env.IMAGE_BENCH_SIZE ?? "2k";
 const DENSITY = parseInt(env.IMAGE_BENCH_DENSITY ?? "10", 10);
 
 test(`image-bench · size=${SIZE} density=${DENSITY}`, async ({ page, seed }) => {
-  const data = await seed.reset();
+  const data = await seed.owned();
   await seed.advanceTask({
     taskId: data.task_ids[0],
     toStatus: "pending",

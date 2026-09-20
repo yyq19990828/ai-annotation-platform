@@ -13,7 +13,7 @@ import { test, expect } from "../fixtures/seed";
 test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
   test("B 键一次激活 → 连续创建 20 个框 → 保存期串行且 V 退出", async ({ page, seed }) => {
     test.setTimeout(90_000);
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
 
@@ -141,7 +141,7 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
   });
 
   test("连续建框保存失败 → 回滚半成品并保持 armed 可重试", async ({ page, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
 
@@ -187,7 +187,7 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
   });
 
   test("保存期切任务 → 迟到响应不选中旧框且不污染新任务 history", async ({ page, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
     const [firstTaskId, secondTaskId] = lidar.lidar_task_ids;
@@ -247,7 +247,7 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
   });
 
   test("armed 中切换类别 → 下一框使用新类别且不退出", async ({ page, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
 
@@ -292,7 +292,7 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
   });
 
   test("点选框 → Delete 键 → DELETE /annotations/:id", async ({ page, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
 
@@ -323,7 +323,7 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
   //    合并 handler 的结构 / 次序,这条立刻报警。
   //    P 切 point-mask → 选「多边形」→ canvas 点 3 点 → Enter 完成 → POST point_mask_3d。
   test("P → 多边形模式 → 画 polygon → Enter → POST point_mask_3d", async ({ page, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
     await seed.setPetEnabled("admin@e2e.test", true);
@@ -377,7 +377,7 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
   });
 
   test("point-mask 多边形双击优先完成绘制，不触发框聚焦", async ({ page, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
 
@@ -411,7 +411,7 @@ test.describe("workbench pointcloud tools (键盘 handler 守护)", () => {
   });
 
   test("M 点云测量只写会话态 overlay，支持管理并在切任务时清理", async ({ page, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
     const [, secondTaskId] = lidar.lidar_task_ids;

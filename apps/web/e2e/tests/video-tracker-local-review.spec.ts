@@ -51,7 +51,7 @@ test("Tracker 可按目标/帧窗局部接受拒绝并二次确认人工帧", as
   seed,
 }, testInfo) => {
   test.setTimeout(90_000);
-  const data = await seed.reset();
+  const data = await seed.owned();
   try {
     const video = await seed.videoTask(data.project_id);
     const fixture = await seed.trackerReview(video.task_id, data.admin_email);
@@ -263,7 +263,7 @@ test("Tracker 可按目标/帧窗局部接受拒绝并二次确认人工帧", as
     try {
       await page.goto("about:blank");
     } finally {
-      await seed.reset();
+      await seed.owned();
     }
   }
 });

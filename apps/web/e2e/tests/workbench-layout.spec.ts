@@ -71,7 +71,7 @@ test.use({ viewport: DESKTOP });
 
 test("AI 候选和多选不会作为标注身份查询隐藏讨论面板", async ({ page, seed }) => {
   test.setTimeout(90_000);
-  const data = await seed.reset();
+  const data = await seed.owned();
   const taskId = data.task_ids[0];
   const annotationCommentRequests: string[] = [];
   const scopedAnnotationIds: string[] = [];
@@ -178,7 +178,7 @@ test("AI 候选和多选不会作为标注身份查询隐藏讨论面板", async
     ).toBe(true);
   } finally {
     await page.close();
-    await seed.reset();
+    await seed.owned();
   }
 });
 
@@ -187,7 +187,7 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
   seed,
 }) => {
   test.setTimeout(90_000);
-  const data = await seed.reset();
+  const data = await seed.owned();
   await seed.advanceTask({
     taskId: data.task_ids[0],
     toStatus: "pending",
@@ -364,7 +364,7 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
 
 test("标准和浮动布局使用日间与夜间语义主题", { tag: "@visual" }, async ({ page, seed }) => {
   test.setTimeout(90_000);
-  const data = await seed.reset();
+  const data = await seed.owned();
   await seed.injectToken(page, data.admin_email);
   // Theme screenshots exercise the layout without depending on the seed's external ML service.
   const headers = { Authorization: `Bearer ${await seed.accessToken(data.admin_email)}` };
@@ -415,7 +415,7 @@ test("标准和浮动布局使用日间与夜间语义主题", { tag: "@visual" 
 
 test("命名布局预设随账号保存，可跨刷新应用与删除", async ({ page, seed }) => {
   test.setTimeout(90_000);
-  const data = await seed.reset();
+  const data = await seed.owned();
   await seed.injectToken(page, data.admin_email);
   await page.goto(`/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`);
   await layoutCommand(page, "标准标注布局");
@@ -458,7 +458,7 @@ test("命名布局预设随账号保存，可跨刷新应用与删除", async ({
 
 test("预设撤销恢复自定义树，后续预设替换撤销点且紧凑模式清除撤销入口", async ({ page, seed }) => {
   test.setTimeout(90_000);
-  const data = await seed.reset();
+  const data = await seed.owned();
   await seed.injectToken(page, data.admin_email);
   await page.goto(`/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`);
   await layoutCommand(page, "标准标注布局");
@@ -511,7 +511,7 @@ test("视频紧凑布局禁止桌面写入，退出后恢复浮窗与非零帧�
   seed,
 }) => {
   test.setTimeout(90_000);
-  const data = await seed.reset();
+  const data = await seed.owned();
   const video = await seed.videoTask(data.project_id);
   await seed.injectToken(page, data.admin_email);
   await page.goto(`/projects/${data.project_id}/annotate?task=${video.task_id}`);

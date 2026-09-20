@@ -2,7 +2,7 @@ import { expect, test } from "../fixtures/seed";
 
 test.describe("trusted LiDAR export", () => {
   test("Chromium 实际页面要求显式相机并展示严格预检", async ({ page, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
 

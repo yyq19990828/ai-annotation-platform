@@ -38,7 +38,7 @@ interface SeekCase {
 
 const test = base.extend<{ seekCase: SeekCase }>({
   seekCase: async ({ page, request, seed }, provide) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     const video = await seed.videoWebCodecs(data.project_id, { fixture: MAIN_FIXTURE });
     const token = await seed.accessToken(data.admin_email);
     await expectSeededChunks(request, token, video.task_id);
@@ -63,7 +63,7 @@ const test = base.extend<{ seekCase: SeekCase }>({
     try {
       if (!page.isClosed()) await page.goto("about:blank");
     } finally {
-      await seed.reset();
+      await seed.owned();
     }
   },
 });

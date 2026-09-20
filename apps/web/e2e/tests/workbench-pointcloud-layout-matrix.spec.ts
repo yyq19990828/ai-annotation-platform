@@ -20,7 +20,7 @@ test("3D 自由布局保留共享 renderer，三视图移出画布与相机整�
   seed,
 }) => {
   test.setTimeout(120_000);
-  await seed.reset();
+  await seed.owned();
   const lidar = await seed.seedLidar();
   await seed.injectToken(page, "admin@e2e.test");
   const desktop = { width: 1920, height: 1080 };

@@ -138,7 +138,7 @@ async function expectCenterHitTarget(locator: Locator) {
 
 test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
   test("nuScenes mini Scene 时间轴切帧、恢复轨迹选择并可稳定折叠展开", async ({ page, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
     await page.addInitScript(() => {
@@ -266,7 +266,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
   });
 
   test("3D 跨帧任务中心显式提交范围并恢复持久作业状态", async ({ page, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
     const capturedBodies: Record<string, unknown>[] = [];
@@ -355,7 +355,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
   });
 
   test("3D 轨迹拆分合并在同一任务中心完成预览与快照确认", async ({ page, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
     const previewBodies: Record<string, unknown>[] = [];
@@ -423,7 +423,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     seed,
     browser,
   }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
     await page.addInitScript(() => {
@@ -561,7 +561,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
   test("点选 box_3d → PSR 面板出现 → 改 cx → 几何 PATCH 落库", async ({ page, seed }) => {
     await page.emulateMedia({ reducedMotion: "reduce" });
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
     await seed.setPetEnabled("admin@e2e.test", true);
@@ -672,7 +672,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     seed,
   }) => {
     test.setTimeout(60_000);
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
 
@@ -799,7 +799,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
   test("相机种框一次激活 → 连续创建两个框 → 保存期拒绝重复拖动", async ({ page, seed }) => {
     test.setTimeout(60_000);
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
 
@@ -885,7 +885,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
   test("标定 revision 管理追加原始矩阵并保留历史", async ({ page, seed }) => {
     test.setTimeout(60_000);
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
 
@@ -946,7 +946,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
   // 3D 合并键盘 handler 的一员,重构若动 Q 分支/applyFit↔form 接线,这条立刻报警。
   // (复位旋转 handleResetRotation 结构同型:setForm + updateAnnotationWithHistory,同受守护。)
   test("选中框 → Q 一键贴合 → 即时 PATCH 落库", async ({ page, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
 
@@ -1006,7 +1006,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
   // 「拖 gizmo 落 PATCH」的回调接线。BEV 俯视固定相机 → 框投影画布中心、轴屏对齐 → 近中心
   // 网格扫起点拖拽,命中 gizmo 即落 PATCH(抗投影抖动)。
   test("选中框 → W gizmo 拖拽 → setTransformHandler PATCH 落库", async ({ page, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
 
@@ -1063,7 +1063,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
   // pointer-events 必须为 "auto"(否则拖边/角精修完全失效)。守护 v0.17.6 module.css→Tailwind
   // 迁移引入的 `pointer-events-none` + `pointer-events-auto` 同挂、none 胜出的回归。
   test("选中框 → 三视图 overlay 可接收事件(pointer-events: auto)", async ({ page, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
 
@@ -1091,7 +1091,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
   });
 
   test("选择工具双击框 → 单选并聚焦，不产生 annotation 写请求", async ({ page, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
 
@@ -1120,7 +1120,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
   });
 
   test("三视图按对象和视图记忆离散缩放，触控板小 delta 先累计", async ({ page, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
 
@@ -1191,7 +1191,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
   });
 
   test("三套布局预设一次点击恢复三视图和相机面板，不切换当前工具", async ({ page, seed }) => {
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
 
@@ -1244,7 +1244,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
   test("布局预设在目标视口与 0/1/2/6 路相机下不遮挡关键入口", async ({ page, seed }) => {
     test.setTimeout(90_000);
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
     let cameraCount = 0;
@@ -1334,7 +1334,7 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
 
   test("关闭持久化时同 scene 切帧仍恢复运行时相机", async ({ page, seed }) => {
     test.setTimeout(60_000);
-    await seed.reset();
+    await seed.owned();
     const lidar = await seed.seedLidar();
     await seed.injectToken(page, "admin@e2e.test");
     const [firstTaskId, secondTaskId] = lidar.lidar_task_ids;
