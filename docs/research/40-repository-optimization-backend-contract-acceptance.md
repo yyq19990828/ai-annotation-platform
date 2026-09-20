@@ -2,7 +2,7 @@
 
 > 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P10 验证通道，非 canonical P10 完成）
 > 分支：`worktree-agent-opt-final-backend`（自 P5 验收点 `9e34dfafb` 起本通道仅新增本文档提交）
-> 测试时产品输入状态：与 P5 验收根 `9e34dfafb` 完全一致（本通道零产品源码变更）；后续 rebase 到 `0d044d4d` 仅含迁移脚本/文档（见 §2 复用判定）
+> 测试时产品输入状态：`9e34dfafb`（P5 验收点，已包含 `0d044d4d` 的迁移脚本修复——`0d044d4d` 是 `9e34dfafb` 的祖先）；本通道零产品源码变更，仅新增本文档（见 §2 复用判定）
 > 证据图例：**[V]** 本工作树实际执行；**[GAP]** 未执行/明确限制
 > 边界：无产品源码变更；不 push；不做 P8/P9/台账编辑；不做前端/浏览器全量；未触碰 main 8000 / feedback 8100 / Grafana 3001 及其他 worktree 运行时。
 
@@ -20,7 +20,7 @@ cd apps/api && uv run pytest -q --cov=app --cov-report=xml --cov-report=term-mis
 
 - OpenAPI 快照漂移检查：`uv run python ../../scripts/export_openapi.py --check` → "✓ openapi snapshot 与当前路由一致"，退出码 0 **[V]**。
 - 迁移策略纯逻辑测试：`apps/api/.venv/bin/python scripts/test_alembic_migration_policy.py` → **Ran 33 tests / OK**，退出码 0 **[V]**。
-- 真实 4 阶段迁移验证（fresh/reversible/forward/restore）**复用 0d044d4d 已验收证据**：`git diff 0d044d4d..HEAD -- scripts/alembic_reversible_floor.py scripts/validate_migrations.py apps/api/alembic` 为空（输入字节不变）[V]。当前输入指纹：`alembic_reversible_floor.py` = `f2fce7e6…`、`validate_migrations.py` = `d95a7850…`、`apps/api/alembic` 聚合 = `84c2531b…`。
+- 真实 4 阶段迁移验证（fresh/reversible/forward/restore）**复用已验收证据**：被测状态 `9e34dfafb` 已包含 `0d044d4d` 的迁移脚本修复；`git diff 0d044d4d..HEAD -- scripts/alembic_reversible_floor.py scripts/validate_migrations.py apps/api/alembic` 为空（自 0d044d4d 验收证据以来输入字节不变）[V]。当前输入指纹：`alembic_reversible_floor.py` = `f2fce7e6…`、`validate_migrations.py` = `d95a7850…`、`apps/api/alembic` 聚合 = `84c2531b…`。
 
 ## 3. Python SDK / CLI / TUI
 
@@ -44,12 +44,12 @@ P6/P8 已验收：6 个轻量/共享套件实跑通过（yolo 224、backend_runt
 
 ## 6. 环境与隔离
 
-- 后端测试经 `dev:worktree -- init --mode test` + `exec --mode test` 专用一次性库执行；验收后该模式资源经 `destroy --mode e2e`（同 launcher，`--confirm` 见 §8）与自有确认流程清理；junitxml/coverage.xml/dist/venv 等任务产物已删除，仅保留本报告与文档。
+- 后端测试经 `dev:worktree -- init --mode test` + `exec --mode test` 专用一次性库执行；验收完成后该 test 模式资源已用其专属确认值销毁（见 §8），junitxml/coverage.xml/dist/venv 等任务产物已删除，仅保留本报告与文档。
 - 未触碰 main 8000 / feedback 8100 / Grafana 3001；未做全局 pkill；未改动任何其他 worktree 的 PIDs/locks。
 
 ## 7. 边界与未验证 [GAP]
 
-- 全部结果为**本地执行**，不等价于远程 CI 结论（远程 CI 由 P8 通道负责比对）。
+- 全部结果为**本地执行**；该候选未运行远程 CI，P9 的本地/远程对照仍未完成。
 - 后端 15 个既有 skip 未逐条归因（属既有环境门控，非本通道引入）。
 - grounded-sam2/sam3 为 CPU torch 契约测试；不含 GPU、真实权重推理与渲染资格验证。
 - OpenAPI/迁移/SDK 覆盖的是契约与策略面；前端与浏览器链路由 P5 浏览器验收（research/33 §7）与 P8 smoke 证据另行覆盖。
