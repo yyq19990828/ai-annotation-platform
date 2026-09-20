@@ -919,7 +919,9 @@ test.describe("shared Markdown authoring", () => {
     await pasteImage(targetCell, "待删图片.png");
     const errors = editor.getByTestId("markdown-upload-errors");
     await expect(errors).toBeVisible();
-    const initsAfterFailure = uploadInitCount;
+    // Positive baseline: the upload failed once before the node was deleted, so
+    // the later count is not comparing two accidental zeros.
+    expect(uploadInitCount).toBe(1);
 
     // Remove the failed placeholder; the editor must drop the pending upload
     // rather than keep a retry that could re-upload a deleted node. The paste
@@ -928,11 +930,13 @@ test.describe("shared Markdown authoring", () => {
     await expect(errors).toHaveCount(0);
     await expect(targetCell).toContainText("前后");
 
-    await page.waitForTimeout(300);
-    expect(uploadInitCount).toBe(initsAfterFailure);
+    // The real save and persisted readback is the observable completion
+    // boundary: no further upload-init may run, and neither the pending marker
+    // nor an asset may persist.
     await page.getByRole("button", { name: "保存", exact: true }).click();
     await expect(page.getByTestId("guide-save-status")).toHaveText("已保存");
     const saved = await fixture.read();
+    expect(uploadInitCount).toBe(1);
     expect(saved.annotation_guide).not.toContain("markdown-upload-pending:");
     expect(saved.guide_assets).toHaveLength(0);
   });
