@@ -271,6 +271,7 @@ jobs:
       contents: read
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
+      shared-contracts: ${{ steps.plan.outputs.shared_contracts }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -286,6 +287,63 @@ jobs:
         env:
           E2E_BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: node scripts/plan-e2e-suites.mjs "$E2E_BASE_SHA" >> "$GITHUB_OUTPUT"
+      # Plan §6.7-1: the §6 selection runs as a shadow report only. The matrix
+      # (and therefore the stable Frontend E2E gate) stays legacy until P9.
+      - name: Record shadow E2E selection
+        env:
+          SHADOW: ${{ steps.plan.outputs.shadow }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          const shadow = JSON.parse(process.env.SHADOW);
+          const rows = [
+            '| Scope | Legacy gate | Shadow proposal |',
+            '| --- | --- | --- |',
+            ...['smoke', 'specialty', 'full', 'extended'].map((scope) => {
+              const inLegacy = shadow.legacy.length > 0;
+              return `| ${scope} | n/a (legacy list below) | ${shadow.planned.length} planned suites |`;
+            }),
+          ];
+          const lines = [
+            '### E2E shadow selection (plan §6, warn-only — gate unchanged)',
+            '',
+            '```',
+            `legacy:  ${shadow.legacy.join(', ') || '(none)'}`,
+            `planned: ${shadow.planned.join(', ') || '(none)'}`,
+            `added:   ${shadow.added.join(', ') || '(none)'}`,
+            `removed: ${shadow.removed.join(', ') || '(none)'}`,
+            '```',
+            '',
+            'Reasons:',
+            ...shadow.reasons.map((reason) => `- ${reason.suite}: ${reason.because}`),
+            ...shadow.warnings.map((warning) => `- warning: ${warning}`),
+            '',
+            `Shared CPU contract suites wired this run: ${shadow.sharedContracts.wired.map((s) => s.suite).join(', ') || '(none triggered)'}`,
+            `Qualification-only (never scheduled): ${shadow.sharedContracts.qualification.map((s) => s.suite).join(', ') || '(none)'}`,
+            '',
+          ];
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n'));
+          NODE
+
+  shared-contracts:
+    name: Shared contract tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: [e2e-plan]
+    if: needs.e2e-plan.outputs.shared-contracts == 'true'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install uv
+        run: pip install uv
+      - name: Run protocol_v2 CPU contract suite
+        working-directory: apps/_shared/protocol_v2
+        run: uv run --extra test pytest -q
+      - name: Run mask_utils CPU contract suite
+        working-directory: apps/_shared/mask_utils
+        run: uv run --extra test pytest -q
 
   e2e-suites:
     name: Frontend E2E execution

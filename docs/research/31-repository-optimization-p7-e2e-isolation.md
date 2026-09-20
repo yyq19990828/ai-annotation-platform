@@ -10,12 +10,12 @@
 2. 边界测试（`scripts/video-request-errors.test.ts`，16 例）同时覆盖允许侧、相邻路径/方法/kind 的禁止侧、跨流程不渗透（image preset 拒绝 video-only 条目、反之亦然），并把 before/after 迁移映射写成可执行断言 [V]。
 3. `seed.reset()` 的 163 个调用点（59 个 spec 文件）全部迁移为 `seed.owned()`：按 spec 文件 + 测试标题确定性派生命名空间（重试稳定、跨测试/套件/分片不碰撞），测试结束后 seed fixture teardown 精确清理 [V]。
 4. 后端 `_test_seed` 路由获得 owned 变体（`/seed/owned`、`/seed/owned-cleanup`、`/seed/lidar`、`/seed/project-roles`、`/seed/filtering` 的命名空间参数化），全部复用同一套 FK 顺序删除引擎与同一 fixture 构建器，不设第二套实现；`seed/reset` 保留为已记录的串行例外（收敛所有 E2E 命名空间的破坏性重建）[V]。
-5. 实际运行验证（owned `aap_wt_*` 资源、隔离端口、真实浏览器）：default 图像工作台 5×2（重复运行）、filter-operational-lists 9、mask-readonly 2 passed+11 skipped、mask-native 20 passed+2 skipped、mask-ai-native 7 passed [V]。
+5. 实际运行验证（owned `aap_wt_*` 资源、隔离端口、真实浏览器）：default 图像工作台 5×2（重复运行）、filter-operational-lists 9、mask-readonly 2 passed+11 skipped、mask-native 20 passed+2 skipped、mask-ai-native 7 passed、无矩阵 default 下共享 Mask spec 9 passed+19 skipped [V]。
 6. 运行时探针：受控 retry 探针（attempt 0 构建后受控失败，attempt 1 同命名空间重建通过，Playwright 判定 1 flaky）；邻居探针（A/B 命名空间同时构建，清理 A 后 A 登录 404 + A 存储 object NoSuchKey，B 登录/任务/存储字节级不变 + presign 仅指向 B 键，随后 B teardown 清理）[M]。
 
 ## 1. 范围与边界
 
-- **拥有面**：`apps/web/e2e/**`、`apps/web/scripts/video-request-errors.test.ts`、`apps/api/app/api/v1/_test_seed.py`、`apps/api/app/api/v1/_test_seed_filters.py`、新建 `apps/api/tests/test_seed_owned.py`。
+- **拥有面**：`apps/web/e2e/**`、`apps/web/scripts/video-request-errors.test.ts`、`apps/api/app/api/v1/_test_seed.py`、`apps/api/app/api/v1/_test_seed_filters.py`、新建 `apps/api/tests/test_seed_owned.py`；另经协调方转达 P5 授权，在既有 owner 内扩展了 `apps/web/src/pages/Workbench/stage/shared/geometry/maskOperations.test.ts` 与 `maskRle.test.ts`（未触碰 P5 生产源码与其余测试）。
 - **不触碰**：P2 既有后端测试/conftest/factory（只在运行时 import）；P3 的 `vitest.setup.ts`/`vite.config.ts`/`src/test`/data-manager 流程测试；P4/P5 领域。
 - **workers 保持 1**。迁移完成后同一命名空间不再跨测试共享，但 launcher 的单 e2e 会话与端口仍为串行边界；未做 worker 并发扩容（计划 §6.4-4 留待隔离验收后的后续阶段）。
 - 全部后端测试在 `pnpm dev:worktree --mode test`（`aap_wt_*_test`，head 0174）执行；全部 E2E 在 `--mode e2e`（`aap_wt_*_e2e`）执行。未触碰共享 `annotation_test`/`annotation_e2e`。
