@@ -46,6 +46,11 @@ uv run pytest --cov=app --cov-report=html    # 看覆盖率
 | `httpx_client`                                             | ASGI 客户端，依赖注入了 db_session        |
 | `super_admin` / `project_admin` / `annotator` / `reviewer` | 4 角色 fixture，带 JWT token              |
 
+测试库连接解析规则：显式 `TEST_DATABASE_URL` 优先，否则跟随本环境迁移连接并固定到
+`annotation_test`；解析失败会直接报错，不会回退到任何默认连接串。无论来源，目标都必须是
+postgresql 且库名以 `_test` 结尾的一次性测试库（如 worktree 启动器分配的 `aap_wt_*_test`），
+指向开发/生产库的配置会在迁移/写入前被拒绝。
+
 ### 写一个 API 测试
 
 ```python
