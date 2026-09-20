@@ -7,38 +7,41 @@
 
 ## 1. 两个耦合的问题
 
-1. **原生标签拖拽的命中测试**：画布面板内容渲染在 `.dv-render-overlay`（Dockview 的 always-render 覆盖层，`.dv-shell` 的直接子节点，与 group 网格同级）。Dockview 8.2.0 虽把 overlay 的 DnD 转发给 group，但在本布局下转发目标未激活，于是把标签拖到画布上时 group 的 drop target 收不到 `dragover/drop`，停靠被取消（frozen 构建下 `markdown`/画布停靠成为 no-op）。
+1. **原生标签拖拽的命中测试**：画布面板内容渲染在 `.dv-render-overlay`（Dockview 的 always-render 覆盖层，`.dv-shell` 的直接子节点，与 group 网格同级）。Dockview 8.2.0 虽把 overlay 的 DnD 转发给 group，但在本布局下转发目标未激活，于是把标签拖到画布上时 group 的 drop target 收不到 `dragover/drop`，停靠被取消（frozen 构建下画布方向的面板停靠成为 no-op）。
 2. **根边停靠后保留分组的几何**：当最后一次“停靠到左侧”落在 Dockview 的**根边带**（`dndEdges.activationSize = 10px`，目标是画布左缘 +8px）时，`dockToLayoutEdge` 会重构网格，并把保留的隐藏 `parking` 组重新暴露为一个 **100px 的可见网格列**。`rememberGridSizes()` 一向把 parking 排除在尺寸恢复之外，于是旧的可见列目标尺寸之和 1920 超出可用宽度，Dockview 把新列压到 256，严格 1px 容差校验抛错，`onDidMutateLayout` 的 catch 调用 `owner.failRestore()`，回退到标准预设（即观察到的 inspector/discussion 被拆开、class-palette 落回停靠）。
 
 ## 2. 证据链 **[V]**
 
-| 阶段                                                                                                | 结果                                                                                                                                                                                                                                                                                     |
-| --------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 冻结 `898505469` 产物 `b3fe3e8c`，`workbench-layout.spec.ts:185` 预览 `--retries=0`                 | baseline **FAIL**：拖到画布底部无 `.dv-drop-target`、无 `drop`，`dragend` 取消                                                                                                                                                                                                           |
-| 冻结产物 + 仅浏览器 CSS `.dv-render-overlay{pointer-events:none}`（诊断正对照，仅原生标签拖拽期间） | **PASS**：`dragenter/drop` 命中 `div.dv-content-container`，`.dv-drop-target` 出现                                                                                                                                                                                                       |
-| 仅 passthrough、未加所有者几何修复（`fix3`）                                                        | `:185` PASS；`@stress` 单例 **1F**：最终树回退标准预设                                                                                                                                                                                                                                   |
-| 诊断构建（`3ff71bcd`…`cbd1b939`）                                                                   | 精确定位：`parking_state liveVisible=false`（序列化缺 flag），`tolerance_fail id=22 expected 288 actual 256`，`parkingW=100 parkingH=1031`，`rawSnapshot/restore` 抛 `Workspace replay exceeded one pixel tolerance`（`workbenchLayoutExecutor.ts:1128`），catch → `owner.failRestore()` |
-| 干净产物 `dabedc89`（本修复）                                                                       | `:185` **PASS**；`@stress` 单例 **PASS**；完整 `workbench-layout.spec.ts` **6 passed**；`layout-stress` **6 passed**；`default-four`（`--shard=4/4`）**68 passed**                                                                                                                       |
+| 阶段                                                                                                | 结果                                                                                                                                                                                                                                   |
+| --------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 冻结 `898505469` 产物 `b3fe3e8c`，`workbench-layout.spec.ts:185` 预览 `--retries=0`                 | baseline **FAIL**：拖到画布底部无 `.dv-drop-target`、无 `drop`，`dragend` 取消                                                                                                                                                         |
+| 冻结产物 + 仅浏览器 CSS `.dv-render-overlay{pointer-events:none}`（诊断正对照，仅原生标签拖拽期间） | **PASS**：`dragenter/drop` 命中 `div.dv-content-container`，`.dv-drop-target` 出现                                                                                                                                                     |
+| 仅 passthrough、未加所有者几何修复（`fix3`）                                                        | `:185` PASS；`@stress` 单例 **1F**：最终树回退标准预设                                                                                                                                                                                 |
+| 诊断构建 DIAG2（`3ff71bcd`）                                                                        | 观测到**原始异常** `Parking must remain hidden and docked`（根边重构使保留组短暂 live-visible），经 `onDidMutateLayout` catch → `owner.failRestore()`                                                                                  |
+| 诊断构建 DIAG8（`cbd1b939`）                                                                        | 引入输出归一化后，序列化缺 flag 而 `parking_state liveVisible=false`（live-hidden）；说明 parking 缺 flag 是序列化层面，与 DIAG2 的原始异常需区分                                                                                      |
+| 诊断构建 DIAG10（`15227880`）                                                                       | 精确定量：`tolerance_fail id=22 expected 288 actual 256`，`parkingW=100 parkingH=1031`（live hidden 仍占 100px 网格列），`rawSnapshot/restore` 抛 `Workspace replay exceeded one pixel tolerance`（`workbenchLayoutExecutor.ts:1128`） |
+| 干净产物 `dabedc89`（本修复）                                                                       | `:185` **PASS**；`@stress` 单例 **PASS**；完整 `workbench-layout.spec.ts` **6 passed**；`layout-stress` **6 passed**；`default-four`（`--shard=4/4`）**68 passed**                                                                     |
 
-早期 `getGroup` 非空断言与 parking 解析异常假设均被上述探测取代/澄清（parking 在测量时刻是 live-hidden，只有序列化 flag 缺失）。**[HYP] 已退休**。
+诊断证据区分两个观测：DIAG2 观测到**原始** `Parking must remain hidden and docked`（根边重构中保留组短暂 live-visible）；DIAG8/DIAG10 是引入输出归一化后的后续测量，此时 parking 已是 live-hidden、只缺序列化 flag，并在 DIAG10 定量到 100px 几何失配与 1px 容差异常。早期 `getGroup` 非空断言假设被 DIAG8/DIAG10 取代。**[HYP] 已退休**。
 
 ## 3. 最终修复（仅工作台布局所有者）
 
 1. `WorkbenchDockWorkspace.tsx`：原生 HTML5 标签/组拖拽开始时，在 workspace host 上临时加 `dragPassthrough`，使 `.dv-render-overlay` 对该次拖拽透明；`dragend/drop/pointerup` 与 effect 卸载时清除。仅 HTML5（`nativeEvent instanceof DragEvent`）且非 Shift（Shift+指针是 Dockview 的浮动手势），普通画布指针输入与画布内部 DnD 不受影响。
 2. `workbenchLayoutExecutor.ts`：新增 `reassertReservedGroups()`，在尺寸恢复前把仍在网格中的保留 `parking` 组重新 `setVisible(false)`，使隐藏保留组不再占用网格空间；调用点位于既有的 `restore` try 内，失败仍 fail-closed。
 
-**被拒绝的变体**（均已实现并验证不可取，保留为历史）：
+**被拒绝的变体**（逐项区分处置）：
 
-- 在 `rawSnapshot` 里改写序列化输出把 parking 标记为 hidden（`normalizeParking`）：仅掩盖几何失配；测量显示 live parking 在根边重构中仍占 100px，改用 live 所有者纠正后该归一化已删除。
-- 对 `position !== center` 的拖拽跳过尺寸恢复：会同时跳过普通边缘分屏的尺寸保持（既有行为），属过度放宽，未采用。
-- 全局 `html.dragPassthrough` 与调整 `onDidLayoutChange` 订阅位置：无证据支持，已回退到被接受的 R2 作用域与原订阅顺序。
+- **已实现并用证据否定**：在 `rawSnapshot` 里改写序列化输出把 parking 标记为 hidden（`normalizeParking`）——DIAG8/DIAG10 显示它只掩盖 live 几何失配（parking 仍占 100px），已删除，改用 live 所有者纠正。
+- **静态否定、未实现**：对 `position !== center` 的拖拽跳过尺寸恢复——会同时跳过普通边缘分屏的既有尺寸保持，属过度放宽，未实现。
+- **未被接受、已回退**：全局 `html.dragPassthrough` 与调整 `onDidLayoutChange` 订阅位置——无证据支持，回退到被接受的 R2 作用域与原订阅顺序。
 
 ## 4. 验收 **[V]**
 
 - `workbench-layout.spec.ts:185`：1 passed（干净产物）。
 - 新增回归 `workbench-layout.spec.ts:366`「a root-edge queue dock keeps the reserved group collapsed and the saved tree」：逐命令断言队列确实停靠到画布右侧、再下方、画布到达工作区左缘（根边前置条件），最后左停靠后 merge/float 保留、停靠组覆盖工作区边缘（无 100px 空白保留列）、保存/重载后渲染一致；末尾原生标签拖拽 + Esc 取消，断言 passthrough 类先出现后复位、画布仍响应真实指针点击。**诚实说明**：该短回归在干净产物与旧冻结产物上均 PASS（旧产物并非全为 no-op），因此它是正向覆盖而非旧构建失败的证明；失败/修复证据由上面的诊断链与 54 步 `@stress` 提供（仅 passthrough、未加几何修复时 1F）。
 - 完整 `workbench-layout.spec.ts`：6 passed。`layout-stress`（预览配置，`--retries=0`）：6 passed。`default-four`（`--shard=4/4`，`CI=true --retries=0`）：68 passed（含冻结 898 中 1F 的用例与 53 个未运行用例，本产物全部通过）。
-- 单元：`pnpm vitest run` 全量 1289 passed（含 `WorkbenchDockWorkspace.test.tsx` 28、`workbenchLayoutExecutor.test.ts`）。`pnpm lint:css-tokens`、eslint、`tsc --noEmit`、`git diff --check` 干净。
+- 相关单元测试（精确作用域，非“全量 web”声明）：`pnpm vitest run src/pages/Workbench/layout/workbenchLayoutExecutor.test.ts src/pages/Workbench/layout/WorkbenchDockWorkspace.test.tsx` → **2 files / 97 tests passed**（命令与结果一致；已接受的完整 web 套件规模另有记录，此处不据 97 或 1289 声称全站）。`pnpm lint:css-tokens`、eslint（仅改动文件）、`tsc --noEmit`、`git diff --check` 干净。
+- **补充测试修订（post-68）**：`default-four`（68 passed）与完整 `workbench-layout.spec.ts`（6 passed）跑的是 `:366` 较早的测试体；此后该用例增加了“拖拽后 passthrough 必须清除”的断言，以及真实原生标签拖拽 + Esc 取消后画布指针命中恢复的探针。最终测试体单独复跑一次（补充修订）：**1 passed（23.8s）**；未重跑整套 68，符合“仅测试体增长时单跑该用例”的约定。
 
 ## 5. 产物与来源映射 **[V]**
 
