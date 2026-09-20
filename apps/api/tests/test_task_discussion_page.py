@@ -14,10 +14,9 @@ from app.db.models.annotation import Annotation
 from app.db.models.annotation_comment import AnnotationComment
 from app.db.models.annotation_feedback import AnnotationFeedback
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
-from tests.factory import build_tool_bindings
+from tests.factory import create_membership, build_tool_bindings
 
 pytestmark = pytest.mark.asyncio
 
@@ -543,13 +542,12 @@ async def test_assigned_away_task_is_hidden_from_new_and_legacy_comment_routes(
     task = await db_session.get(Task, annotation_a.task_id)
     assert task is not None
     task.batch_id = batch.id
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=hidden_user.id,
-            role="annotator",
-            assigned_by=owner.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=project.id,
+        user_id=hidden_user.id,
+        role="annotator",
+        assigned_by=owner.id,
     )
     comment = _annotation_comment(
         comment_id=uuid.uuid4(),

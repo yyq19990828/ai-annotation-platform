@@ -10,9 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import create_access_token
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
-from tests.factory import create_user
+from tests.factory import create_membership, create_user
 
 
 async def _add_member(
@@ -23,15 +22,13 @@ async def _add_member(
     role: str,
     assigned_by: uuid.UUID,
 ) -> None:
-    db.add(
-        ProjectMember(
-            project_id=project_id,
-            user_id=user_id,
-            role=role,
-            assigned_by=assigned_by,
-        )
+    await create_membership(
+        db,
+        project_id=project_id,
+        user_id=user_id,
+        role=role,
+        assigned_by=assigned_by,
     )
-    await db.flush()
 
 
 async def _seed_project(db: AsyncSession, owner_id: uuid.UUID) -> Project:

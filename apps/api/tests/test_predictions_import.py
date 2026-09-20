@@ -31,7 +31,6 @@ from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.audit_log import AuditLog
 from app.db.models.prediction import Prediction, PredictionMeta
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.services.annotation import AnnotationService
 from app.services.exporting.packaging import _rotated_corners_norm
@@ -43,6 +42,7 @@ from app.services.predictions_import import (
 )
 from app.services.raster_mask_storage import build_rle_reference
 from app.utils.raster_mask_rle import encode_coco_rle
+from tests.factory import create_membership
 
 pytestmark = pytest.mark.asyncio
 
@@ -1775,10 +1775,8 @@ async def test_import_aap_json_forbidden_for_annotator(
     _annotator_user, annotator_token = annotator
     # Visible project member with the annotator role: import stays a management
     # capability, so the denial must be 403 rather than an invisible 404.
-    db_session.add(
-        ProjectMember(
-            project_id=project.id, user_id=_annotator_user.id, role="annotator"
-        )
+    await create_membership(
+        db_session, project_id=project.id, user_id=_annotator_user.id, role="annotator"
     )
     await db_session.flush()
     headers = {"Authorization": f"Bearer {annotator_token}"}

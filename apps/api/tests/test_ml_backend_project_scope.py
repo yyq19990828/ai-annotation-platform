@@ -18,12 +18,12 @@ import uuid
 
 from app.db.models.ml_backend_registry import MLBackendRegistry, ProjectMLBackendPool
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.services.gpu_arbitration.contracts import (
     GPUArbiterDispatchError,
     GPUArbiterErrorCode,
 )
 from tests.conftest import create_registry_with_pool
+from tests.factory import create_membership
 
 
 async def _seed_project(db, owner_id) -> Project:
@@ -82,13 +82,12 @@ async def test_list_backends_ok_for_member_annotator(
     anno, anno_token = annotator
     proj = await _seed_project(db_session, owner.id)
     await _seed_backend(db_session, proj.id)
-    db_session.add(
-        ProjectMember(
-            project_id=proj.id,
-            user_id=anno.id,
-            role="annotator",
-            assigned_by=owner.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=proj.id,
+        user_id=anno.id,
+        role="annotator",
+        assigned_by=owner.id,
     )
     await db_session.commit()
 
@@ -135,10 +134,12 @@ async def test_create_backend_denied_for_non_owner_project_admin(
     proj = await _seed_project(db_session, owner.id)
     # Visible member with a work role: a non-owner project administrator receives
     # that membership's capabilities, never management, so the denial is 403.
-    db_session.add(
-        ProjectMember(
-            project_id=proj.id, user_id=pm.id, role="annotator", assigned_by=owner.id
-        )
+    await create_membership(
+        db_session,
+        project_id=proj.id,
+        user_id=pm.id,
+        role="annotator",
+        assigned_by=owner.id,
     )
     await db_session.commit()
 
@@ -310,10 +311,12 @@ async def test_warmup_denied_for_non_owner_project_admin(
     owner, _ = super_admin
     pm, pm_token = project_admin
     proj = await _seed_project(db_session, owner.id)
-    db_session.add(
-        ProjectMember(
-            project_id=proj.id, user_id=pm.id, role="annotator", assigned_by=owner.id
-        )
+    await create_membership(
+        db_session,
+        project_id=proj.id,
+        user_id=pm.id,
+        role="annotator",
+        assigned_by=owner.id,
     )
     backend = await _seed_backend(db_session, proj.id)
     await db_session.commit()

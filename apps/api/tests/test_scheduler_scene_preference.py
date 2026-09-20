@@ -15,12 +15,11 @@ import pytest
 
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem, Scene
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.services.scheduler import get_next_task
 from app.services.task_lock import TaskLockService
-from tests.factory import create_project
+from tests.factory import create_membership, create_project
 
 
 async def _seed_scene_project(
@@ -33,13 +32,12 @@ async def _seed_scene_project(
     project.prefer_same_scene_continuation = prefer
     await db.flush()
 
-    db.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=annotator_id,
-            role="annotator",
-            assigned_by=owner_id,
-        )
+    await create_membership(
+        db,
+        project_id=project.id,
+        user_id=annotator_id,
+        role="annotator",
+        assigned_by=owner_id,
     )
 
     batch = TaskBatch(

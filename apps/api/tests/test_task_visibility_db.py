@@ -15,12 +15,17 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.v1.tasks._shared import _assert_task_visible, _visible_task_ids
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.user import User
 from app.services.scheduler import task_visibility_clause
-from tests.factory import create_batch, create_project, create_task, create_user
+from tests.factory import (
+    create_membership,
+    create_batch,
+    create_project,
+    create_task,
+    create_user,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -56,13 +61,12 @@ async def _viewer_world(db: AsyncSession, owner: User):
     foreign = await create_user(
         db, "employee", f"scope-foreign-{uuid.uuid4()}@test.local", "Foreign"
     )
-    db.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=viewer.id,
-            role="viewer",
-            assigned_by=owner.id,
-        )
+    await create_membership(
+        db,
+        project_id=project.id,
+        user_id=viewer.id,
+        role="viewer",
+        assigned_by=owner.id,
     )
     await db.flush()
     return project, viewer, foreign

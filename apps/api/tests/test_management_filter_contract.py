@@ -10,10 +10,9 @@ import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.project_member import ProjectMember
 from app.db.models.user_invitation import UserInvitation
 from app.db.models.user import User
-from tests.factory import create_project, create_user
+from tests.factory import create_membership, create_project, create_user
 
 pytestmark = pytest.mark.asyncio
 
@@ -50,13 +49,12 @@ async def test_users_query_stats_and_export_keep_the_same_filtered_scope(
         "Contract Disabled",
     )
     disabled_outside.is_active = False
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=managed.id,
-            role="annotator",
-            assigned_by=manager.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=project.id,
+        user_id=managed.id,
+        role="annotator",
+        assigned_by=manager.id,
     )
     await db_session.flush()
 

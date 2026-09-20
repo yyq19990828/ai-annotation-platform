@@ -12,7 +12,6 @@ import pytest
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.task_lock import TaskLock
@@ -22,7 +21,7 @@ from app.schemas.data_manager_actions import (
     DataManagerTaskAssignmentRequest,
 )
 from app.services.data_management.actions import DataManagerTaskActionService
-from tests.factory import create_project
+from tests.factory import create_membership, create_project
 
 
 pytestmark = pytest.mark.asyncio
@@ -55,13 +54,12 @@ async def test_assignment_updates_only_explicit_tasks_across_batch_boundaries(
     owner, _ = super_admin
     target, _ = annotator
     project = await create_project(db_session, owner_id=owner.id)
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=target.id,
-            role="annotator",
-            assigned_by=owner.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=project.id,
+        user_id=target.id,
+        role="annotator",
+        assigned_by=owner.id,
     )
     batch = TaskBatch(
         project_id=project.id,
@@ -129,13 +127,12 @@ async def test_assignment_preview_becomes_stale_after_task_state_changes(
     owner, _ = super_admin
     target, _ = annotator
     project = await create_project(db_session, owner_id=owner.id)
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=target.id,
-            role="annotator",
-            assigned_by=owner.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=project.id,
+        user_id=target.id,
+        role="annotator",
+        assigned_by=owner.id,
     )
     task = await _task(
         db_session,
@@ -168,13 +165,12 @@ async def test_assignment_route_rejects_non_owner_and_skips_owner_edit_lock(
     owner, owner_token = super_admin
     member, member_token = annotator
     project = await create_project(db_session, owner_id=owner.id)
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=member.id,
-            role="annotator",
-            assigned_by=owner.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=project.id,
+        user_id=member.id,
+        role="annotator",
+        assigned_by=owner.id,
     )
     task = await _task(
         db_session,

@@ -6,7 +6,6 @@ import uuid
 
 import pytest
 
-from app.db.models.project_member import ProjectMember
 from app.db.models.task_batch import TaskBatch
 from app.schemas.batch import BatchUpdate
 from app.schemas.data_manager_actions import (
@@ -16,7 +15,7 @@ from app.schemas.data_manager_actions import (
 from app.services.batch import BatchService
 from app.services.data_management.actions import DataManagerTaskActionService
 from app.services.scheduler import get_next_task
-from tests.factory import create_project, create_user
+from tests.factory import create_membership, create_project, create_user
 from tests.test_task_assignment_visibility import _task
 
 
@@ -53,13 +52,12 @@ async def test_selected_assignments_survive_batch_reassignment(
         (new_annotator, "annotator"),
         (new_reviewer, "reviewer"),
     ):
-        db_session.add(
-            ProjectMember(
-                project_id=project.id,
-                user_id=member.id,
-                role=role,
-                assigned_by=owner.id,
-            )
+        await create_membership(
+            db_session,
+            project_id=project.id,
+            user_id=member.id,
+            role=role,
+            assigned_by=owner.id,
         )
     batch = TaskBatch(
         project_id=project.id,
@@ -168,13 +166,12 @@ async def test_new_review_round_releases_previous_reviewer_override(
         (default_reviewer, "reviewer"),
         (pinned_reviewer, "reviewer"),
     ):
-        db_session.add(
-            ProjectMember(
-                project_id=project.id,
-                user_id=member.id,
-                role=role,
-                assigned_by=owner.id,
-            )
+        await create_membership(
+            db_session,
+            project_id=project.id,
+            user_id=member.id,
+            role=role,
+            assigned_by=owner.id,
         )
     batch = TaskBatch(
         project_id=project.id,
@@ -250,13 +247,12 @@ async def test_prioritized_batch_precedes_assigned_unbatched_work(
     actor, _ = annotator
     project = await create_project(db_session, owner_id=owner.id)
     project.sampling = sampling
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=actor.id,
-            role="annotator",
-            assigned_by=owner.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=project.id,
+        user_id=actor.id,
+        role="annotator",
+        assigned_by=owner.id,
     )
     batch = TaskBatch(
         project_id=project.id,

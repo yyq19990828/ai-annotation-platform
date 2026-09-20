@@ -7,9 +7,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.annotation import Annotation
 from app.db.models.annotation_feedback import AnnotationFeedback
 from app.db.models.dataset import Dataset, DatasetItem, Scene
-from app.db.models.project_member import ProjectMember
 from app.db.models.scene_track import SceneTrack, SceneTrackInterval
-from tests.factory import create_batch, create_project, create_task
+from tests.factory import create_membership, create_batch, create_project, create_task
 
 
 pytestmark = pytest.mark.asyncio
@@ -251,12 +250,8 @@ async def test_object_query_facets_and_detail_share_batch_visibility(
     project.tool_bindings = {
         "bbox": {"enabled": True, "classes": ["visible", "hidden"]}
     }
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=annotator_user.id,
-            role="annotator",
-        )
+    await create_membership(
+        db_session, project_id=project.id, user_id=annotator_user.id, role="annotator"
     )
     visible_batch = await create_batch(
         db_session, project_id=project.id, status="active"

@@ -20,7 +20,13 @@ from app.db.models.user import User
 from app.deps import get_current_user, get_db
 from app.services.api_key_service import create_key
 from app.services.password_reset import PasswordResetService
-from tests.factory import create_batch, create_project, create_task, create_user
+from tests.factory import (
+    create_membership,
+    create_batch,
+    create_project,
+    create_task,
+    create_user,
+)
 
 
 def headers(user):
@@ -57,7 +63,9 @@ async def seed_handoff(db, actor, role="annotator", project_count=2):
         task.batch_id = batch.id
         if role != "owner":
             for user in (target, receiver):
-                db.add(ProjectMember(project_id=project.id, user_id=user.id, role=role))
+                await create_membership(
+                    db, project_id=project.id, user_id=user.id, role=role
+                )
             setattr(batch, f"{role}_id", target.id)
             setattr(
                 task, "assignee_id" if role == "annotator" else "reviewer_id", target.id

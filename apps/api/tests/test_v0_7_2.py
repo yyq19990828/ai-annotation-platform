@@ -16,11 +16,10 @@ from sqlalchemy import select
 
 from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.services.display_id import next_display_id
-from tests.factory import build_tool_bindings
+from tests.factory import create_membership, build_tool_bindings
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -79,22 +78,12 @@ async def _seed_project(
         reviewer_ids.append(u.id)
     await db.flush()
     for uid in annotator_ids:
-        db.add(
-            ProjectMember(
-                project_id=pid,
-                user_id=uid,
-                role="annotator",
-                assigned_by=owner_id,
-            )
+        await create_membership(
+            db, project_id=pid, user_id=uid, role="annotator", assigned_by=owner_id
         )
     for uid in reviewer_ids:
-        db.add(
-            ProjectMember(
-                project_id=pid,
-                user_id=uid,
-                role="reviewer",
-                assigned_by=owner_id,
-            )
+        await create_membership(
+            db, project_id=pid, user_id=uid, role="reviewer", assigned_by=owner_id
         )
     await db.flush()
 

@@ -11,6 +11,7 @@ from app.db.models.project_member import ProjectMember
 from app.db.models.task_batch import TaskBatch
 from app.db.models.task_event import TaskEvent
 from tests.test_dashboard_reviewer_mini import _seed_project, _seed_task
+from tests.factory import create_membership
 
 
 def headers(token):
@@ -25,8 +26,8 @@ async def test_onboarding_uses_current_users_active_work_and_real_review(
     user, token = annotator
     other, _ = reviewer
     project = await _seed_project(db_session, admin.id)
-    db_session.add(
-        ProjectMember(project_id=project.id, user_id=user.id, role="annotator")
+    await create_membership(
+        db_session, project_id=project.id, user_id=user.id, role="annotator"
     )
     task = await _seed_task(db_session, project_id=project.id, status="review")
     task.assignee_id = user.id
@@ -205,8 +206,8 @@ async def test_reviewer_dashboard_filters_invisible_and_other_claimed_work(
     other, _ = annotator
     visible = await _seed_project(db_session, admin.id)
     hidden = await _seed_project(db_session, admin.id)
-    db_session.add(
-        ProjectMember(project_id=visible.id, user_id=review.id, role="reviewer")
+    await create_membership(
+        db_session, project_id=visible.id, user_id=review.id, role="reviewer"
     )
     now = datetime.now(timezone.utc)
     batch = TaskBatch(

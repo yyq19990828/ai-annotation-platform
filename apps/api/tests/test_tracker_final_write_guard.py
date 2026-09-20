@@ -24,22 +24,20 @@ from app.services.video_tracking.runner import (
     accept_tracker_job,
     decide_tracker_job,
 )
-from tests.factory import create_project, create_task, create_user
+from tests.factory import create_membership, create_project, create_task, create_user
 from tests.test_video_tracker_jobs_list import _make_job, _make_video_task
 
 
 async def _add_member(
     db: AsyncSession, *, project_id, user_id, role, assigned_by
 ) -> None:
-    db.add(
-        ProjectMember(
-            project_id=project_id,
-            user_id=user_id,
-            role=role,
-            assigned_by=assigned_by,
-        )
+    await create_membership(
+        db,
+        project_id=project_id,
+        user_id=user_id,
+        role=role,
+        assigned_by=assigned_by,
     )
-    await db.flush()
 
 
 async def test_runner_guard_requires_explicit_actor(

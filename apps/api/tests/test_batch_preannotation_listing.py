@@ -9,8 +9,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.db.models.project_member import ProjectMember
-from tests.factory import create_batch, create_project, create_user
+from tests.factory import create_membership, create_batch, create_project, create_user
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -51,13 +50,12 @@ async def test_patch_assignment_broadcasts_batch_event(
     user, token = super_admin
     proj = await create_project(db_session, owner_id=user.id)
     anno = await create_user(db_session, "employee", "bcast-anno@e.test", "Anno")
-    db_session.add(
-        ProjectMember(
-            project_id=proj.id,
-            user_id=anno.id,
-            role="annotator",
-            assigned_by=user.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=proj.id,
+        user_id=anno.id,
+        role="annotator",
+        assigned_by=user.id,
     )
     draft = await create_batch(
         db_session, project_id=proj.id, name="bcast", status="draft"

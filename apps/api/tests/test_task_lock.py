@@ -22,10 +22,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.annotation import Annotation
 from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
-from tests.factory import build_tool_bindings
+from tests.factory import create_membership, build_tool_bindings
 
 
 async def _seed_project_and_task(
@@ -50,22 +49,20 @@ async def _seed_project_and_task(
     await db.flush()
 
     # Literal employees; authority comes only from these explicit membership rows.
-    db.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=assignee_id,
-            role="annotator",
-            assigned_by=owner_id,
-        )
+    await create_membership(
+        db,
+        project_id=project.id,
+        user_id=assignee_id,
+        role="annotator",
+        assigned_by=owner_id,
     )
     if reviewer_id is not None and reviewer_id != assignee_id:
-        db.add(
-            ProjectMember(
-                project_id=project.id,
-                user_id=reviewer_id,
-                role="reviewer",
-                assigned_by=owner_id,
-            )
+        await create_membership(
+            db,
+            project_id=project.id,
+            user_id=reviewer_id,
+            role="reviewer",
+            assigned_by=owner_id,
         )
 
     batch = TaskBatch(

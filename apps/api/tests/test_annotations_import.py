@@ -28,13 +28,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import DatasetItem
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.scene_track import SceneTrack, SceneTrackInterval
 from app.db.models.task import Task
 from app.services.annotations_import import import_aap_json_annotations
 from app.services.task_dataset_link import link_items
 from tests.test_track_operations import _seed_scene
-from tests.factory import build_tool_bindings
+from tests.factory import create_membership, build_tool_bindings
 
 pytestmark = pytest.mark.asyncio
 
@@ -1028,10 +1027,8 @@ async def test_import_annotations_forbidden_for_annotator(
     _annotator_user, annotator_token = annotator
     # Visible project member with the annotator role: import stays a management
     # capability, so the denial must be 403 rather than an invisible 404.
-    db_session.add(
-        ProjectMember(
-            project_id=project.id, user_id=_annotator_user.id, role="annotator"
-        )
+    await create_membership(
+        db_session, project_id=project.id, user_id=_annotator_user.id, role="annotator"
     )
     await db_session.flush()
     headers = {"Authorization": f"Bearer {annotator_token}"}

@@ -6,8 +6,7 @@ import httpx
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.models.project_member import ProjectMember
-from tests.factory import create_project, create_user
+from tests.factory import create_membership, create_project, create_user
 
 pytestmark = pytest.mark.asyncio
 
@@ -26,11 +25,11 @@ async def test_mention_candidates_include_owner_super_admin_and_members(
     owner, _ = project_admin
     project = await create_project(db_session, owner_id=owner.id, name="Mention QA")
     # annotator / reviewer are project members; the owner is deliberately not a member row.
-    db_session.add(
-        ProjectMember(project_id=project.id, user_id=annotator[0].id, role="annotator")
+    await create_membership(
+        db_session, project_id=project.id, user_id=annotator[0].id, role="annotator"
     )
-    db_session.add(
-        ProjectMember(project_id=project.id, user_id=reviewer[0].id, role="reviewer")
+    await create_membership(
+        db_session, project_id=project.id, user_id=reviewer[0].id, role="reviewer"
     )
     root = await create_user(
         db_session, "super_admin", "root-mention@test.local", "Root Admin"
@@ -63,11 +62,11 @@ async def test_mention_candidates_dedupe_by_user_id(
     owner, _ = project_admin
     project = await create_project(db_session, owner_id=owner.id, name="Mention Dedupe")
     # The super admin is also a project member: one entry, labeled super_admin.
-    db_session.add(
-        ProjectMember(project_id=project.id, user_id=super_admin[0].id, role="reviewer")
+    await create_membership(
+        db_session, project_id=project.id, user_id=super_admin[0].id, role="reviewer"
     )
-    db_session.add(
-        ProjectMember(project_id=project.id, user_id=annotator[0].id, role="annotator")
+    await create_membership(
+        db_session, project_id=project.id, user_id=annotator[0].id, role="annotator"
     )
     await db_session.flush()
 

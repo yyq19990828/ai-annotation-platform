@@ -10,10 +10,10 @@ from sqlalchemy import event, text
 from app.db.models.annotation import Annotation
 from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.task_event import TaskEvent
+from tests.factory import create_membership
 
 
 def _project(owner_id: uuid.UUID) -> Project:
@@ -79,13 +79,8 @@ def _audit(
 
 
 async def _member(db, project_id, user, role, owner_id):
-    db.add(
-        ProjectMember(
-            project_id=project_id,
-            user_id=user.id,
-            role=role,
-            assigned_by=owner_id,
-        )
+    await create_membership(
+        db, project_id=project_id, user_id=user.id, role=role, assigned_by=owner_id
     )
 
 

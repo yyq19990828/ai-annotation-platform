@@ -18,11 +18,10 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.services.display_id import next_display_id
-from tests.factory import build_tool_bindings
+from tests.factory import create_membership, build_tool_bindings
 
 
 # ── 共用 seed helper ─────────────────────────────────────────────────────────
@@ -51,13 +50,8 @@ async def _seed(
     db.add(p)
     await db.flush()
 
-    db.add(
-        ProjectMember(
-            project_id=pid,
-            user_id=annotator_id,
-            role="annotator",
-            assigned_by=owner_id,
-        )
+    await create_membership(
+        db, project_id=pid, user_id=annotator_id, role="annotator", assigned_by=owner_id
     )
 
     batch = TaskBatch(

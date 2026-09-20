@@ -25,7 +25,7 @@ import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.project_member import ProjectMember
-from tests.factory import create_project, create_user
+from tests.factory import create_membership, create_project, create_user
 
 pytestmark = pytest.mark.asyncio
 
@@ -101,13 +101,12 @@ async def _seed_scope_world(db: AsyncSession, project_admin, super_admin):
     foreign_member = await create_user(
         db, "employee", "foreign-member@e.test", "Foreign Member"
     )
-    db.add(
-        ProjectMember(
-            project_id=foreign_project.id,
-            user_id=foreign_member.id,
-            role="annotator",
-            assigned_by=admin.id,
-        )
+    await create_membership(
+        db,
+        project_id=foreign_project.id,
+        user_id=foreign_member.id,
+        role="annotator",
+        assigned_by=admin.id,
     )
     await db.flush()
 

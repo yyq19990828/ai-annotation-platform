@@ -20,6 +20,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
+from tests.factory import create_membership
 
 
 async def _seed_project(db: AsyncSession, owner_id: uuid.UUID) -> Project:
@@ -50,17 +51,16 @@ def _add_guide_asset(proj: Project) -> str:
     return key
 
 
-def _add_member(
+async def _add_member(
     db: AsyncSession, proj: Project, user_id: uuid.UUID, role: str
 ) -> ProjectMember:
-    member = ProjectMember(
+    return await create_membership(
+        db,
         project_id=proj.id,
         user_id=user_id,
         role=role,
         assigned_by=proj.owner_id,
     )
-    db.add(member)
-    return member
 
 
 def _patch_storage(monkeypatch, *, upload_present=True, content_length=1024):
@@ -141,7 +141,7 @@ async def test_upload_init_forbidden_to_non_owner(
     proj = await _seed_project(db_session, super_user.id)
     # Visible work member: a non-owner project administrator is denied management
     # with 403 instead of an invisible-project 404.
-    _add_member(db_session, proj, pm_user.id, "annotator")
+    await _add_member(db_session, proj, pm_user.id, "annotator")
     await db_session.commit()
 
     headers = {"Authorization": f"Bearer {pm_token}"}
@@ -302,7 +302,7 @@ async def test_project_members_can_read_guide_images(
     user, token = reviewer if role == "reviewer" else annotator
     proj = await _seed_project(db_session, owner.id)
     key = _add_guide_asset(proj)
-    _add_member(db_session, proj, user.id, role)
+    await _add_member(db_session, proj, user.id, role)
     await db_session.commit()
 
     resp = await httpx_client.get(
@@ -322,7 +322,7 @@ async def test_removed_member_cannot_request_new_guide_image_urls(
     user, token = annotator
     proj = await _seed_project(db_session, owner.id)
     key = _add_guide_asset(proj)
-    member = _add_member(db_session, proj, user.id, "annotator")
+    member = await _add_member(db_session, proj, user.id, "annotator")
     await db_session.commit()
     endpoint = f"/api/v1/projects/{proj.id}/guide-assets/sign-url"
     kwargs = {"params": {"key": key}, "headers": {"Authorization": f"Bearer {token}"}}
@@ -374,7 +374,7 @@ async def test_member_cannot_sign_unregistered_or_foreign_guide_keys(
     user, token = annotator
     proj = await _seed_project(db_session, owner.id)
     _add_guide_asset(proj)
-    _add_member(db_session, proj, user.id, "annotator")
+    await _add_member(db_session, proj, user.id, "annotator")
     key_project_id = uuid.uuid4() if foreign_project else proj.id
     key = f"projects/{key_project_id}/guide/{uuid.uuid4()}-unknown.png"
     if foreign_project:
@@ -398,7 +398,7 @@ async def test_project_member_cannot_modify_guide_assets(
     user, token = annotator
     proj = await _seed_project(db_session, owner.id)
     key = _add_guide_asset(proj)
-    _add_member(db_session, proj, user.id, "annotator")
+    await _add_member(db_session, proj, user.id, "annotator")
     await db_session.commit()
     await db_session.refresh(proj)
     endpoint = f"/api/v1/projects/{proj.id}/guide-assets"

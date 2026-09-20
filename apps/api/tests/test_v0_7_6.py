@@ -14,12 +14,11 @@ from sqlalchemy import delete, select, text
 from app.db.models.annotation import Annotation
 from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.task_lock import TaskLock
 from app.services.display_id import next_display_id
-from tests.factory import build_tool_bindings
+from tests.factory import create_membership, build_tool_bindings
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -50,13 +49,8 @@ async def _seed_batch_with_locked_tasks(
     )
     db.add(p)
     await db.flush()
-    db.add(
-        ProjectMember(
-            project_id=pid,
-            user_id=annotator_id,
-            role="annotator",
-            assigned_by=owner_id,
-        )
+    await create_membership(
+        db, project_id=pid, user_id=annotator_id, role="annotator", assigned_by=owner_id
     )
     batch = TaskBatch(
         id=uuid.uuid4(),
@@ -323,10 +317,12 @@ async def test_reset_to_draft_owner_only(
         task_status="pending",
     )
     # Both accounts are visible project members with non-management work roles.
-    db_session.add(
-        ProjectMember(
-            project_id=p.id, user_id=rev.id, role="reviewer", assigned_by=owner.id
-        )
+    await create_membership(
+        db_session,
+        project_id=p.id,
+        user_id=rev.id,
+        role="reviewer",
+        assigned_by=owner.id,
     )
     await db_session.commit()
 

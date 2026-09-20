@@ -13,7 +13,7 @@ from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.task_lock import TaskLock
-from tests.factory import create_project, create_user
+from tests.factory import create_membership, create_project, create_user
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -363,13 +363,12 @@ async def test_removed_member_cannot_reuse_assigned_task_url_or_write(
         f"removed-receiver-{uuid.uuid4().hex[:8]}@test.local",
         "Removed Receiver",
     )
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=receiver.id,
-            role="annotator",
-            assigned_by=owner.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=project.id,
+        user_id=receiver.id,
+        role="annotator",
+        assigned_by=owner.id,
     )
     await db_session.flush()
     await _apply_annotator_assignment(
@@ -413,13 +412,12 @@ async def test_batch_fallback_controls_lifecycle_ownership(
     owner, _ = super_admin
     member, member_token = annotator
     project = await create_project(db_session, owner_id=owner.id)
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=member.id,
-            role="annotator",
-            assigned_by=owner.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=project.id,
+        user_id=member.id,
+        role="annotator",
+        assigned_by=owner.id,
     )
     batch = TaskBatch(
         project_id=project.id,
@@ -508,13 +506,12 @@ async def test_batch_fallback_assignee_can_take_over_task_lock(
     member, member_token = annotator
     other, _ = reviewer
     project = await create_project(db_session, owner_id=owner.id)
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=member.id,
-            role="annotator",
-            assigned_by=owner.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=project.id,
+        user_id=member.id,
+        role="annotator",
+        assigned_by=owner.id,
     )
     batch = TaskBatch(
         project_id=project.id,

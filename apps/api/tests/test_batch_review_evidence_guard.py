@@ -23,7 +23,13 @@ from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.user import User
-from tests.factory import create_batch, create_project, create_task, create_user
+from tests.factory import (
+    create_membership,
+    create_batch,
+    create_project,
+    create_task,
+    create_user,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -56,13 +62,12 @@ async def _seed(
         db, "employee", f"batch-rev-{uuid.uuid4()}@test.local", "Reviewer"
     )
     project = await create_project(db, owner_id=owner.id, name="Batch evidence")
-    db.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=reviewer.id,
-            role="reviewer",
-            assigned_by=owner.id,
-        )
+    await create_membership(
+        db,
+        project_id=project.id,
+        user_id=reviewer.id,
+        role="reviewer",
+        assigned_by=owner.id,
     )
     batch = await create_batch(db, project_id=project.id, status=batch_status)
     batch.name = batch_name
@@ -163,13 +168,12 @@ async def test_batch_decision_busy_returns_conflict(test_engine, app_module):
             setup, "employee", f"busy-rev-{uuid.uuid4()}@test.local", "Reviewer"
         )
         project = await create_project(setup, owner_id=owner.id, name="Busy decision")
-        setup.add(
-            ProjectMember(
-                project_id=project.id,
-                user_id=reviewer.id,
-                role="reviewer",
-                assigned_by=owner.id,
-            )
+        await create_membership(
+            setup,
+            project_id=project.id,
+            user_id=reviewer.id,
+            role="reviewer",
+            assigned_by=owner.id,
         )
         batch = await create_batch(setup, project_id=project.id, status="reviewing")
         task = await create_task(setup, project_id=project.id, status="review")

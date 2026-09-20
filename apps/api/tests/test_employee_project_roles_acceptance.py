@@ -9,7 +9,13 @@ from app.db.models.annotation import Annotation
 from app.db.models.async_job import AsyncJob
 from app.db.models.notification import Notification
 from app.db.models.project_member import ProjectMember
-from tests.factory import create_batch, create_project, create_task, create_user
+from tests.factory import (
+    create_membership,
+    create_batch,
+    create_project,
+    create_task,
+    create_user,
+)
 
 
 @pytest.mark.asyncio
@@ -143,11 +149,11 @@ async def test_review_http_never_bypasses_self_or_unknown_evidence(
     )
     project = await create_project(db_session, owner_id=owner.id)
     if not is_manager:
-        db_session.add(
-            ProjectMember(project_id=project.id, user_id=actor.id, role="reviewer")
+        await create_membership(
+            db_session, project_id=project.id, user_id=actor.id, role="reviewer"
         )
-    db_session.add(
-        ProjectMember(project_id=project.id, user_id=author.id, role="annotator")
+    await create_membership(
+        db_session, project_id=project.id, user_id=author.id, role="annotator"
     )
     task = await create_task(db_session, project_id=project.id, status="review")
     task.assignee_id, task.reviewer_id = author.id, actor.id
@@ -190,8 +196,8 @@ async def test_top_level_bulk_annotation_requires_annotation_phase_capability(
         db_session, platform_role, f"reader-{uuid.uuid4()}@test.local", "Reader"
     )
     project = await create_project(db_session, owner_id=owner.id)
-    db_session.add(
-        ProjectMember(project_id=project.id, user_id=actor.id, role=project_role)
+    await create_membership(
+        db_session, project_id=project.id, user_id=actor.id, role=project_role
     )
     batch = await create_batch(db_session, project_id=project.id, status="active")
     task = await create_task(db_session, project_id=project.id, status="in_progress")

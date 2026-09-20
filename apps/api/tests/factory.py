@@ -167,3 +167,36 @@ async def create_batch(
     db.add(batch)
     await db.flush()
     return batch
+
+
+async def create_membership(
+    db: AsyncSession,
+    *,
+    project_id: uuid.UUID,
+    user_id: uuid.UUID,
+    role: str,
+    assigned_by: uuid.UUID | None = None,
+    version: int | None = None,
+    weekly_target: int | None = None,
+):
+    """Create one explicit project membership with a project role.
+
+    Platform identity stays on the user; a membership is never inferred from
+    the account role.  Callers that need a specific ``version`` (role-change
+    CAS tests), ``weekly_target`` or an explicit ``assigned_by`` auditor pass
+    them explicitly; the common case only names project, user and role.
+    """
+
+    from app.db.models.project_member import ProjectMember
+
+    kwargs: dict = {"project_id": project_id, "user_id": user_id, "role": role}
+    if assigned_by is not None:
+        kwargs["assigned_by"] = assigned_by
+    if version is not None:
+        kwargs["version"] = version
+    if weekly_target is not None:
+        kwargs["weekly_target"] = weekly_target
+    member = ProjectMember(**kwargs)
+    db.add(member)
+    await db.flush()
+    return member

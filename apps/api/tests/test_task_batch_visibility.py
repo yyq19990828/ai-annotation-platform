@@ -9,11 +9,10 @@ import uuid
 import pytest
 
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.services.display_id import next_display_id
-from tests.factory import build_tool_bindings
+from tests.factory import create_membership, build_tool_bindings
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -37,13 +36,8 @@ async def _seed_project_with_two_batches(
     db.add(p)
     await db.flush()
 
-    db.add(
-        ProjectMember(
-            project_id=pid,
-            user_id=annotator_id,
-            role="annotator",
-            assigned_by=owner_id,
-        )
+    await create_membership(
+        db, project_id=pid, user_id=annotator_id, role="annotator", assigned_by=owner_id
     )
 
     # 创建一个真实的"别人"作为 b_other 的 annotator（FK 约束需要 user 存在）
@@ -234,13 +228,12 @@ async def test_draft_batch_hidden_from_annotator_even_if_unassigned(
     )
     db_session.add(p)
     await db_session.flush()
-    db_session.add(
-        ProjectMember(
-            project_id=pid,
-            user_id=user.id,
-            role="annotator",
-            assigned_by=owner.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=pid,
+        user_id=user.id,
+        role="annotator",
+        assigned_by=owner.id,
     )
 
     b_active_mine = TaskBatch(
@@ -327,13 +320,12 @@ async def test_unassigned_batch_visible_to_all_members(
     )
     db_session.add(p)
     await db_session.flush()
-    db_session.add(
-        ProjectMember(
-            project_id=pid,
-            user_id=user.id,
-            role="annotator",
-            assigned_by=owner.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=pid,
+        user_id=user.id,
+        role="annotator",
+        assigned_by=owner.id,
     )
 
     b_open = TaskBatch(

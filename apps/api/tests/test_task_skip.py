@@ -13,7 +13,7 @@ from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from sqlalchemy import select
-from tests.factory import create_user, build_tool_bindings
+from tests.factory import create_membership, create_user, build_tool_bindings
 
 
 async def _seed_project_task(
@@ -140,8 +140,8 @@ async def test_skip_task_assigns_to_caller_when_unassigned(
     assert task.assignee_id is None
     # Literal employee: explicit annotator membership grants the write authority,
     # and an active open-pool batch makes the unassigned task visible/claimable.
-    db_session.add(
-        ProjectMember(project_id=project.id, user_id=user.id, role="annotator")
+    await create_membership(
+        db_session, project_id=project.id, user_id=user.id, role="annotator"
     )
     batch = TaskBatch(
         project_id=project.id,

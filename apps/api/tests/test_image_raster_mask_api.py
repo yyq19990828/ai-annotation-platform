@@ -7,10 +7,10 @@ from app.config import Settings, settings
 from app.db.models.annotation import Annotation
 from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.services.raster_mask_storage import build_rle_reference
+from tests.factory import create_membership
 
 
 FOREGROUND_RLE = {
@@ -70,13 +70,12 @@ async def _seed_image_mask(
     db.add(project)
     await db.flush()
     if user_id != owner_id:
-        db.add(
-            ProjectMember(
-                project_id=project.id,
-                user_id=user_id,
-                role="annotator",
-                assigned_by=owner_id,
-            )
+        await create_membership(
+            db,
+            project_id=project.id,
+            user_id=user_id,
+            role="annotator",
+            assigned_by=owner_id,
         )
     batch = None
     if batch_annotator_id is not None:

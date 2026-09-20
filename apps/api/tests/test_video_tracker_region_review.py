@@ -12,7 +12,6 @@ from app.db.models.annotation import Annotation
 from app.db.models.dataset import VideoSegment
 from app.db.models.mask_qc import MaskQCIssue
 from app.db.models.mask_review_scope import MaskReviewScope
-from app.db.models.project_member import ProjectMember
 from app.db.models.task_batch import TaskBatch
 from app.db.models.video_tracker_job import VideoTrackerJob, VideoTrackerJobStatus
 from app.services.raster_mask_storage import build_rle_reference
@@ -20,6 +19,7 @@ from app.schemas.video_tracker_job import VideoTrackerDecisionRequest
 from app.services.video_tracking import runner
 from app.utils.raster_mask_rle import decode_coco_rle, encode_coco_rle
 from tests.test_video_tracker_jobs_list import _bearer, _make_video_task
+from tests.factory import create_membership
 
 
 def test_decision_selectors_are_mutually_exclusive() -> None:
@@ -471,13 +471,12 @@ async def test_claimed_reviewer_can_decide_job_created_by_annotator(
         candidate=candidate,
         region=region,
     )
-    db_session.add(
-        ProjectMember(
-            project_id=task.project_id,
-            user_id=reviewer_user.id,
-            role="reviewer",
-            assigned_by=owner.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=task.project_id,
+        user_id=reviewer_user.id,
+        role="reviewer",
+        assigned_by=owner.id,
     )
     batch = TaskBatch(
         project_id=task.project_id,

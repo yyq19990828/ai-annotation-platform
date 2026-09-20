@@ -35,7 +35,13 @@ from app.db.models.user import User
 from app.db.models.video_tracker_job import VideoTrackerJob
 from app.services.project_access import ProjectAccess, ProjectCapability
 from app.services.data_management.views import TaskViewService
-from tests.factory import create_batch, create_project, create_task, create_user
+from tests.factory import (
+    create_batch,
+    create_membership,
+    create_project,
+    create_task,
+    create_user,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -57,15 +63,13 @@ async def _employee(
 async def _add_member(
     db: AsyncSession, *, project_id: uuid.UUID, user: User, role: str, by: uuid.UUID
 ) -> ProjectMember:
-    member = ProjectMember(
+    return await create_membership(
+        db,
         project_id=project_id,
         user_id=user.id,
         role=role,
         assigned_by=by,
     )
-    db.add(member)
-    await db.flush()
-    return member
 
 
 async def _seed_dataset(

@@ -22,7 +22,6 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from app.db.models.annotation import Annotation
 from app.db.models.prediction import Prediction
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.user import User
 from app.services.annotation_evidence import (
@@ -32,7 +31,7 @@ from app.services.annotation_evidence import (
 )
 from app.services.annotation_slice import AnnotationSliceService
 from app.services.batch import BatchService
-from tests.factory import create_project, create_task, create_user
+from tests.factory import create_membership, create_project, create_task, create_user
 
 pytestmark = pytest.mark.asyncio
 
@@ -219,8 +218,8 @@ async def test_review_adjustment_does_not_add_reviewer_as_contributor(
     reviewer_token = _token_for(reviewer, role="employee")
     project, task = await _seed_task(db_session, owner)
     task.assignee_id = owner.id
-    db_session.add(
-        ProjectMember(project_id=project.id, user_id=reviewer.id, role="reviewer")
+    await create_membership(
+        db_session, project_id=project.id, user_id=reviewer.id, role="reviewer"
     )
     await db_session.flush()
 
@@ -259,8 +258,8 @@ async def test_withdraw_invalidates_round_but_retains_accumulator(
     project, task = await _seed_task(db_session, owner)
     # The submitter/withdrawer is the literal project annotator, not a manager,
     # so withdrawing their own submission is not a self-review decision.
-    db_session.add(
-        ProjectMember(project_id=project.id, user_id=user.id, role="annotator")
+    await create_membership(
+        db_session, project_id=project.id, user_id=user.id, role="annotator"
     )
     task.assignee_id = user.id
     await db_session.flush()

@@ -5,10 +5,9 @@ import uuid
 
 import pytest
 from sqlalchemy import select
-from app.db.models.project_member import ProjectMember
 from app.db.models.task_batch import TaskBatch
 from app.db.models.user_invitation import UserInvitation
-from tests.factory import create_project, create_user, create_task
+from tests.factory import create_membership, create_project, create_user, create_task
 
 pytestmark = pytest.mark.asyncio
 
@@ -24,13 +23,12 @@ async def test_distribution_counts_real_tasks_and_applies_identical_tied_order(
         for i in range(2)
     ]
     for user in users:
-        db_session.add(
-            ProjectMember(
-                project_id=project.id,
-                user_id=user.id,
-                role="annotator",
-                assigned_by=admin.id,
-            )
+        await create_membership(
+            db_session,
+            project_id=project.id,
+            user_id=user.id,
+            role="annotator",
+            assigned_by=admin.id,
         )
     timestamp = datetime.now(timezone.utc)
     batches = []
@@ -87,13 +85,12 @@ async def test_distribution_rejects_stale_preview_without_changing_assignment(
     headers = {"Authorization": f"Bearer {token}"}
     project = await create_project(db_session, owner_id=admin.id)
     user = await create_user(db_session, "employee", "stale-plan@e.test", "Worker")
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=user.id,
-            role="annotator",
-            assigned_by=admin.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=project.id,
+        user_id=user.id,
+        role="annotator",
+        assigned_by=admin.id,
     )
     batch = TaskBatch(
         project_id=project.id, display_id="B-STALE-PLAN", name="Plan", status="draft"
@@ -199,13 +196,12 @@ async def test_role_preview_is_super_admin_only_and_hides_project_names(
     user = await create_user(db_session, "employee", "shared-role@e.test", "Shared")
     for owner, name in ((manager, "Visible"), (admin, "Private project name")):
         project = await create_project(db_session, owner_id=owner.id, name=name)
-        db_session.add(
-            ProjectMember(
-                project_id=project.id,
-                user_id=user.id,
-                role="annotator",
-                assigned_by=owner.id,
-            )
+        await create_membership(
+            db_session,
+            project_id=project.id,
+            user_id=user.id,
+            role="annotator",
+            assigned_by=owner.id,
         )
     await db_session.flush()
 
@@ -296,13 +292,12 @@ async def test_single_batch_preview_counts_review_backlog_and_applies_exact_mapp
         db_session, "employee", "single-review@e.test", "Reviewer"
     )
     for user, project_role in ((anno, "annotator"), (review, "reviewer")):
-        db_session.add(
-            ProjectMember(
-                project_id=project.id,
-                user_id=user.id,
-                role=project_role,
-                assigned_by=admin.id,
-            )
+        await create_membership(
+            db_session,
+            project_id=project.id,
+            user_id=user.id,
+            role=project_role,
+            assigned_by=admin.id,
         )
     batch = TaskBatch(
         project_id=project.id,
@@ -407,13 +402,12 @@ async def test_distribution_can_target_only_selected_batches(
     user = await create_user(
         db_session, "employee", "selected-batches@e.test", "Worker"
     )
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=user.id,
-            role="annotator",
-            assigned_by=admin.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=project.id,
+        user_id=user.id,
+        role="annotator",
+        assigned_by=admin.id,
     )
     batches = [
         TaskBatch(

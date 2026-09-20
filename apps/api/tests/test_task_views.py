@@ -10,8 +10,7 @@ from app.db.models.annotation import Annotation
 from app.db.models.annotation_comment import AnnotationComment
 from app.db.models.annotation_feedback import AnnotationFeedback
 from app.db.models.prediction import Prediction
-from app.db.models.project_member import ProjectMember
-from tests.factory import create_batch, create_project, create_task
+from tests.factory import create_membership, create_batch, create_project, create_task
 
 pytestmark = pytest.mark.asyncio
 
@@ -675,12 +674,8 @@ async def test_tasks_query_annotator_only_sees_visible_batches(
     annotator_user, annotator_token = annotator
     reviewer_user, _ = reviewer
     project = await create_project(db_session, owner_id=owner.id, type_key="image-det")
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=annotator_user.id,
-            role="annotator",
-        )
+    await create_membership(
+        db_session, project_id=project.id, user_id=annotator_user.id, role="annotator"
     )
 
     batch_mine = await create_batch(db_session, project_id=project.id, status="active")
@@ -730,12 +725,8 @@ async def test_task_view_visibility_and_shared_edit_permissions(
     owner, owner_token = project_admin
     reviewer_user, reviewer_token = reviewer
     project, _, _ = await _seed_project(db_session, owner.id)
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=reviewer_user.id,
-            role="reviewer",
-        )
+    await create_membership(
+        db_session, project_id=project.id, user_id=reviewer_user.id, role="reviewer"
     )
     await db_session.flush()
 
