@@ -40,7 +40,9 @@ jobs:
         id: fingerprint
         if: steps.needed.outputs.needed == 'true'
         run: |
-          fingerprint=$(printf '%s' "$GITHUB_SHA-e2e-$(sha256sum pnpm-lock.yaml | cut -d' ' -f1)-$(sha256sum apps/api/openapi.snapshot.json | cut -d' ' -f1)-node22" | sha256sum | cut -d' ' -f1)
+          vite_env=$(printenv | grep '^VITE_' | sort | sha256sum | cut -d' ' -f1)
+          dot_env=$([ -f .env ] && sha256sum .env | cut -d' ' -f1 || echo absent)
+          fingerprint=$(printf '%s' "$GITHUB_SHA-e2e-$(sha256sum pnpm-lock.yaml | cut -d' ' -f1)-$(sha256sum apps/api/openapi.snapshot.json | cut -d' ' -f1)-node22-$vite_env-$dot_env" | sha256sum | cut -d' ' -f1)
           echo "fingerprint=$fingerprint" >> "$GITHUB_OUTPUT"
       - name: pnpm install
         if: steps.needed.outputs.needed == 'true'
@@ -116,6 +118,8 @@ jobs:
       # 用 127.0.0.1 强制 IPv4 避免 ECONNREFUSED ::1:8000。
       PLAYWRIGHT_API_BASE: http://127.0.0.1:8000
     steps:
+      - name: Record prep start
+        run: echo "E2E_PREP_START=$(date +%s)" >> "$GITHUB_ENV"
       # Fail-closed: a built entry never runs without its fingerprinted build,
       # and a build failure skips the suites instead of testing stale code.
       - name: Gate on shared build
@@ -164,9 +168,6 @@ jobs:
           done
           docker logs minio
           exit 1
-      - name: Record prep start
-        if: steps.build-gate.outputs.run == 'true'
-        run: echo "E2E_PREP_START=$(date +%s)" >> "$GITHUB_ENV"
       - name: alembic upgrade head
         if: steps.build-gate.outputs.run == 'true'
         working-directory: apps/api
@@ -198,12 +199,8 @@ jobs:
         env:
           OPENAPI_URL: ${{ github.workspace }}/apps/api/openapi.snapshot.json
         run: pnpm codegen
-      - name: Download shared build
-        if: matrix.built == true && steps.build-gate.outputs.run == 'true'
-        env:
-          FINGERPRINT: ${{ needs.build.outputs.fingerprint }}
-        # Fail-closed: the download only succeeds for the exact fingerprint
-        # because the artifact name embeds it.
+      # Fail-closed: the download only succeeds for the exact fingerprint
+      # because the artifact name embeds it.
       - uses: actions/download-artifact@v4
         if: matrix.built == true && steps.build-gate.outputs.run == 'true'
         with:
@@ -212,11 +209,18 @@ jobs:
       - name: Verify and unpack shared build
         if: matrix.built == true && steps.build-gate.outputs.run == 'true'
         working-directory: shared-build
+        env:
+          FINGERPRINT: ${{ needs.build.outputs.fingerprint }}
         run: |
-          grep "web-e2e-dist-" SHA256SUMS > SHA256SUMS.actual
-          FINGERPRINT="${{ needs.build.outputs.fingerprint }}"
-          echo "$FINGERPRINT  web-e2e-dist-$FINGERPRINT.tar.gz" > SHA256SUMS.expected
-          sha256sum -c SHA256SUMS.expected
+          set -euo pipefail
+          # SHA256SUMS is produced by the build job from the real archive bytes;
+          # fail if it does not name exactly the requested fingerprinted archive.
+          grep -F "web-e2e-dist-$FINGERPRINT.tar.gz" SHA256SUMS | sha256sum -c -
+          # Adversarial extra: reject a checksums file naming any other archive.
+          if ! diff <(grep -F "web-e2e-dist-$FINGERPRINT.tar.gz" SHA256SUMS) SHA256SUMS; then
+            echo "::error::checksum manifest names archives beyond the requested fingerprint"
+            exit 1
+          fi
           tar -xzf "web-e2e-dist-$FINGERPRINT.tar.gz" -C "$GITHUB_WORKSPACE/apps/web"
       - name: Install Playwright browsers
         if: steps.build-gate.outputs.run == 'true'
