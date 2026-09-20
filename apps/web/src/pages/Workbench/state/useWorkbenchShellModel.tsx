@@ -279,6 +279,7 @@ import type {
 } from "../layout/workbenchPanelRegistry";
 import { useConflictResolution } from "./useConflictResolution";
 import { useMaskMutationWorkflows } from "./useMaskMutationWorkflows";
+import { useBatchBackendSelection } from "./useBatchBackendSelection";
 import { useVideoMaskCorrection } from "./useVideoMaskCorrection";
 import { useTrackerSeedCollection, type TrackerSourceAnnotation } from "./useTrackerSeedCollection";
 
@@ -452,28 +453,11 @@ export function useWorkbenchShellModel({
   //   交互线 — point/bbox/exemplar 工具各自按能力路由到交互后端 (见下方 routing / interactiveBackendId)。
   const backendsQ = useMLBackends(projectId);
   const backends = useMemo(() => (backendsQ.data ?? []) as MLBackendResponse[], [backendsQ.data]);
-  const firstBackendId = backends[0]?.id ?? null;
-  const [batchBackendId, setBatchBackendId] = useState<string | null>(null);
-  // 工作台是常驻 session: 用户在 AI 面板手动选过批量 backend 后, 不能因项目默认后端被外部改动
-  // (如另一 Tab "设为主后端") 或后端列表顺序变化 (firstBackendId 变) 而被静默重置。
-  // 仅切项目时重置手动标记并按默认重新初始化; 同项目内只在用户未手动选过时跟随默认变化补齐。
-  const batchManuallyPickedRef = useRef(false);
-  const batchProjectRef = useRef<string | null | undefined>(undefined);
-  useEffect(() => {
-    if (batchProjectRef.current !== projectId) {
-      batchProjectRef.current = projectId;
-      batchManuallyPickedRef.current = false;
-      setBatchBackendId(currentProject?.ml_backend_id ?? firstBackendId);
-      return;
-    }
-    if (batchManuallyPickedRef.current) return;
-    setBatchBackendId(currentProject?.ml_backend_id ?? firstBackendId);
-  }, [projectId, currentProject?.ml_backend_id, firstBackendId]);
-  const selectBatchBackend = useCallback((id: string | null) => {
-    batchManuallyPickedRef.current = true;
-    setBatchBackendId(id);
-  }, []);
-  const selectedBackend = backends.find((b) => b.id === batchBackendId) ?? null;
+  const { batchBackendId, selectBatchBackend, selectedBackend } = useBatchBackendSelection({
+    projectId,
+    projectDefaultBackendId: currentProject?.ml_backend_id,
+    backends,
+  });
 
   const aiModel =
     selectedBackend?.name ?? (currentProject?.ml_backend_id ? "已接入模型" : "未接入模型");
