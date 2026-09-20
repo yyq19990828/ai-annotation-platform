@@ -75,7 +75,7 @@ git diff --check                                           # 干净
 
 ## 7. 未验证 / 未完成 [GAP]
 
-- 真实浏览器链路（切换/取消/拒绝/刷新）本阶段以 hook 级与领域级回归覆盖，未做浏览器实操验证；渲染资格验证不属本阶段，也未声称 GPU 结论。
+- 真实浏览器链路（`exec --mode e2e`，Chromium，retries=0，真实后端）：`test:e2e:mask-native` 20 通过 / 2 配置性跳过（readonly 闭门矩阵行，native 配置下属预期）；`test:e2e:mask-ai-native` 7 通过；`video-mask-keyframe-operations` 1 通过；`mask-session-guard` 2 通过（脏离开对话框、Enter 单次提交）。合计 30 通过 / 2 配置跳过，三组退出码均为 0（`PIPESTATUS` 取证）。覆盖：Mask 预览→提交→刷新、失败保留稿件重试、迟到内容不回闪、锁定拒绝输入、离开/取消/草稿保留、tracker 局部接受/拒绝与人工帧二次确认、关键帧复制/outside/删除撤销/拆轨原子性。AI-native 行使用标注的 AI backend fixtures（非真实模型训练验证，不作 GPU/资格声明）。本工作树运行时已按规停启；未重复全量前端套件。
 - `selectionCard` 的 `canBatchConvert` 持久化规则下沉（§4）留给 P6。
 - `useWorkbenchShellModel.helpers.ts` 中其余显示派生/浮窗定位纯函数仍为共享文件（多模块在用），其拆散归 P6 重复清理范围。
 
