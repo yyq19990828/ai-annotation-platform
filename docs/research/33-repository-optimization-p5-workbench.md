@@ -55,7 +55,7 @@ model 余量 6647 行的构成：URL/取数/权限装配、会话键派生（消
 
 - **Mask 会话键派生（D3）**：键由路由参数、URL task、选中、帧、工具、批次共同决定，输入全部归装配层；`useMaskEditorSession` 已持有编辑器生命周期。迁移只会把八个装配层输入传进 hook 再原样返回，不消除任何耦合。`handleMaskLeaveDirty` 是导航守卫（taskNavigation 域）的 Mask 侧适配器。
 - **视图槽位接线（`renderVideoTrackSidebar`；C7 评审结论）**：JSX 本体已在 `VideoTrackSidebar` / `SelectedAnnotationCard` / `ImageBatchCardContent` 等 shell 组件中；model 侧的 `renderVideoTrackSidebar` 是单点实例化的纯 props 传递（35 个 props 全为已算好的值，无任何分支判定，见 §2.1 证据）。选中浮卡的内容分派**含本地判定**，已按 §4.4(4) 迁入 `shell/SelectionCardContent.tsx`（提交 `0ce27419c`）；Mask 确认弹窗簇迁入 `shell/MaskConfirmDialogs.tsx`（提交 `bcfc461fc`）。
-- **遗留缺口（交 P6 复核）**：`canBatchConvert` 的持久化权限判定已随选中卡分派迁入 `SelectionCardContent.tsx`（组件化后判定集中在视图组件内）；进一步下沉为独立纯谓词并测试归 P6。
+- **遗留缺口（P6 残余处置，已读/诊断）**：`canBatchConvert` 为 SelectionCardContent 内单一消费者视图资格判定（无服务端授权重复），KEEP；`useWorkbenchShellModel.helpers.ts` 剩余 18 个导出全部有真实消费者（state/侧栏/图钉/图片动作 + 4 测试文件），死导出簇已删除，KEEP 共享模块形态。证据见 §7。
 
 ## 5. 测试与等价核对方法
 
@@ -73,11 +73,14 @@ pnpm --filter @anno/web exec eslint src/pages/Workbench/   # 0 告警（state �
 git diff --check                                           # 干净
 ```
 
-## 7. 未验证 / 未完成 [GAP]
+## 7. P6 残余处置（证据支撑的结论，非待办转交）
 
-- 真实浏览器链路（`exec --mode e2e`，Chromium，retries=0，真实后端）：`test:e2e:mask-native` 20 通过 / 2 配置性跳过（readonly 闭门矩阵行，native 配置下属预期）；`test:e2e:mask-ai-native` 7 通过；`video-mask-keyframe-operations` 1 通过；`mask-session-guard` 2 通过（脏离开对话框、Enter 单次提交）。合计 30 通过 / 2 配置跳过，三组退出码均为 0（`PIPESTATUS` 取证）。覆盖：Mask 预览→提交→刷新、失败保留稿件重试、迟到内容不回闪、锁定拒绝输入、离开/取消/草稿保留、tracker 局部接受/拒绝与人工帧二次确认、关键帧复制/outside/删除撤销/拆轨原子性。AI-native 行使用标注的 AI backend fixtures（非真实模型训练验证，不作 GPU/资格声明）。本工作树运行时已按规停启；未重复全量前端套件。
-- `selectionCard` 的 `canBatchConvert` 持久化规则下沉（§4）留给 P6。
-- `useWorkbenchShellModel.helpers.ts` 中其余显示派生/浮窗定位纯函数仍为共享文件（多模块在用），其拆散归 P6 重复清理范围。
+浏览器验收（已执行，`exec --mode e2e`，Chromium，retries=0，真实后端）：`test:e2e:mask-native` 20 通过 / 2 配置性跳过（readonly 闭门矩阵行，native 配置下属预期）；`test:e2e:mask-ai-native` 7 通过；`video-mask-keyframe-operations` 1 通过；`mask-session-guard` 2 通过（脏离开对话框、Enter 单次提交）。合计 30 通过 / 2 配置跳过，三组退出码均为 0（`PIPESTATUS` 取证）。覆盖：Mask 预览→提交→刷新、失败保留稿件重试、迟到内容不回闪、锁定拒绝输入、离开/取消/草稿保留、tracker 局部接受/拒绝与人工帧二次确认、关键帧复制/outside/删除撤销/拆轨原子性。AI-native 行使用标注的 AI backend fixtures（非真实模型训练验证，不作 GPU/资格声明）。
+
+两条 P6 残余项的**读/诊断处置**（基于消费者证据，非强行抽象）：
+
+- **`canBatchConvert`（`shell/SelectionCardContent.tsx`）— KEEP。** 全仓唯一消费者就是本文件（定义于 L158，消费于 L177 的 `onConvert` 门控）；它是视图层资格判定（同几何类型 + 原生 Mask 持久化模式 + 无锁定），不与转换中心的的服务端授权重复——提交后仍由转换接口独立鉴权。谓词只读 props，无动态调用/反射/间接引用；为其单独建模块只会产生单一调用点的转发层（§4.2 排除项）。
+- **`useWorkbenchShellModel.helpers.ts` 剩余纯函数 — KEEP（共享模块形态）。** 消费者证据：`clamp`→`useWorkbenchSidebarSizing`；`resolvePinViewport`→`useIssuePins`；`resolveSamCandidateClass`/`samCandidateGeom`→`useImageAnnotationActions`；`buildPipelineRunPayload`/`selectProjectPipelineStages`/`missingBackendIdsForStages`/`promptOfTool`/`resolveFloatingSelectionRect`/`resolveVideo*`/`annotationsForTask`/`resolveMaskEditorSize`/`classifyAccessLookupError`→装配 model；另有 4 个测试文件直接引用。两个死导出簇（floating-rect 五兄弟、`omitVariantFields` 导出）已在 R2 删除/收回。剩余函数无重复实现、无混合职责，按消费模块拆散需要改 ≥6 个文件的 import 而不合并任何规则，维持共享纯函数模块是当前语义最清晰的形态。
 
 ## 8. 回退边界
 
