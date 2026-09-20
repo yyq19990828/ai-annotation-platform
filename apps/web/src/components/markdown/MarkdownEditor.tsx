@@ -962,6 +962,13 @@ function MarkdownEditorDocument({
         return;
       }
 
+      // A pending table-cell image lives in the nested cell editor until the
+      // debounced cell export runs. Flush the active cell first so retry sees
+      // the live node: otherwise a retry can miss the existing node, fall back
+      // to anchor insertion, and (when the marker is not yet in the root
+      // markdown) append the image outside the table.
+      flushActiveTableCell();
+
       let retryInPlace = false;
       const existingEditor = existing?.editor;
       const existingRoot = existingEditor?.getRootElement();
@@ -1006,6 +1013,7 @@ function MarkdownEditorDocument({
     [
       cancelPendingUpload,
       currentEditorMarkdown,
+      flushActiveTableCell,
       insertPlaceholderAtAnchor,
       publishValidDraft,
       runUpload,

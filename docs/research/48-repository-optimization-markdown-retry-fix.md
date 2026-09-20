@@ -47,3 +47,19 @@
 ## 6. 边界
 
 无性能/资格声明；未做宽泛单测/后端/文档复跑；未 push；未触碰其他 worker 的共享产物与临时目录。
+
+---
+
+## 7. 复现确认与修复（本通道最终结果）
+
+**复现 [V]**：在全新自有 e2e 模式（一次性库、共享产物 `253b54a0`、预览配置）上以 `--repeat-each=3 --retries=0` 运行单测用例，**3 次中 1 次失败**（第 3 次，18.2s）；失败时的 error-context DOM 快照**直接证明**机制：`img "表格重试.png"` 确实存在（alt 已正确解析），但位于目标表格行/单元格**之外**——即重试落入「取消并重插」分支后，anchor 缺失导致占位符被追加到文档末尾，而不是留在单元格内。此前单测与整文件运行各 1 次通过，说明该缺陷是**间歇性时序缺陷**（表格单元格 250ms 导出 debounce 与错误/重试时序竞争），而非稳定复现。
+
+**最小修复 [V]**（仅 `apps/web/src/components/markdown/MarkdownEditor.tsx` 的 `retryUpload`）：在判定「原位重试」之前调用既有的 `flushActiveTableCell()`，先把活动表格单元格的待定 ImageNode 导出/可见化，使重试能命中现有节点并走原位调和路径；不改变任何断言、超时或重试策略，不新增 sleep。该改动只影响重试的归属判定顺序，不改变成功/失败语义。
+
+**验证 [V]**：
+
+- 修复前（同一构建产物）：`--repeat-each=3` → 2 passed / 1 failed（退出码 1）。
+- 修复后（源码经 dev server）：`--repeat-each=3` → 3 passed；`--repeat-each=6` → 6 passed；连续 9/9 通过，退出码 0。
+- `MarkdownEditor.test.tsx` 7 passed；`tsc --noEmit` 干净。
+
+**边界 [GAP]**：修复后的**预览产物**（preview-artifact）E2E 需针对修正代码**重新构建** e2e 产物后运行；本通道未把旧产物 `253b54a0` 的结果当作修复证据。未改动 skip/retry、未放宽断言、未触碰其他 worker 路径。
