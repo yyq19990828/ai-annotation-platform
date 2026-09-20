@@ -91,7 +91,7 @@
 - **负向守卫**：P1 三处破坏→失败→恢复变异（signals 终态、viewer×work fail-closed、自审/证据拒绝）[28]；P6 `managed_pool` 并发套件负向变异 [34]；P7 请求分类器允许/禁止双侧 16 例 [31]；P8 audit fail-closed（缺失必需 suite 非零）[36]；迁移策略 fail-closed（多 head/环/未知父版本一律 `UnsupportedChain`）[39]；P9 mask-slice 桶所有权守卫 14 例（正/负例：自有桶接受，共享/他方/畸形所有者、缺失或空清单所有者、跨模式清单、错库、错 MINIO 槽位、他 checkout、缺清单、未知模式、无模式旧 CI 规则与 `aap-wt-*` 拒绝）[43]。
 - **权限**：`project_access.py` 单源 + `is_privileged_for_project`；C1/C3 跨项目与撤权重检由 `test_project_access.py`、`test_employee_project_roles_acceptance.py`、`test_project_member_concurrency.py` 与 `employee-project-roles.spec.ts` 覆盖 [28]/[31]/[32]。
 - **迁移**：真实四阶段 runner（fresh / 可逆段真实 downgrade / 前向数据断言 / 备份恢复）取代 `alembic stamp`；33 例策略测试 [39]；`apps/api` 与 `scripts/{alembic_reversible_floor,validate_migrations,test_alembic_migration_policy}.py` 在证据点后字节不变（REUSE，本次 git diff 为空）。
-- **清单（inventory）**：机器可读 TSV 现为 **1139 行 = 1135 可执行 + 4 测试支撑**（P0 1042 → P6 1136 → P8 接线后 1138 → P9 补录 1 行守卫回归），确定性 `git ls-files` 发现与 TSV 双向比对 0 缺口；状态 ci-wired 1124 / script-wired 15 / not-wired 0。
+- **清单（inventory）**：机器可读 TSV 现为 **1139 行 = 1135 可执行 + 4 测试支撑**（P0 1042 → P6 1136 → P8 接线后 1138 → P9 补录 1 行守卫回归），确定性 `git ls-files` 发现与 TSV 双向比对 0 缺口；状态 ci-wired 1124 / script-wired 15 / not-wired 0。`reason` 列除 34 行具名证据外仍为 P0 占位符 `pending-review`（未记录逐文件 KEEP 理由），语义与审计见 [26§14]；不按逐文件复核宣称。
 - **规则（rules）**：CI 选择单一入口 `scripts/plan-e2e-suites.mjs` + `plan-e2e-suites.test.mjs`；门禁由 `legacyGate` 派生，影子仅告警 [36]；P9 负责切换。
 - **文档**：`docs/research/26–42/44` + 本 `45`；架构调用链在 `docs-site/dev/concepts/repository-map.md`；版本叙事清理命中 36→0。
 
@@ -110,7 +110,8 @@
 3. **候选远程 CI：未运行（非门禁要求）**：本仓无 push 授权，全部证据为本地执行；`ci.yml` 各 job 对 `e91` 无远程结果。此为“未运行”的事实记录，不构成授权要求或阻塞项。
 4. **P10 终验（按复用规则执行）**：已接受的 [40]（后端/SDK/ML）、[41]（前端）、[39]（迁移）在其相关子树与配置/依赖身份相对 `e91ac8dfd` 字节一致时继续有效；终验只需对**实际变更或未验证**的行为复跑并产出 before/after 记录。本矩阵只做映射，未执行复跑。
 5. **最终 docs 构建（待 P9 的 `43` 就绪）**：`pnpm docs:build` 已在 `e91` 的前端通道通过（34.24s，[41]）；P9 修改 `43`/`testing.md`/CI 后再构建一次；本轮不构建。
-6. **“同 SHA 同跑”不是独立缺口**：P10 三个验证通道虽在不同根上运行，但各自相关子树与配置/依赖身份在 `e91ac8dfd` 字节不变（§4），按复用规则其证据继续有效；只有实际变更或未验证的行为需要复跑。P9 的“同一候选上新旧选择对照”是另一件事（见第 2 条）。
+6. **（未收口，明示）逐文件 KEEP 理由**：TSV 的 `reason` 列除 34 行具名证据外仍为 P0 占位符 `pending-review`。这满足计划 §5.1 对 `DELETE`/`MERGE` 的理由要求（当前无此类决定）与 §10「保留项有理由」的区域/阶段级口径，但**不构成逐文件语义复核**；若 §10 被严格解读为逐行理由，则该项未完成。证据与区域级映射见 [26§14]。
+7. **“同 SHA 同跑”不是独立缺口**：P10 三个验证通道虽在不同根上运行，但各自相关子树与配置/依赖身份在 `e91ac8dfd` 字节不变（§4），按复用规则其证据继续有效；只有实际变更或未验证的行为需要复跑。P9 的“同一候选上新旧选择对照”是另一件事（见第 2 条）。
 
 ## 6. 限制
 

@@ -27,7 +27,7 @@
 4. 真实缺陷独立提交“缺陷修复 + 回归测试”，不夹带在重构内；不得放宽断言、覆盖率、重试或预算。
 5. 计划文件按原件入轨：入轨时仅 prettier 表格对齐 + 去除尾随空格（仓库 pre-commit `trailing-whitespace` 钩子要求）；去空白规范化后哈希一致 `b9d3b944…`。
 6. `"annotator"` 字符串命中（20 个前端测试文件）是**候选**而非既证废弃角色：该字符串仍是合法项目职责名（`apps/web/src/types/index.ts` `ProjectRole`、`constants/roles.ts` `PROJECT_ROLES`）；P1 逐条分类后再决定修数据或保留。
-7. 测试文件清单以机器可读 TSV 为准：`docs/research/data/26-repository-test-file-inventory.tsv`（P0 时点 1042 行；P6 收口后 **1136 行 = 1132 可执行测试 + 4 测试支撑模块**；`git ls-files` 确定性发现，列 path/layer/runner/dependency/decision/reason/replacement/status；P0 一律 KEEP + pending-review，P1–P7 逐层复核为 KEEP，接线状态为静态读取而非执行证据）。
+7. 测试文件清单以机器可读 TSV 为准：`docs/research/data/26-repository-test-file-inventory.tsv`（P0 时点 1042 行；P6 收口后 **1136 行 = 1132 可执行测试 + 4 测试支撑模块**；`git ls-files` 确定性发现，列 path/layer/runner/dependency/decision/reason/replacement/status；P0 一律 KEEP + pending-review，P1–P7 逐层复核为 KEEP，接线状态为静态读取而非执行证据；其中 `reason='pending-review'` 是 P0 占位符（未记录逐文件理由），不是已完成的逐文件复核，审计见 [26§14]）。
 
 ## 3. 未决事项
 
