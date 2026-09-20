@@ -15,19 +15,28 @@
 2. CI 证据采用校准后的 P0-B：最近 60 次真实 GitHub Actions 运行（2026-09-17 → 09-20），49 成功 / 6 失败 / 4 取消 / 1 跳过，计数可加和；6 次失败均有首次失败分类，断言差异类一律记为“证据不足/疑似”，不当作已确认产品缺陷。
 3. 计划第 3 节的 8 条业务约束全部映射到现有测试 ID（第 4 节）；两处缺口是新增保护而非重写：`signals.py` 信号兜底无直接测试（C6）、`conftest` 默认测试库回退吞掉配置错误（C8）。
 4. P0 只建立清单与基线；所有删除候选（第 6 节）停留在“盘点级”，未做任何生产代码或测试改动。
-5. 本工作树（`worktree-agent-opt-p0`）如需跑后端/E2E 测试，必须使用 `pnpm dev:worktree` 供给的 `aap_wt_*` 工作树自有数据库；不得使用共享 `annotation_test` / `annotation_e2e`（运行时依据见 `/tmp/aap-opt-runtime.md` 第 5 节）。
+5. 本工作树（`worktree-agent-opt-p0`）如需跑后端/E2E 测试，必须使用 `pnpm dev:worktree` 供给的 `aap_wt_*` 工作树自有数据库（经 `TEST_DATABASE_URL` 注入），不得直连共享遗留库 `annotation_test` / `annotation_e2e`；依据与一次性库身份见 §1.1。
 
 ## 1. 基线记录
 
-| 项目                     | 值                                                                                    | 证据                                          |
-| ------------------------ | ------------------------------------------------------------------------------------- | --------------------------------------------- |
-| 基线提交                 | `9cec9751a9f7a5518cfa09af6d1d75a789f28758`（Merge PR #129）                           | [V] `git rev-parse HEAD`                      |
-| 来源分支                 | `feat/codebase_opt260920`（= 基线时点 `origin/main`；注意不是从 `main` 本地分支派生） | [V] 协调方校准 + `/tmp/aap-opt-runtime.md` §0 |
-| 本工作分支               | `worktree-agent-opt-p0`（本文件所在隔离工作树）                                       | [V]                                           |
-| 受管文件总数             | 5873                                                                                  | [V] `git ls-files` 计数                       |
-| `git status`（基线时点） | 仅未跟踪计划文件与 Orca 本地状态                                                      | [A] P0-A §1                                   |
-| `git diff --check`       | 干净（基线时点 exit 0）                                                               | [A] P0-A §1                                   |
-| 近期提交                 | `aa1c879c`（评审修复）、`27027653`、`fb9e5e97`、`cbd8d620`（CI/测试修复）             | [V] `git log`                                 |
+| 项目     | 值                                                                                    | 证据                                           |
+| -------- | ------------------------------------------------------------------------------------- | ---------------------------------------------- |
+| 基线提交 | `9cec9751a9f7a5518cfa09af6d1d75a789f28758`（Merge PR #129）                           | [V] `git rev-parse HEAD`                       |
+| 来源分支 | `feat/codebase_opt260920`（= 基线时点 `origin/main`；注意不是从 `main` 本地分支派生） | [V] 协调方校准 + 运行时盘点（要点固化于 §1.1） |
+
+### 1.1 工作树运行时与一次性测试库身份（持久记录）
+
+原运行时盘点证据以 /tmp 交接，要点固化为本节（盘点时点 2026-09-20，只读核实）：
+
+- **检出拓扑**：主检出 `/home/hehao/桌面/ai-annotation-platform`（primary Compose 栈与本机 API/Web 从此处运行）；`feat/codebase_opt260920` 与本工作树为其 Orca 管理的 worktree。本工作树经 `scripts/orca-worktree-setup.sh` 完成初始化：`.env` 与三处 node 依赖目录为共享符号链接；`apps/api/.venv` 与 `apps/web/src/api/generated` 必须保持在本检出内（脚本对符号链接形式报错）。
+- **一次性数据库身份**（Postgres `ai-annotation-platform-postgres-1`，盘点时迁移 head `0174`）：`annotation_test`（一次性，raw API pytest 的默认回退名）、`annotation_e2e`（一次性，Playwright 本地默认，runner 启动时迁移）、`annotation_screenshots_test`（一次性，截图专用）、`annotation`（**开发数据，非一次性**）、`annotation_production`（**严禁触碰**）。当时全部这些库的 ownership 标记为空，即**共享遗留库**，不是任何 worktree 的自有资源。
+- **worktree 规则**：`pnpm dev:worktree` 为各模式供给带 ownership 标记的 `aap_wt_<id>_<mode>` 自有库/Redis/桶；`worktree_resources.py` 拒绝仅按名字认领数据库。因此 worktree 内的后端/E2E 测试必须经 `dev:worktree` 注入的 `TEST_DATABASE_URL`（test 模式）指向自有库，不得直连上面的共享遗留库；`--skip-migrations` 仅在自有库已处于本检出迁移 head 时合法。
+- **测试库连接解析（conftest 实际行为，[V] 读取于 HEAD）**：`test_db_url` fixture 取 `os.environ.get("TEST_DATABASE_URL", TEST_DB_DEFAULT)`（conftest L117-118），即**环境变量优先**——worktree 测试模式正是经它注入自有库；`TEST_DB_DEFAULT` 由 `_default_test_db_url()` 从 `settings.effective_migration_database_url` 派生（沿用 host/port/账号，库名改为 `annotation_test`）；该函数内 `except Exception: return` 会再回退到历史硬编码默认串（同名，含占位凭据）。种子路由的库名守卫是**后缀检查** `_test`/`_e2e`（`apps/api/app/api/v1/_test_seed.py` L48），不是全名固定 `annotation_test`。剩余整改点：异常回退静默吞掉配置错误（计划 §5.3-8）。
+  | 本工作分支 | `worktree-agent-opt-p0`（本文件所在隔离工作树） | [V] |
+  | 受管文件总数 | 5873 | [V] `git ls-files` 计数 |
+  | `git status`（基线时点） | 仅未跟踪计划文件与 Orca 本地状态 | [A] P0-A §1 |
+  | `git diff --check` | 干净（基线时点 exit 0） | [A] P0-A §1 |
+  | 近期提交 | `aa1c879c`（评审修复）、`27027653`、`fb9e5e97`、`cbd8d620`（CI/测试修复） | [V] `git log` |
 
 ## 2. 目录分类（覆盖全部 5873 个受管文件）
 
@@ -39,7 +48,7 @@
 | 目录                                                            |       文件数 | 分类                                           | 证据 / 备注                                                                                                                                                                                                                                |
 | --------------------------------------------------------------- | -----------: | ---------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `apps/api/app/`                                                 |          458 | **CHANGE**（热点）+ 其余 SOUND                 | 热点 [V]：`workers/signals.py` 225 行，`_mark_failed`/`_mark_cancelled` 重复生命周期；`api/v1/projects.py`、`project_templates.py` 调用 `coalesce_legacy_into_tool_bindings`（保留在兼容边界）。其余 120 个 service 文件未做实现级审查 [A] |
-| `apps/api/tests/`                                               |          363 | **CHANGE**                                     | [V] `conftest.py` 311 行（ORM shim L76/101、`httpx_client_bound` 别名 L203-204、库名固定 `annotation_test`、`_default_test_db_url` 异常回退）；`factory.py` 143 行；69 个测试文件引用旧别名（[V] 70 命中含 conftest 本身）                 |
+| `apps/api/tests/`                                               |          363 | **CHANGE**                                     | [V] `conftest.py` 311 行（ORM shim L76/101、`httpx_client_bound` 别名 L203-204、`test_db_url` 解析与 `_default_test_db_url` 异常回退，见 §1.1）；`factory.py` 143 行；69 个测试文件引用旧别名（[V] 70 命中含 conftest 本身）               |
 | `apps/api/alembic/`                                             |          175 | **SOUND**                                      | 迁移元数据按计划 §7.3 保留；round-trip 脚本 `scripts/alembic_reversible_floor.py` 在 HEAD 存在 [V]                                                                                                                                         |
 | `apps/api/scripts/`                                             |           35 | **SOUND**（P6 复查）                           | [A]                                                                                                                                                                                                                                        |
 | `apps/api/openapi.snapshot.json` 等 2 个快照                    |            2 | **GEN**                                        | 只经工作流再生成 [A]                                                                                                                                                                                                                       |
@@ -50,7 +59,7 @@
 | `apps/web/src/utils/`                                           |           38 | **SOUND**（P6 审计）                           | [A]                                                                                                                                                                                                                                        |
 | `apps/web/src/lib/`、`stores/`                                  |        9 / 8 | **SOUND**                                      | [A]                                                                                                                                                                                                                                        |
 | `apps/web/src/test/`、`mocks/`                                  |        1 / 2 | **CHANGE**（仅测试基建）                       | [A] `src/test/konvaMock.tsx` 保留并注明局限；MSW `onUnhandledRequest: "warn"` [V] `vitest.setup.ts` L10/L80                                                                                                                                |
-| `apps/web/src` 其余测试文件                                     |          549 | **CHANGE**（按清单精选）                       | [V] 计数口径：`apps/web/src` 下 `*.test.ts(x)`/`*.spec.ts(x)`；含 20 个引用旧 `"annotator"` 角色数据的文件 [A]（文件清单在 P0-A §5-4）                                                                                                     |
+| `apps/web/src` 其余测试文件                                     |          549 | **CHANGE**（按清单精选）                       | [V] 计数口径：`apps/web/src` 下 `*.test.ts(x)`/`*.spec.ts(x)`；含 20 个出现 `"annotator"` 字符串的测试文件（**候选**：该字符串仍是合法项目职责名，命中不等于废弃平台角色残留，P1 逐条分类；见 §6-4）                                       |
 | `apps/web/e2e/tests/`                                           |           67 | **CHANGE**（精选）                             | [V] 67 个 spec；其中 7 个内联 `ERR_ABORTED` 分类（polygon-auto-points、video-issue-context、polygon-boundary-trace、mask-slice、bbox-center-out、polygon-slice、video-issue-frame）；快照 PNG 为 **GEN**                                   |
 | `apps/web/e2e/helpers/`、`fixtures/`                            |       4 / 12 | **CHANGE**（错误分类器合并）/ SOUND            | [A] `video-request-errors.ts` 为共享 helper                                                                                                                                                                                                |
 | `apps/web/e2e/screenshots/`                                     |          120 | **SOUND**（P8 域）                             | doc-media 机制自带测试 [A]                                                                                                                                                                                                                 |
@@ -81,16 +90,20 @@
 
 ## 3. 测试清单与运行入口
 
-| 套件                              | 数量                                                                                                                                                          | 运行入口                                                                                                                               | 数据库/环境要求                                                                                                                          |
-| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| 后端 pytest                       | 359 个测试文件 [A]（`apps/api/tests` 共 363 文件 [V]）                                                                                                        | `pnpm dev:worktree -- exec --mode test -- bash -lc 'cd apps/api && uv run pytest -q'`                                                  | 工作树内必须用 `aap_wt_*` 自有库；当前 conftest 默认名固定 `annotation_test`（[V] L43/L62-66），worktree 内不得直连共享库 [R→runtime §5] |
-| 前端 vitest                       | [V] 549（src 下 `*.test/spec.ts(x)`）                                                                                                                         | `pnpm --filter @anno/web test`（coverage 阈值 45/45/45/70 [V]）                                                                        | 无（MSW）                                                                                                                                |
-| Playwright E2E                    | 67 个 spec [V]；收集口径 [R]：默认 309 tests/65 files（chromium 271 + pointcloud 38），mask-readonly 13、mask-native 22、mask-ai-native 7、visual 3、stress 6 | `test:e2e`（4 分片）+ 三个 mask 命令 + visual/stress                                                                                   | e2e 模式隔离服务；mask 套件强制隔离 dev-server（`:8010` API / `:3001` web）且 CI 中不构建前端 [R]                                        |
-| scripts node 测试                 | [V] `scripts/` 4 个（plan-e2e-suites、check-workflow-names、dev-worktree、image-reference-utils）+ `apps/web/scripts/check-bundle-size.test.mjs`              | CI 只跑前 3 个（`ci.yml` L244-245 [V]）；`image-reference-utils` 与 `check-bundle-size` 的测试未接入任何 CI/命令，需手动 `node --test` | 无                                                                                                                                       |
-| Python SDK                        | 25 个测试文件 [V]                                                                                                                                             | `packages/python-sdk` pytest（CI 另含 `uv build` [R]）                                                                                 | 无                                                                                                                                       |
-| scripts Python（worktree 运行时） | 9 [A]                                                                                                                                                         | pytest                                                                                                                                 | 隔离                                                                                                                                     |
+| 套件                              | 数量                                                                                                                                                          | 运行入口                                                                                                                                        | 数据库/环境要求                                                                                                                                                          |
+| --------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 后端 pytest                       | 359 个测试文件 [A]（`apps/api/tests` 共 363 文件 [V]）                                                                                                        | `pnpm dev:worktree -- exec --mode test -- bash -lc 'cd apps/api && uv run pytest -q'`                                                           | `TEST_DATABASE_URL` 优先（worktree 测试模式注入 `aap_wt_*` 自有库 [V] conftest L117-118）；无该变量时默认回退名 `annotation_test`（§1.1），worktree 内不得直连共享遗留库 |
+| 前端 vitest                       | [V] 549（src 下 `*.test/spec.ts(x)`）                                                                                                                         | `pnpm --filter @anno/web test`（coverage 阈值 45/45/45/70 [V]）                                                                                 | 无（MSW）                                                                                                                                                                |
+| Playwright E2E                    | 67 个 spec [V]；收集口径 [R]：默认 309 tests/65 files（chromium 271 + pointcloud 38），mask-readonly 13、mask-native 22、mask-ai-native 7、visual 3、stress 6 | `test:e2e`（4 分片）+ 三个 mask 命令 + visual/stress                                                                                            | e2e 模式隔离服务；mask 套件强制隔离 dev-server（`:8010` API / `:3001` web）且 CI 中不构建前端 [R]                                                                        |
+| scripts node 测试                 | [V] `scripts/` 4 个（plan-e2e-suites、check-workflow-names、dev-worktree、image-reference-utils）                                                             | CI `node --test` 跑前 3 个（`ci.yml` L244-245 [V]）；`image-reference-utils.test.mjs` 未接入任何门禁/命令（[V] 全仓检索），需手动 `node --test` | 无                                                                                                                                                                       |
+| Python SDK                        | 25 个测试文件 [V]                                                                                                                                             | `packages/python-sdk` pytest（CI 另含 `uv build` [R]）                                                                                          | 无                                                                                                                                                                       |
+| scripts Python（worktree 运行时） | 9 [A]                                                                                                                                                         | pytest                                                                                                                                          | 隔离                                                                                                                                                                     |
 
-**清单级发现（P0-A 写“4 个”但列 5 个名字的校正）**：真实情况是 `scripts/` 下 4 个 `.test.mjs`，其中 3 个接入 CI；`check-bundle-size.test.mjs` 在 `apps/web/scripts/`。两处未接入 CI 的测试文件记入第 7 节缺口。
+**清单级发现（P0-A 写“4 个”但列 5 个名字的校正）**：真实情况是 `scripts/` 下 4 个 `.test.mjs`，其中 3 个接入 CI，`image-reference-utils.test.mjs` 未接入；`apps/web/scripts/` 下的测试另有归属——`media-derivation.test.mjs` 由 `node --test`（npm script）运行且被 vitest 排除，其余 4 个（check-bundle-size、video-bench、video-request-errors、video-timeline-seek）为 vitest 风格、被 vitest 收集（[V] `vite.config.ts` test.exclude L84 及注释），随 CI Frontend verification 运行。初稿“两个未接入 CI”的说法就此修正。
+
+**机器可读测试文件清单**：`docs/research/data/26-repository-test-file-inventory.tsv`（1042 个测试文件，列 `path/layer/runner/dependency/decision/reason/replacement/status`；decision 一律 `KEEP`、reason 一律 `pending-review`，P0 不做删除决定；status 为静态接线状态：ci-wired 1017 / script-wired 11 / not-wired 14）。由短脚本对 `git ls-files` 做确定性模式发现生成（只读，未执行任何测试）；TSV 路径集合与独立 `git ls-files` 多模式计数逐行比对一致。
+
+**发现口径与限制**：仅文件级发现，不枚举测试函数/参数化用例，不含执行结果、耗时或历史失败类型；只覆盖已知名单（CI workflow 与 package.json 命令引用的模式 + `apps/_shared` 两处 tests 目录），命名不符这些模式的测试文件会漏报；fixtures/conftest/helper 不计入。not-wired 的 14 个文件是 `apps/_shared/backend_runtime/tests`（8）、`apps/_shared/mask_utils/tests`（5）与 `scripts/image-reference-utils.test.mjs`（1）——当前没有任何 workflow 或命令引用（[V] 全仓检索），是否纳管留 P8 决定。
 
 ## 4. 计划第 3 节不变量 → 现有测试映射
 
@@ -102,7 +115,7 @@
 - [V] `apps/api/tests/test_project_access.py`：`test_access_capability_matrix`（L49）、`test_membership_refresh_beats_stale_identity_map`（L117）、`test_non_member_access_is_hidden`（L160）、`test_viewer_with_work_membership_fails_closed`（L172）、`test_project_export_denied_for_annotator_and_viewer`（L192）（I）
 - [V] `test_employee_project_roles_acceptance.py`：`test_employee_annotates_a_reviews_b_and_cannot_access_c`（L16）、`test_top_level_bulk_annotation_requires_annotation_phase_capability`（L183）、`test_review_http_never_bypasses_self_or_unknown_evidence`（L124）（I）
 - [A] B：`e2e/tests/employee-project-roles.spec.ts`（跨项目工作模式、反向操作拒绝、viewer 只读入口、无项目空态）；`workbench-secondary-permissions.spec.ts`
-- [A] U：`src/hooks/useProjectAccess.test.tsx`（fixture 仍用旧 `"annotator"` 字符串 → P1 数据修正）
+- [A] U：`src/hooks/useProjectAccess.test.tsx`（fixture 含 `"annotator"` 字符串——是合法项目职责用法的概率与平台角色残留待 P1 分类，见 §6-4）
 
 ### C2 自审禁止；证据冻结；未知证据不可伪造为可审核
 
@@ -145,7 +158,7 @@
 
 - [A] I：`test_alembic_drift.py::test_models_match_database`；14+ `test_migration_0NNN_*.py`
 - [R] CI：`ci.yml` “alembic round-trip” 用 `scripts/alembic_reversible_floor.py` 找可回退层再 `alembic stamp`——**stamp 跳过不可逆迁移，不等于真实回退**（P0-B §2.2 与计划 §7.2 一致）
-- **GAP [V]：`conftest._default_test_db_url()` 用 `except Exception: return` 回退到历史默认连接串（含占位凭据），吞掉配置错误**；且库名固定共享 `annotation_test`。工作树内运行必须改走 `dev:worktree` 供给的 `aap_wt_*` 自有库；显式失败/日志化是 §5.3-8 的整改项。
+- **GAP [V]：`conftest._default_test_db_url()` 用 `except Exception: return` 回退到历史硬编码默认连接串（含占位凭据），静默吞掉配置错误**。解析本身是三层的：`TEST_DATABASE_URL` 环境变量优先（worktree 测试模式由此注入 `aap_wt_*` 自有库），其次按迁移配置派生的默认（库名 `annotation_test`），最后才是该硬编码回退（§1.1）。显式失败/日志化回退是 §5.3-8 的整改项；工作树内运行经 `dev:worktree` 注入即落在第一层，不触碰共享库。
 
 **覆盖结论 [V/A]：8 条约束无未映射项；两处 GAP（C6-signals、C8-fallback）是新增保护，不是重写。**
 映射验证方式：C1/C2/C3/C5/C6 的核心后端 ID 共 30 个由本工作树逐条 `rg` 复核存在；其余沿用 P0-A 静态读取并核对文件存在性。全量逐条复验归 P1。
@@ -191,18 +204,18 @@
 
 ## 6. 改造候选（P0 盘点级；未做任何改动）
 
-| #   | 候选                                                                                                             | 证据                                                                       | 归属阶段                                 |
-| --- | ---------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- | ---------------------------------------- |
-| 1   | `httpx_client_bound` 别名（conftest L203-204）                                                                   | [V] 69 个测试文件引用；`apps/api/app` 零命中                               | P2                                       |
-| 2   | `_install_legacy_class_kwargs_shim`（conftest L76/101）                                                          | [V] 定义+调用点仅此两处                                                    | P2                                       |
-| 3   | `coalesce_legacy_into_tool_bindings`                                                                             | [A] 生产路由活跃调用（projects/project_templates/seed/factory）            | **保留**在兼容边界；仅去测试侧依赖（P2） |
-| 4   | 前端测试旧 `"annotator"` 角色数据（20 文件）                                                                     | [A]（含 `ProjectDataManagerPage.flow.test.tsx`）                           | P1 数据 / P3 结构                        |
-| 5   | `signals.py` 重复生命周期（`_mark_failed`/`_mark_cancelled`）                                                    | [V] 225 行、结构重复；零直接测试（见 C6 GAP）                              | P4（先 P1 补保护）                       |
-| 6   | 7 个 spec 内联 `ERR_ABORTED` 分类                                                                                | [V] 文件清单与共享 helper 并存                                             | P7 域（仅记录）                          |
-| 7   | 活动文件版本叙事（conftest/vitest.setup/vite.config/playwright.config/helpers.ts/signals.py/ci.yml/e2e-run.yml） | [A] 抽查命中（conftest L67“v0.10.22”、alias L203“v0.6.5” [V]）             | P6 + `CLAUDE.md` 指导修正                |
-| 8   | `useWorkbenchShellModel.tsx` 8919 行混合 model                                                                   | [V] 行数；领域模块已存在（`useWorkbenchTaskFlow`、`useMaskEditorSession`） | P5                                       |
-| 9   | `ProjectDataManagerPage.flow.test.tsx` 946 行高 mock 流程测试                                                    | [A]                                                                        | P3（REWRITE/MOVE_DOWN）                  |
-| 10  | `test_v0_7_6.py`（版本命名测试文件）                                                                             | [V] 文件存在；内容未逐行审                                                 | P2/P6 审阅清单（不凭名删）               |
+| #   | 候选                                                                                                             | 证据                                                                                                                                                              | 归属阶段                                                                   |
+| --- | ---------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| 1   | `httpx_client_bound` 别名（conftest L203-204）                                                                   | [V] 69 个测试文件引用；`apps/api/app` 零命中                                                                                                                      | P2                                                                         |
+| 2   | `_install_legacy_class_kwargs_shim`（conftest L76/101）                                                          | [V] 定义+调用点仅此两处                                                                                                                                           | P2                                                                         |
+| 3   | `coalesce_legacy_into_tool_bindings`                                                                             | [A] 生产路由活跃调用（projects/project_templates/seed/factory）                                                                                                   | **保留**在兼容边界；仅去测试侧依赖（P2）                                   |
+| 4   | 前端测试中 `"annotator"` 字符串命中（20 文件，候选清单）                                                         | [A]（含 `ProjectDataManagerPage.flow.test.tsx`）；`"annotator"` 仍是合法项目职责名（[V] `apps/web/src/types/index.ts` L15、`constants/roles.ts` `PROJECT_ROLES`） | **P1 逐条分类**（平台角色残留 → 修数据；项目职责合法使用 → 保留），P3 结构 |
+| 5   | `signals.py` 重复生命周期（`_mark_failed`/`_mark_cancelled`）                                                    | [V] 225 行、结构重复；零直接测试（见 C6 GAP）                                                                                                                     | P4（先 P1 补保护）                                                         |
+| 6   | 7 个 spec 内联 `ERR_ABORTED` 分类                                                                                | [V] 文件清单与共享 helper 并存                                                                                                                                    | P7 域（仅记录）                                                            |
+| 7   | 活动文件版本叙事（conftest/vitest.setup/vite.config/playwright.config/helpers.ts/signals.py/ci.yml/e2e-run.yml） | [A] 抽查命中（conftest L67“v0.10.22”、alias L203“v0.6.5” [V]）                                                                                                    | P6 + `CLAUDE.md` 指导修正                                                  |
+| 8   | `useWorkbenchShellModel.tsx` 8919 行混合 model                                                                   | [V] 行数；领域模块已存在（`useWorkbenchTaskFlow`、`useMaskEditorSession`）                                                                                        | P5                                                                         |
+| 9   | `ProjectDataManagerPage.flow.test.tsx` 946 行高 mock 流程测试                                                    | [A]                                                                                                                                                               | P3（REWRITE/MOVE_DOWN）                                                    |
+| 10  | `test_v0_7_6.py`（版本命名测试文件）                                                                             | [V] 文件存在；内容未逐行审                                                                                                                                        | P2/P6 审阅清单（不凭名删）                                                 |
 
 明确不是候选 [A]：`plan-e2e-suites.*`（有测试且被执行过）、`apps/_shared/backend_runtime`、SDK 测试、几何套件、worktree 脚本、`e2e-run.yml` 结构、快照/媒体（GEN）。
 
@@ -217,25 +230,27 @@
 - [V] `gh run list --limit 60` 分类与 ID 比对；`main` 保护/ruleset/适用规则三项只读 API 复核。
 - [V] `scripts/alembic_reversible_floor.py` 在 HEAD 存在。
 - [V] 计划文件入轨的 prettier 格式化与等价性校验（见第 8 节）。
+- [V] 复审修正（本提交）：按 `TEST_DATABASE_URL` 优先序更正测试库解析表述（§1.1、§3、C8）；`"annotator"` 命中改判为待分类候选（§2、§4-C1、§6-4）；`check-bundle-size` 等 `apps/web/scripts` 测试接线归属更正（vitest 收集，§3/§8）。
+- [V] 机器可读测试文件清单生成（`docs/research/data/26-repository-test-file-inventory.tsv`，1042 文件；只读 `git ls-files` 模式发现，未执行测试；行数/分层/接线计数经脚本输出、TSV 内容与独立 `git ls-files` 计数三方核对一致）。
 
 明确未执行 **[GAP]**（留待对应阶段，不在 P0 冒充）：
 
 - 后端 pytest、前端 vitest、Playwright 任何执行（需 `aap_wt_*` 自有库/e2e 隔离服务；本次授权为文档检查，不含共享库测试）。
 - `node --test scripts/plan-e2e-suites.test.mjs` 复跑（协调方确认 P0-A 的 5/5 通过记录即可）。
 - `--log-failed` 全量日志级复跑（采纳 P0-B 校准分类）。
-- 两个未接入 CI 的 node 测试（`image-reference-utils`、`check-bundle-size`）是否应入 CI：留 P8 决定。
+- 未接入任何门禁/命令的测试文件（[V] 见 §3 机器可读清单 status 列）：`apps/_shared/backend_runtime/tests` 8 个、`apps/_shared/mask_utils/tests` 5 个、`scripts/image-reference-utils.test.mjs`——是否纳管留 P8 决定。
 - 首次执行耗时 / 每测试历史失败类型的量化采集（P8 输入）。
 
 ## 8. 对 P0-A 初稿的校准记录
 
-| 项                             | P0-A 初稿                           | 校准后（本文采用）                                                                               |
-| ------------------------------ | ----------------------------------- | ------------------------------------------------------------------------------------------------ |
-| 来源分支                       | “on `main`”                         | `feat/codebase_opt260920`（= 基线时点 origin/main）[V]                                           |
-| scripts node 测试              | “4 个”但列 5 个名字                 | `scripts/` 4 个（3 个入 CI）+ `apps/web/scripts/check-bundle-size.test.mjs`；后两者未接入 CI [V] |
-| CI 计数                        | 11+3+3+3=20（子集，不可加和到全窗） | 60 次：49/6/4/1 [V 重跑比对]；失败运行补齐首次失败细节 [R]                                       |
-| `apps/_shared/backend_runtime` | “147 files”                         | `apps/_shared` 147，`backend_runtime` 20 [V]                                                     |
-| `apps/web/scripts/`            | 15                                  | 31 [V]                                                                                           |
-| web 测试文件                   | 643                                 | 口径依赖 glob：src 下 549；apps/web 全树 633 [V]（正文按 549 口径）                              |
-| SOUND 声明强度                 | 部分表述近似“已审”                  | 全文降为“清单级盘点 + 热点文件复核”，见第 0 节声明                                               |
+| 项                             | P0-A 初稿                           | 校准后（本文采用）                                                                                                                                                             |
+| ------------------------------ | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 来源分支                       | “on `main`”                         | `feat/codebase_opt260920`（= 基线时点 origin/main）[V]                                                                                                                         |
+| scripts node 测试              | “4 个”但列 5 个名字                 | `scripts/` 4 个（3 个入 CI，`image-reference-utils` 未接入）；`apps/web/scripts/` 5 个中 4 个被 vitest 收集（ci-wired）、`media-derivation` 走 npm script 的 `node --test` [V] |
+| CI 计数                        | 11+3+3+3=20（子集，不可加和到全窗） | 60 次：49/6/4/1 [V 重跑比对]；失败运行补齐首次失败细节 [R]                                                                                                                     |
+| `apps/_shared/backend_runtime` | “147 files”                         | `apps/_shared` 147，`backend_runtime` 20 [V]                                                                                                                                   |
+| `apps/web/scripts/`            | 15                                  | 31 [V]                                                                                                                                                                         |
+| web 测试文件                   | 643                                 | 口径依赖 glob：src 下 549；apps/web 全树 633 [V]（正文按 549 口径）                                                                                                            |
+| SOUND 声明强度                 | 部分表述近似“已审”                  | 全文降为“清单级盘点 + 热点文件复核”，见第 0 节声明                                                                                                                             |
 
 计划文件入轨说明：未跟踪的 `docs/plans/1789880018_repository-optimization-plan.md` 按协调方授权在本工作树执行 `prettier --write`（仅表格对齐空格），572 行不变；去空白 + 表格分隔行规范化后与原件哈希一致（`b9d3b944…`），措辞与语义零改动；原件检出未触碰。
