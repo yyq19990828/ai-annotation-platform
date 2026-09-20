@@ -315,3 +315,17 @@ repo-scripts 4 / screenshots-tooling 12 / worktree-runtime 8；
 接线状态仍是**静态读取**（workflow 与 `package.json` 检索），不是执行证据；
 补录行的 CPU 可运行性证据见 `docs/research/34`（ML/shared）与 35。
 `apps/_shared/protocol_v2` 的 CPU 测试结果见 `docs/research/35`。
+
+## 10. P5/P6/P7 收口后的最新快照（2026-09-20，P6 收口）
+
+> 本节只追加当前快照，不改写 §0–§9 的 P0 / P6 历史记录；历史计数与 P0 时点事实保持可比。
+
+- **接受提交**：P5 `9e34dfafb`（+ [33]，含 `canBatchConvert` / helpers 的有据 KEEP 与 R1/R2 清理）、P6 在 root `11d81d05c`（[34] ML/shared、[35] 剩余稳定域、UsersPage MSW 化 `0e90da462`、§7.2 迁移真实验证 [39]）、P7 `b8b45797e`（+ [31]）。P8 选择器 / 工作流修正**未接受**（[37]/[38] 为阶段产物）；P9/P10 未开始。
+- **清单快照**：`docs/research/data/26-repository-test-file-inventory.tsv` 现 **1136 行 = 1132 可执行测试 + 4 测试支撑模块**（新增 `test-support` 层）。发现谓词（只读、确定性）：`git ls-files` 全量 ∩ 文件名匹配 `*.test.ts(x)` / `*.spec.ts(x)` / `*.test.mjs` / `test_*.py` / `test-*.py`；显式排除路径片段 `/vendor/`、`/fixtures/`、`/generated/`、`node_modules`、`/checkpoints/`、`/_fixtures/` 与文件名 `conftest.py`、`__init__.py`。双向比对后补录 8 行、0 缺口：
+  - `apps/api/tests/test_conftest_db_url.py`（P2 测试库守卫纯规则 13 例，backend-api / ci-wired）
+  - 6 个 P5 Workbench 测试：`state/{maskMutationPolicy,taskNavigation,trackerSeedPrompts,useBatchBackendSelection,useMaskMutationWorkflows}.test.ts` 与 `shell/SelectionCardContent.test.tsx`（frontend-unit / ci-wired）
+  - `scripts/test_alembic_migration_policy.py`（§7.2 修订图 / 归属策略 33 例，repo-scripts / not-wired，待 P8 接入）
+- **分层计数（可加和）**：backend-api 360 / frontend-unit 558 / repo-scripts 5 / test-support 4 / docs-tooling 2 / e2e-browser 67 / frontend-tooling 5 / mask-utils-shared 5 / ml-backend 70 / ml-backend-shared 13 / ml-examples 2 / python-sdk 25 / screenshots-tooling 12 / worktree-runtime 8 = 1136。
+- **接线状态（静态读取）**：ci-wired 1031 / script-wired 15 / not-wired 90。**口径**：`not-wired` 的 89 个 ML/shared 测试经独立 CPU 审计证明**全部 CPU 可运行**（12 个需 CPU torch），执行入口为 `.github/workflows/ml-cpu-test.yml` + `scripts/run-ml-cpu-tests.sh`；PR caller 属 P8，未收口前不声称进入 PR 门禁，也不把它们归为“硬件专属”。
+- **支撑文件口径**：`apps/api/tests/{conftest,factory,_avatar_storage,__init__}.py` 四个测试基建模块单独标记 `test-support`，与可执行测试分离；发现侧显式排除这四类路径，非缺口。
+- **未决（P8/P9/P10）**：选择器 docs-only 白名单、报告区分 not-run/flaky、构建复用与门禁切换；阶段结论见 [37]/[38]，本文件不重复。

@@ -13,7 +13,7 @@
 3. **ReviewPage 纯 URL 规则下沉 [V]**：新增 `reviewUrlState.ts`（读取 / 比较作用域、选批次、清 assignee、回概览、开合任务抽屉），页面只保留装配；保留 P3 已论证的异步迟到响应 mock 边界。UsersPage 去掉重复的 `ApiError` 假类；其整体 MSW 化已在后续 P6 子任务完成（§3.2）。
 4. **provenance 清理 [V]**：`gpu_arbitration/ledger` 6 处「Extracted verbatim from legacy …」叙事删除，`check_removed_service_modules.mjs` 的 5 项 `PROVENANCE_FILES` 白名单同步删除（扫描器保持绿）；该扫描器 allowlist 里不存在的根路径改为真实路径 `apps/api/scripts/check_removed_service_modules.py`。SDK / scripts / config / instruction 的版本叙事按「当前契约保留、历史叙事删除」清理。
 5. **两条 P4 复核候选均为有据 KEEP [V]**：通知「列表 vs 投递」谓词差异被请求期认证挡住（停用账号无法到达列表路径）；`mask_repair_rollback` 的信号取消不回填领域行是有意契约。均未改语义。
-6. **测试清单缺口修复 [V]**：TSV 从 1042 行补录到 **1128** 行（ML backend 70 + 共享 5 + P1/P3/P4 新增 4 + 截图 spec 4 + 本阶段自产测试 2），并在最终提交 HEAD 上以双向比对证明无残余缺口；`protocol_v2`（163 passed）与`mask_utils`（41 passed）的 CPU 实测补齐。
+6. **测试清单缺口修复 [V]**：TSV 从 1042 行补录到 **1128** 行（ML backend 70 + 共享 5 + P1/P3/P4 新增 4 + 截图 spec 4 + 本阶段自产测试 2），并在最终提交 HEAD 上以双向比对证明无残余缺口；`protocol_v2`（163 passed）与`mask_utils`（41 passed）的 CPU 实测补齐。P6 收口后更新为 **1136 行 = 1132 可执行 + 4 支撑**（§10/§11，[26§10]）。
 7. **文档 [V]**：新增 `docs-site/dev/concepts/repository-map.md`（模块归属与调用链），`docs-site/dev/testing.md` 增加分层归属与 ML/shared 未接线事实。
 
 ## 1. seed：平台身份与项目职责（缺陷修复 + 独立提交）
@@ -117,15 +117,15 @@ pnpm dev:worktree -- exec --mode test -- sh -c \
 | 3   | `coalesce_legacy_into_tool_bindings`    | **KEEP**（兼容边界，[29]）                                                                                                                                                         |
 | 4   | 前端 `"annotator"` 字符串命中           | **P1 已分类** [28]；本轮修正其中一处真实比较缺陷（§2）                                                                                                                             |
 | 5   | `signals.py` 重复生命周期               | **P4 已关闭** [32]                                                                                                                                                                 |
-| 6   | 7 个 spec 内联 `ERR_ABORTED` 分类       | **P7 归属**，未动                                                                                                                                                                  |
+| 6   | 7 个 spec 内联 `ERR_ABORTED` 分类       | **P7 已收口** [31]：收敛为 `apps/web/e2e/helpers/request-errors.ts` 的有类型规则 + 16 例允许/禁止边界测试；本阶段未动其文件                                                        |
 | 7   | 活动文件版本叙事                        | **本轮关闭**：`signals.py` / `vitest.setup.ts` / `vite.config.ts` 已由 P2–P4 清零；`conftest.py` / `playwright.config.ts` / `ci.yml` / `.pre-commit-config.yaml` 残留 5 处本轮删除 |
-| 8   | `useWorkbenchShellModel.tsx` 混合 model | **P5 归属**，未动                                                                                                                                                                  |
+| 8   | `useWorkbenchShellModel.tsx` 混合 model | **P5 已收口** [33]：装配 model 8919 → 6647 行，8 条职责下沉领域模块/纯模块与 shell 组件；本阶段未动其文件                                                                          |
 | 9   | `ProjectDataManagerPage.flow.test.tsx`  | **P3 已关闭** [30]                                                                                                                                                                 |
 | 10  | `test_v0_7_6.py` 版本命名               | **本轮关闭**：改名 `test_project_attribute_schema_and_batch_reset.py`（内容本就用现行 fixture/模型），`batch-module.md` 与 TSV 同步                                                |
 
 ## 7. 测试清单补录与共享包 CPU 实测
 
-- TSV **1128** 行（ci-wired 1024 / script-wired 15 / not-wired 89），分层计数可加和；双向比对（tracked 测试路径 ↔ 清单，显式排除 vendor / fixtures / conftest / `__init__` / generated / node_modules / checkpoints）在**最终提交 HEAD** 上重跑后**无残余缺口**；[26§9] 记录了缺口成因分类。
+- 本节记录 P6 主阶段快照 **1128** 行（ci-wired 1024 / script-wired 15 / not-wired 89），分层计数可加和；双向比对（tracked 测试路径 ↔ 清单，显式排除 vendor / fixtures / conftest / `__init__` / generated / node_modules / checkpoints）在**最终提交 HEAD** 上重跑后**无残余缺口**；[26§9] 记录了缺口成因分类。**P6 收口后已更新为 1136 行 = 1132 可执行测试 + 4 测试支撑模块**（新增 `test-support` 层；补录 `test_conftest_db_url.py`、6 个 P5 Workbench 测试、`scripts/test_alembic_migration_policy.py`），最新分层/接线计数见 [26§10]。
 - 补录明细：ML backend 70（合并 2 个重复套件后的当前路径）、`backend_runtime` 下沉套件 1（`replacement` 列记录 old→new）、`protocol_v2` 4、P1/P4 新增后端测试 2、P3 新增前端测试 2、截图 spec 4、**本阶段自产测试 2**（`test_seed_demo_memberships.py`、`reviewUrlState.test.ts`，收口时回填）、**P7 新建 1**（`test_seed_owned.py`，rebase 后回填）。
 - 收口比对确认清单中 4 行测试支撑模块（`apps/api/tests/{conftest,factory,_avatar_storage,__init__}.py`）是 P0 已登记的测试基建，不属于发现缺口（[26§9.1]）。`scripts/test-orca-worktree-setup.py` 是**真正的可运行测试脚本**（`ci.yml` 直接 `uv run python`，非 unittest discover），已登记为 `worktree-runtime` / `ci-wired`；首版说明误列为支撑文件，已在发现模式补上连字符 `test-*.py` 后更正，总数仍为 1127。
 - 共享包 CPU 实测：`apps/_shared/protocol_v2` 163 passed / 0 skip；`apps/_shared/mask_utils` 41 passed / 0 skip（各自 `.venv`，`pytest -q`）。
@@ -161,8 +161,16 @@ pnpm dev:worktree -- exec --mode test -- sh -c \
 
 ## 10. 未完成与归属
 
-- **P5（未动）**：Workbench 收敛及其 `workbench-shell.md` / `video-annotation-workbench.md` 文档；`repository-map.md` 对 Workbench 只描述当前装配路径，最终归属待 P5 交付后在台账对账。
-- **P7（已接受并 rebase）**：P6 分支已 rebase 到 P7 root `b8b45797e`，双方改动无冲突；P7 的 `_test_seed*`、`apps/web/e2e/**` 与新增 `test_seed_owned.py` 保持 P7 语义，P6 未改其文件（仅把 `test_seed_owned.py` 回填进共享测试清单）。
-- **P8（未动）**：workflow / planner / 构建变更；交接输入：89 个 not-wired 文件（含 `protocol_v2` 4 个、依赖 `numpy` 仅 mask 编解码用）。历史死链已在本阶段清理：`check_removed_service_modules.mjs` 默认与 `--historical-links` 模式均 exit 0（[35§7.1]）。
-- **UsersPage 整体 MSW 化**：已完成（§3.2）。
+- **P5（已接受）**：Workbench 收敛已由 P5 交付并接受（`9e34dfafb`，证据 [33]：`canBatchConvert`/helpers 为有据 KEEP，R1/R2 注释与死导出已清理）；`workbench-shell.md` / `video-annotation-workbench.md` 与本文的 P5 归属已对账；`repository-map.md` 的 Workbench 调用链同步更新。
+- **P7（已接受）**：P7 root `b8b45797e` + 证据 [31]；P7 的 `_test_seed*`、`apps/web/e2e/**`、`test_seed_owned.py` 与错误分类器保持 P7 语义，P6 未改其文件（仅回填测试清单）。
+- **P8（未接受）**：workflow / planner / 构建变更为阶段产物（[37]/[38]），其选择器与工作流修正尚未接受，P6 未改其文件、未标记完成。89 个 not-wired ML/shared 测试经独立 CPU 审计证明**全部 CPU 可运行**（12 个需 CPU torch），执行入口为 `.github/workflows/ml-cpu-test.yml` + `scripts/run-ml-cpu-tests.sh`，PR caller 待 P8 收口。
+- **§7.2 迁移验证**：真实验证 runner `scripts/validate_migrations.py` + fail-closed 策略 `scripts/alembic_reversible_floor.py` + 33 例策略测试已随 P6 接受（[39]）；CI caller 由 P8 接入（未收口）。
+- **UsersPage 整体 MSW 化**：已完成（§3.2；提交 `0e90da462`，Users 目录 27 用例全绿）。
+- **P0 候选 #1–#10**：全部关闭或有据 KEEP（§6）；无剩余 P6 owned 候选。
 - **`test_project_attribute_schema_and_batch_reset.py` 的硬编码 `display_id=T-{i}`**：该文件与 `next_display_id` 的 `T-<seq>` 命名在同一库上互斥，属既有测试脆弱性（P2 验收库当时为空库）；本轮只记录，不夹带改测试语义。
+
+## 11. P6 收口对账（2026-09-20）
+
+- P6 实现已在 root `11d81d05c` 接受（[34] ML/shared + 本文剩余稳定域 + P5 残留 + Users MSW `0e90da462` + §7.2 迁移验证 [39]）；状态更新见 [27§1]/[27§6]，最新清单快照见 [26§10]。
+- 收口后 TSV **1136 行 = 1132 可执行 + 4 支撑**（ci-wired 1031 / script-wired 15 / not-wired 90），双向比对 0 缺口；`test-support` 层与可执行测试分离。
+- 未决仅剩 P8 选择器/工作流（未接受）与 P9/P10；本文不再新增 P6 owned 项。

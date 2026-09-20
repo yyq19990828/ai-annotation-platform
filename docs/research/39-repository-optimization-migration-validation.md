@@ -67,7 +67,7 @@
 
 ### 2.3 策略单测（`scripts/test_alembic_migration_policy.py`）
 
-28 例（纯逻辑、无数据库）：单/零/多个不可逆、基线不可逆、**不可逆之上存在可逆后缀**、merge、
+33 例（纯逻辑、无数据库；含 5 例历史行缺失/重复校验）：单/零/多个不可逆、基线不可逆、**不可逆之上存在可逆后缀**、merge、
 孤儿、未知父版本、环、单/多/零 head；以及 anchor 守卫的拒绝/接受场景（缺 owner、开发库、非本机、
 prod、非 postgres 驱动）和 `create_action`/`drop_action` 归属判定（不存在→创建、自有残留→重建、
 无注释/异主→拒绝；删除时自建未打标的半成品→删除、非本次创建的无注释库/异主库→拒绝）。
@@ -113,7 +113,7 @@ prod、非 postgres 驱动）和 `create_action`/`drop_action` 归属判定（�
 
 | 检查           | 命令                                                                                                                              | 结果                                                                                                                                                                  |
 | -------------- | --------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 策略单测       | `apps/api/.venv/bin/python scripts/test_alembic_migration_policy.py`                                                              | 28 passed（单/多/零 head、单/多/基线不可逆、不可逆之上可逆后缀拒绝、merge/孤儿/环/未知父版本、anchor 拒绝、create/drop 归属判定）[V]                                  |
+| 策略单测       | `apps/api/.venv/bin/python scripts/test_alembic_migration_policy.py`                                                              | 33 passed（单/多/零 head、单/多/基线不可逆、不可逆之上可逆后缀拒绝、merge/孤儿/环/未知父版本、anchor 拒绝、create/drop 归属判定、历史行缺失/重复校验）[V]             |
 | floor 输出     | `apps/api/.venv/bin/python scripts/alembic_reversible_floor.py`                                                                   | `0173`（`--json`：head 0174、irreversible `["0174"]`）[V]                                                                                                             |
 | 完整验证       | `pnpm dev:worktree -- exec --mode test -- bash -lc 'cd apps/api && .venv/bin/python ../../scripts/validate_migrations.py --json'` | `result=passed`；fresh 174 upgrades；reversible 0173→base 173 downgrades→0174；forward/restore 通过；`cleanup_errors=[]`、`leftover_owned_databases=[]`；退出码 0 [V] |
 | 分配失败清理   | 同上加 `--fail-after create`（在 COMMENT 之前注入失败）                                                                           | `result=failed`、created 1 库、`cleanup_errors=[]`、`leftover=[]`、退出码 1（半成品库被删除）[V]                                                                      |

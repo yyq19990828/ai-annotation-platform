@@ -45,9 +45,14 @@ status: stable
 2. 后端鉴权：`app/deps.py::get_current_user`（停用账号 401）→
    路由内 `resolve_project_access()` 建立不可变 `ProjectAccess`。
 3. 取任务：`app/services/scheduler.py` 派题；任务锁语义在 `app/services/task_lock.py`。
-4. 编辑与提交：Workbench 页面装配在
+4. 编辑与提交：Workbench 装配在
    `apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx` +
-   `state/useWorkbenchShellModel.tsx`；Mask 写入经
+   `state/useWorkbenchShellModel.tsx`；任务切换准入在 `state/taskNavigation.ts`
+   （latest-wins 调度、离开守卫、提交闸门、本地 URL 同步）；原生 Mask 变更工作流在
+   `state/useMaskMutationWorkflows.ts`（错误策略纯模块 `state/maskMutationPolicy.ts`），
+   视频 Mask 纠错在 `state/useVideoMaskCorrection.ts`，PVS 种子采集与传播在
+   `state/useTrackerSeedCollection.ts`（种子分组纯模块 `state/trackerSeedPrompts.ts`），
+   批量线后端选择在 `state/useBatchBackendSelection.ts`；后端 Mask 写入经
    `app/services/mask_mutation.py`（版本冲突与幂等键在此收口）。
 5. 异步处理：Celery 信号兜底在 `app/workers/signals.py`
    （`task_failure` / `task_revoked` → 连接 → 查作业 → 通用终态 → 领域回填 → 通知 → 提交 → 释放）；
@@ -80,9 +85,10 @@ status: stable
 - 前端页面测试优先在 MSW API 边界描述响应（`src/test/` 提供最小 fixture）；
   纯 URL/几何规则下沉到 `*UrlState.test.ts` / 几何单测。
 - ML backend 与 `apps/_shared` 三个共享包（`backend_runtime` / `mask_utils` / `protocol_v2`）
-  的 `tests/` 目前**没有**任何 workflow 或 npm script 接线，只能本地运行
-  （`apps/<backend>` 下 `pytest`；`apps/_shared/<pkg>` 下 `pytest`）。
-  是否纳管由 CI 阶段决定。
+  的 `tests/` 执行入口是可复用工作流 `.github/workflows/ml-cpu-test.yml`（`workflow_call` /
+  `workflow_dispatch`）与 `scripts/run-ml-cpu-tests.sh`（8 套件、每套件独立 venv；gs2/sam3
+  装 CPU torch，yolo 不用 ultralytics/torch）。这些文件全部 CPU 可运行，不存在“硬件专属”
+  测试；阶段接线状态见仓库优化台账。
 
 ## 6. 改动时的对齐参考
 
