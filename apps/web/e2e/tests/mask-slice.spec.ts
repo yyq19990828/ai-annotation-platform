@@ -1,6 +1,13 @@
 import { openMaskSettings, closeMaskSettings } from "../fixtures/mask-toolbar";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import {
+  imageWorkbenchAborts,
+  isExpectedRequestAbort,
+  maskEditorAborts,
+  objectCommentsAborts,
+  type RequestErrorSignal,
+} from "../helpers/request-errors";
 import type { APIRequestContext, APIResponse, Page, Response } from "@playwright/test";
 import { expect, test as base, type SeedData } from "../fixtures/seed";
 
@@ -110,7 +117,7 @@ const test = base.extend<{ sliceCase: Case }>({
       allowedErrors: new Set(),
     };
     await seed.injectToken(page, data.annotator_email);
-    const errors: Array<{ kind: string; path?: string; message: string; method?: string }> = [];
+    const errors: RequestErrorSignal[] = [];
     page.on("pageerror", (error) => errors.push({ kind: "page", message: error.message }));
     page.on("console", (message) => {
       if (message.type() === "error")
@@ -150,29 +157,8 @@ const test = base.extend<{ sliceCase: Case }>({
     try {
       await provideFixture(fixture);
       // Reload can report keepalive session telemetry as aborted after the API accepts it.
-      const expectedAborts = errors.filter(
-        (error) =>
-          error.kind === "request" &&
-          error.message === "net::ERR_ABORTED" &&
-          ((error.method === "POST" &&
-            (error.path === "/api/v1/auth/me/heartbeat" ||
-              error.path === "/api/v1/auth/me/task-events:batch")) ||
-            (error.method === "GET" &&
-              ([
-                "/api/v1/auth/me",
-                "/api/v1/auth/registration-status",
-                "/api/v1/feedbacks",
-                "/api/v1/projects",
-                "/api/v1/audit-logs",
-                "/api/v1/tasks",
-              ].includes(error.path!) ||
-                /^\/api\/v1\/tasks\/[0-9a-f-]{36}(\/(annotations|discussion\/(page|annotation-counts)))?$/.test(
-                  error.path!,
-                ) ||
-                /^\/api\/v1\/projects\/[0-9a-f-]{36}\/access$/.test(error.path!) ||
-                /^\/api\/v1\/annotations\/[0-9a-f-]{36}\/(mask-content|comments\/page)$/.test(
-                  error.path!,
-                )))),
+      const expectedAborts = errors.filter((error) =>
+        isExpectedRequestAbort(error, imageWorkbenchAborts, objectCommentsAborts, maskEditorAborts),
       );
       const unexpected = errors.filter(
         (error) =>

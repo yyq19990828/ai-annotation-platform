@@ -1,4 +1,9 @@
-import { isVideoLifecycleCancellation } from "../helpers/video-request-errors";
+import {
+  isExpectedRequestAbort,
+  videoWorkbenchAborts,
+  type AbortAllowRule,
+  type RequestErrorSignal,
+} from "../helpers/request-errors";
 import { invalidSeekTarget, rangeValueForFrame } from "../helpers/video-timeline-seek";
 import { layoutCommand } from "../helpers/workbench-layout";
 import type { APIRequestContext, APIResponse, Browser, Page, Route } from "@playwright/test";
@@ -53,14 +58,6 @@ interface Track {
     outside: Array<{ from: number; to: number }>;
   };
 }
-interface EvidenceError {
-  kind: "page" | "console" | "http" | "request";
-  message: string;
-  method?: string;
-  path?: string;
-  status?: number;
-  body?: string;
-}
 interface IssueCase {
   data: SeedData;
   taskId: string;
@@ -85,18 +82,45 @@ const isFixtureMedia = (url: URL, fixture: string) =>
   url.pathname.includes(`/e2e/video/webcodecs/${fixture}/`) &&
   /\/(?:source|chunk-\d+)\.mp4$/.test(url.pathname);
 
-function expectedRequestAbort(error: EvidenceError, fixture: IssueCase) {
-  if (isVideoLifecycleCancellation(error)) return true;
-  if (error.kind !== "request" || error.message !== "net::ERR_ABORTED" || !error.path) return false;
-  if (error.method === "DELETE")
-    return (
-      (fixture.mediaLatency && /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/lock$/.test(error.path)) ||
-      fixture.navigatedTaskIds.some((id) => error.path === `/api/v1/tasks/${id}/lock`)
+/** Fixture-specific cancellations beyond the shared workbench policy. */
+function fixtureAbortRules(fixture: IssueCase): AbortAllowRule[] {
+  const rules: AbortAllowRule[] = [];
+  if (fixture.mediaLatency) {
+    rules.push(
+      {
+        method: "DELETE",
+        path: /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/lock$/,
+        reason: "navigation may cancel the lock release while media is still decoding",
+      },
+      {
+        method: "GET",
+        path: new RegExp(
+          `/e2e/video/webcodecs/${fixture.fixtureName}/(?:source|chunk-\\d+)\\.mp4$`,
+        ),
+        reason: "retiring the task aborts in-flight fixture media fetches",
+      },
     );
-  if (error.method !== "GET") return false;
-  if (fixture.actorChanged && ["/api/v1/projects", "/api/v1/audit-logs"].includes(error.path))
-    return true;
-  return fixture.mediaLatency && isFixtureMedia(new URL(error.path, API_BASE), fixture.fixtureName);
+  }
+  for (const id of fixture.navigatedTaskIds)
+    rules.push({
+      method: "DELETE",
+      path: `/api/v1/tasks/${id}/lock`,
+      reason: "navigation away from a visited task may cancel its lock release",
+    });
+  if (fixture.actorChanged)
+    rules.push(
+      {
+        method: "GET",
+        path: "/api/v1/projects",
+        reason: "actor switch retires the previous session's project list query",
+      },
+      {
+        method: "GET",
+        path: "/api/v1/audit-logs",
+        reason: "actor switch retires the previous session's audit-log query",
+      },
+    );
+  return rules;
 }
 
 async function json<T>(response: APIResponse): Promise<T> {
@@ -217,7 +241,7 @@ const test = base.extend<{ issueCase: IssueCase; videoFixture: string }>({
       releaseMedia: [],
       expectedHttpErrors: [],
     };
-    const errors: EvidenceError[] = [];
+    const errors: RequestErrorSignal[] = [];
     const pending: Promise<void>[] = [];
     const relevant = (url: string) =>
       pathOf(url).startsWith("/api/v1/") || isFixtureMedia(new URL(url), videoFixture);
@@ -244,7 +268,7 @@ const test = base.extend<{ issueCase: IssueCase; videoFixture: string }>({
       // Read the body immediately: Playwright Response handles can expire on reload.
       pending.push(
         (async () => {
-          const entry: EvidenceError = {
+          const entry: RequestErrorSignal = {
             kind: "http",
             method: response.request().method(),
             path: pathOf(response.url()),
@@ -269,7 +293,8 @@ const test = base.extend<{ issueCase: IssueCase; videoFixture: string }>({
       await provideFixture(fixture);
       await Promise.all(pending);
       // Feedback/annotation writes are never allowlisted. Navigation may cancel lock cleanup.
-      const expectedAborts = errors.filter((error) => expectedRequestAbort(error, fixture));
+      const rules = [...videoWorkbenchAborts, ...fixtureAbortRules(fixture)];
+      const expectedAborts = errors.filter((error) => isExpectedRequestAbort(error, rules));
       const expectedHttp = errors.filter(
         (error) =>
           error.kind === "http" &&
