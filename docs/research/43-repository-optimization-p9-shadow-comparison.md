@@ -118,16 +118,39 @@
 
 四处已授权 fixture/消费方修复已实施，并按原装置做定向复跑（原始失败证据保留，不覆盖）：
 
-| 修复                  | 文件                                                                                                       | 定向结果                                                                                                                                                   |
-| --------------------- | ---------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| visual 队列显示 id    | `apps/web/e2e/tests/workbench-layout.spec.ts`                                                              | 原装置（preview-visual，构建产物）**1 passed**（原 1 failed）                                                                                              |
-| dashboard 项目名      | `apps/web/e2e/tests/employee-project-roles.spec.ts`                                                        | 目标用例 **passed**（原 1 failed），保留角色卡/负向断言                                                                                                    |
-| context-toolbars 助手 | `apps/web/e2e/tests/workbench-context-toolbars.spec.ts`                                                    | 目标用例 **1 passed**（原 1 failed）；替换 PNG 现位于同一 owned 前缀，由 owned-cleanup 回收                                                                |
-| mask-slice 桶守卫     | `apps/web/e2e/fixtures/mask-slice-lifecycle.py` + 新回归 `apps/api/tests/test_mask_slice_fixture_guard.py` | 目标用例 **4 passed**（H4b-4 + H4b-5×3，原 failed）；守卫回归 9 passed（正例 + 共享/他方/缺标签/错槽位/库不匹配/他 checkout/未声明/无模式 aap-wt-\* 负例） |
+| 修复                  | 文件                                                                                                       | 定向结果                                                                                                                                                                                                                                |
+| --------------------- | ---------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| visual 队列显示 id    | `apps/web/e2e/tests/workbench-layout.spec.ts`                                                              | 原装置（preview-visual，构建产物）**1 passed**（原 1 failed）                                                                                                                                                                           |
+| dashboard 项目名      | `apps/web/e2e/tests/employee-project-roles.spec.ts`                                                        | 目标用例 **passed**（原 1 failed），保留角色卡/负向断言                                                                                                                                                                                 |
+| context-toolbars 助手 | `apps/web/e2e/tests/workbench-context-toolbars.spec.ts`                                                    | 目标用例 **1 passed**（原 1 failed）；替换 PNG 现位于同一 owned 前缀，由 owned-cleanup 回收                                                                                                                                             |
+| mask-slice 桶守卫     | `apps/web/e2e/fixtures/mask-slice-lifecycle.py` + 新回归 `apps/api/tests/test_mask_slice_fixture_guard.py` | 目标用例 **4 passed**（H4b-4 + H4b-5×3，原 failed）；守卫回归 **14 passed**（正例 + 共享/他方/畸形所有者、缺失/空清单所有者、跨模式清单、错库、错 MINIO 槽位、他 checkout、缺清单、未知模式、无模式旧 CI 规则与 `aap-wt-*` 拒绝等负例） |
+
+复评修正（`0e97634a4`）：context-toolbars 清理改为从任务行派生并校验精确 owned 前缀与 taskId 文件名、恢复替换 PNG 与 ROI crop 的 `list_objects_v2` 缺失后置断言、复用单个 StorageService；守卫显式拒绝缺失/空清单所有者并校验清单模式与 checkout 身份。
+
+干净模式复验（原污染 e2e 模式已按授权 reset，仅保留只读残留身份存档）：在冻结共享构建产物上，上述消费方一起复跑 **6 passed / 0 failed / 0 skipped、退出码 0、无 global teardown 残留**。
 
 CI 条件差异证明：`mask-advanced-operations.spec.ts` 的 1080p Worker 用例在 `CI=true` 且未选 Mask 矩阵时实测 **1 skipped**（预期语义），native 矩阵已实际执行并通过（mask-native 20 passed / 2 skipped）。
 
-附注：上述定向运行的进程退出码仍为 1，原因是全局 `seed/cleanup` 报 `users=3` 残留——这是已知的清理缺陷（归属清理所有者诊断），与本次四处修复无关；测试级结果取自各自 JSON 报告。
+附注：污染模式下的定向运行进程退出码曾为 1，原因是当时全局 `seed/cleanup` 报 `users=3` 残留（旧 campaign 自有污染，已存档 `/tmp/opencode/p9-residual-archive.{json,md}` 并交清理通道），与四处修复无关；上述干净模式复验已消除该残留。
+
+## 6.4 原生浏览器缩放助手：SIGTRAP 根因与修复
+
+`workbench-tool-dock.spec.ts:63`（首个高度 768 → 窗口 1920×855）失败为 `launchPersistentContext` 在 ~200ms 内以 `signal=SIGTRAP` 中止，非 150s 预算、非偶发。
+
+**最小崩溃边界（同候选、同参数，仅区分 TMPDIR）**：
+
+| 观察项                          | 结果                                                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| 可执行文件                      | `chromium-1217/chrome-linux64/chrome`（Google Chrome for Testing 147.0.7727.15）                                   |
+| 完整 Chromium、无扩展           | FAIL（SIGTRAP），说明崩溃在完整 Chromium 启动而非 MV3 扩展/bootstrap                                               |
+| 默认 `chromium_headless_shell`  | PASS 但注册 0 个扩展 service worker（无法执行 zoom API，故不可替代）                                               |
+| long TMPDIR（77 字节）          | FAIL 245ms；singleton 套接字路径 = 77 + 45 = **122 字节**，超过 `sun_path` 上限                                    |
+| owned short TMPDIR（39 字节）   | PASS 324ms；实测套接字 `/tmp/aap-native-browser-zoom-tmp-*/org.chromium.Chromium.*/SingletonSocket` 长 **84 字节** |
+| 同 binary Playwright 外手动启动 | PASS 且 MV3 service worker 正常加载，确认非产品缺陷、非断言问题                                                    |
+
+已排除项（均非充分条件）：单一 Playwright 默认参数（breakpad/field-trial/features/swiftshader/automation 等）、`--headless` vs `--headless=new`、`--no-sandbox`/`--disable-gpu`/`--no-zygote`/`--single-process`、`channel` 与 `executablePath` 的差异、非 ASCII 路径本身（同为非 ASCII 的短路径可通过，判别因素是**路径长度**）；`strace` 显示内核态 `SIGTRAP {si_code=SI_KERNEL}`。原始探针输出：`/tmp/opencode/p9-nativezoom-boundary-evidence.txt`。
+
+**修复**：`apps/web/e2e/fixtures/native-browser-zoom.ts` 为该浏览器子进程创建**自有短临时目录**（`/tmp/aap-native-browser-zoom-tmp-*`，Windows 保留继承环境），并在既有 `close()` 中于启动失败与正常关闭两条路径都删除该目录；扩展与 profile 仍留在原有自有作用域。复跑原单测（冻结产物、干净模式、`--retries=0`）：**1 passed**（原 failed），退出码 0，且运行后无短临时目录/profile 残留。
 
 ## 7. 保留与限制
 
