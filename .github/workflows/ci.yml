@@ -5,6 +5,19 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      # Plan §6.5-5: the manual entry states its scope explicitly instead of
+      # implying one from the event name. The legacy matrix stays extended-only
+      # until P9; the shadow report reflects the requested scope.
+      e2e_scope:
+        description: "E2E scope for the manual run (shadow report)"
+        required: false
+        default: extended
+        type: choice
+        options:
+          - extended
+          - full
 
 # Cancel superseded PR runs; retain every main-branch validation.
 concurrency:
@@ -242,7 +255,8 @@ jobs:
       - name: Repository Node script tests
         run: >-
           node --test scripts/check-workflow-names.test.mjs
-          scripts/dev-worktree.test.mjs scripts/plan-e2e-suites.test.mjs
+          scripts/dev-worktree.test.mjs scripts/image-reference-utils.test.mjs
+          scripts/plan-e2e-suites.test.mjs scripts/summarize-e2e-results.test.mjs
       - name: Workflow naming
         run: node scripts/check-workflow-names.mjs --strict
 
@@ -271,7 +285,7 @@ jobs:
       contents: read
     outputs:
       matrix: ${{ steps.plan.outputs.matrix }}
-      shared-contracts: ${{ steps.plan.outputs.shared_contracts }}
+      ml-cpu: ${{ steps.plan.outputs.ml_cpu }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -286,6 +300,7 @@ jobs:
         id: plan
         env:
           E2E_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          E2E_DISPATCH_SCOPE: ${{ inputs.e2e_scope }}
         run: node scripts/plan-e2e-suites.mjs "$E2E_BASE_SHA" >> "$GITHUB_OUTPUT"
       # Plan §6.7-1: the §6 selection runs as a shadow report only. The matrix
       # (and therefore the stable Frontend E2E gate) stays legacy until P9.
@@ -325,25 +340,16 @@ jobs:
           appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join('\n'));
           NODE
 
-  shared-contracts:
-    name: Shared contract tests
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
+  # P6 handoff wiring: the CPU contract suites (shared packages + five ML
+  # backends, including the 12 CPU-torch files) execute through the dedicated
+  # reusable workflow. Path filters live here; execution lives there.
+  ml-cpu:
+    name: ML CPU contract tests
     needs: [e2e-plan]
-    if: needs.e2e-plan.outputs.shared-contracts == 'true'
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-      - name: Install uv
-        run: pip install uv
-      - name: Run protocol_v2 CPU contract suite
-        working-directory: apps/_shared/protocol_v2
-        run: uv run --extra test pytest -q
-      - name: Run mask_utils CPU contract suite
-        working-directory: apps/_shared/mask_utils
-        run: uv run --extra test pytest -q
+    if: needs.e2e-plan.outputs.ml-cpu == 'true'
+    uses: ./.github/workflows/ml-cpu-test.yml
+    with:
+      suites: "all"
 
   e2e-suites:
     name: Frontend E2E execution

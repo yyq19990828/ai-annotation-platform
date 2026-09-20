@@ -22,70 +22,94 @@ import { pathToFileURL } from "node:url";
  * visible alongside the selection.
  */
 
-/** Shared `apps/_shared/*` packages and ML backends: CPU-verifiable contract
- * suites vs hardware/model qualification. `wired: false` entries are surfaced
- * in the shadow report with their run commands but are never scheduled. */
+// Per-test CPU wiring from the accepted P8 audit (/tmp/aap-opt-p8-cpu-audit.md):
+// all 89 not-wired files are CPU-compatible; 12 need CPU torch (9 grounded-sam2,
+// 3 sam3); none needs a GPU, real weights or network. Execution itself is
+// delegated to .github/workflows/ml-cpu-test.yml (scripts/run-ml-cpu-tests.sh);
+// this planner only owns the path triggers and the recorded contract entries.
+// `wired: false` means "runs via the ml-cpu workflow, not scheduled here".
 const SHARED_CONTRACT_SUITES = {
-  "shared-protocol-v2": {
-    command: "bash -lc 'cd apps/_shared/protocol_v2 && uv run --extra test pytest -q'",
-    scope: "specialty",
-    built: false,
-    wired: true,
-    triggers: [
-      "apps/_shared/protocol_v2/",
-      "apps/sam3-backend/",
-      "apps/grounded-sam2-backend/",
-      "apps/yolo-backend/",
-    ],
-    reason:
-      "protocol v2 schema/vocab/mask-codec contracts consumed by the SAM/yolo backends; pure CPU (pytest + numpy)",
-    dependencies: "uv + python 3.11; test extra pytest>=8, numpy>=1.24; no database, no GPU",
-  },
-  "shared-mask-utils": {
-    command: "bash -lc 'cd apps/_shared/mask_utils && uv run --extra test pytest -q'",
-    scope: "specialty",
-    built: false,
-    wired: true,
-    triggers: ["apps/_shared/mask_utils/", "apps/grounded-sam2-backend/", "apps/sam3-backend/"],
-    reason:
-      "shared mask→polygon conversion contracts used by the segmentation backends; pure CPU (pytest + numpy/opencv/shapely)",
-    dependencies: "uv + python 3.11; test extra pytest>=8; no database, no GPU",
-  },
   "shared-backend-runtime": {
-    command: "bash -lc 'cd apps/_shared/backend_runtime && uv run --extra test pytest -q'",
-    scope: "qualification",
+    command: "pnpm exec bash scripts/run-ml-cpu-tests.sh run shared-backend-runtime",
+    scope: "specialty",
     built: false,
     wired: false,
     triggers: ["apps/_shared/backend_runtime/"],
+    reason: "shared pool/runtime contract tests; 99 tests, torch only stubbed via sys.modules",
+    dependencies: "pytest + package extras (httpx, pillow); CPU only",
+  },
+  "shared-mask-utils": {
+    command: "pnpm exec bash scripts/run-ml-cpu-tests.sh run shared-mask-utils",
+    scope: "specialty",
+    built: false,
+    wired: false,
+    triggers: ["apps/_shared/mask_utils/"],
+    reason: "shared mask→polygon conversion contracts; 41 tests",
+    dependencies: "pytest + numpy, opencv-python-headless, shapely; CPU only",
+  },
+  "shared-protocol-v2": {
+    command: "pnpm exec bash scripts/run-ml-cpu-tests.sh run shared-protocol-v2",
+    scope: "specialty",
+    built: false,
+    wired: false,
+    triggers: ["apps/_shared/protocol_v2/"],
+    reason: "protocol v2 schema/vocab/mask-codec contracts; 163 tests",
+    dependencies: "pytest + cryptography/fastapi/pydantic/PyJWT + numpy (test extra); CPU only",
+  },
+  "ml-grounded-sam2": {
+    command: "pnpm exec bash scripts/run-ml-cpu-tests.sh run grounded-sam2",
+    scope: "specialty",
+    built: false,
+    wired: false,
+    triggers: ["apps/grounded-sam2-backend/"],
     reason:
-      "hardware/model qualification: five tests import torch directly (CPU tensor paths); needs the torch toolchain, so it stays out of the PR selection and belongs to a dedicated qualification run",
-    dependencies: "uv + torch toolchain; no database; GPU not required but heavyweight",
+      "grounded-sam2 backend contract tests: 10 torch-free files (68 tests) + 9 CPU-torch files (82 tests); full directory runs clean with CPU torch",
+    dependencies: "backend dev extra + CPU torch (cpu wheel index); CPU only",
+  },
+  "ml-sam3": {
+    command: "pnpm exec bash scripts/run-ml-cpu-tests.sh run sam3",
+    scope: "specialty",
+    built: false,
+    wired: false,
+    triggers: ["apps/sam3-backend/"],
+    reason:
+      "sam3 backend contract tests: 17 torch-free files (153 tests) + 3 CPU-torch files (43 tests); full directory runs clean with CPU torch",
+    dependencies: "backend dev extra + CPU torch (cpu wheel index); CPU only",
+  },
+  "ml-yolo": {
+    command: "pnpm exec bash scripts/run-ml-cpu-tests.sh run yolo",
+    scope: "specialty",
+    built: false,
+    wired: false,
+    triggers: ["apps/yolo-backend/"],
+    reason:
+      "yolo backend contract tests: 16 files / 224 tests run entirely without torch or ultralytics (test-only dependency set)",
+    dependencies:
+      "pytest, pytest-asyncio, fastapi, httpx, numpy, pillow, opencv-headless, psutil, pynvml; CPU only",
+  },
+  "ml-rapidocr": {
+    command: "pnpm exec bash scripts/run-ml-cpu-tests.sh run rapidocr",
+    scope: "specialty",
+    built: false,
+    wired: false,
+    triggers: ["apps/rapidocr-backend/"],
+    reason:
+      "rapidocr backend contract tests: 7 files / 83 tests; rapidocr shimmed by conftest, onnxruntime faked, no cv2 needed",
+    dependencies:
+      "pytest, pytest-asyncio, fastapi, httpx, numpy, pillow, cryptography, PyJWT; CPU only",
+  },
+  "ml-onnxtools": {
+    command: "pnpm exec bash scripts/run-ml-cpu-tests.sh run onnxtools",
+    scope: "specialty",
+    built: false,
+    wired: false,
+    triggers: ["apps/onnxtools-backend/"],
+    reason:
+      "onnxtools backend contract tests: 8 files / 70 passed + 3 expected upstream importorskip skips; cv2 added explicitly (pyproject omits it)",
+    dependencies: "backend dev extra + opencv-python-headless; CPU only",
   },
 };
 
-/** ML backend test suites: torch/model weights per backend venv. Recorded for
- * the shadow report with their run commands; never scheduled from the planner. */
-const ML_QUALIFICATION_SUITES = [
-  "grounded-sam2-backend",
-  "sam3-backend",
-  "yolo-backend",
-  "rapidocr-backend",
-  "onnxtools-backend",
-].map((backend) => ({
-  suite: `ml-${backend}`,
-  command: `bash -lc 'cd apps/${backend} && uv run --extra test pytest -q'`,
-  scope: "qualification",
-  built: false,
-  wired: false,
-  triggers: [`apps/${backend}/`],
-  reason:
-    "hardware/model qualification: backend tests need the torch toolchain and (for some cases) real weights; run manually in the backend venv, never from the PR selection",
-  dependencies: `uv + ${backend} test extra (torch); local model weights for qualification cases`,
-}));
-
-// Plan §6.2 bounded smoke: a real minimal user chain (login → project entry →
-// annotate save+refresh → submit/review → permission denial → workbench
-// switch). Explicit spec membership, never the whole default suite renamed.
 const smoke = [
   {
     suite: "smoke",
@@ -150,9 +174,9 @@ const functional = [
 ];
 
 function sharedContractEntries() {
-  return Object.entries(SHARED_CONTRACT_SUITES)
-    .filter(([, suite]) => suite.wired)
-    .map(([suite, contract]) => ({ suite, ...contract, scope: "specialty" }));
+  // All shared/ML contract suites execute via the delegated ml-cpu workflow;
+  // triggeredSpecialties skips wired:false entries so this returns [].
+  return [];
 }
 
 const extended = [
@@ -250,21 +274,38 @@ function affectsExtendedShadow(path) {
 const legacyInclude = (eventName, paths) =>
   planE2ESuites(eventName, paths).include.map(({ suite }) => suite);
 
-// Docs-only is a whitelist, never a fallback: executable examples, docs build
-// config and anything unrecognized must classify as app code.
+// Docs-only is a whitelist, never a fallback. Only genuine documentation
+// qualifies, and executable content is excluded explicitly: anything under
+// apps/, packages/, scripts/ or a test-fixture path stays app code even when
+// it ends in .md, and docs-site executable surfaces (dev/examples and the
+// VitePress build config) stay app code.
 const DOCS_ONLY = [
   /^README\.md$/,
-  /^LICENSE$/,
   /^CHANGELOG\.md$/,
   /^CONTRIBUTING\.md$/,
-  /^\.github\/(PULL_REQUEST_TEMPLATE|ISSUE_TEMPLATE)\//,
-  /\.md$/,
-  /^docs-site\/(?!dev\/examples\/|\.vitepress\/config)/,
+  /^SECURITY\.md$/,
+  /^LICENSE$/,
+  /^CODE_OF_CONDUCT\.md$/,
+  /^\.github\//,
+  /^docs\//,
+  /^docs-site\//,
 ];
+
+const DOCS_ONLY_EXCLUSIONS = [
+  /^docs-site\/dev\/examples\//,
+  /^docs-site\/\.vitepress\//,
+  /^docs-site\/.*\.(py|mjs|cjs|ts|tsx|sh)$/,
+  /^(apps|packages|scripts)\/.*\.md$/,
+];
+
+function isDocsOnlyPath(path) {
+  if (DOCS_ONLY_EXCLUSIONS.some((pattern) => pattern.test(path))) return false;
+  return DOCS_ONLY.some((pattern) => pattern.test(path));
+}
 
 function classifyPaths(paths) {
   if (!Array.isArray(paths)) throw new Error("PR changed paths must be supplied");
-  const docs = paths.filter((path) => DOCS_ONLY.some((pattern) => pattern.test(path)));
+  const docs = paths.filter((path) => isDocsOnlyPath(path));
   const docsSet = new Set(docs);
   const appCode = paths.filter((path) => !docsSet.has(path));
   const domains = new Set(
@@ -306,6 +347,20 @@ function classifyPaths(paths) {
   };
 }
 
+// Shared UI/API/client/auth/layout dependencies fan out to every domain that
+// consumes them: a change here is not observable from the module path alone.
+const SHARED_DEPENDENCY_TRIGGERS = [
+  "apps/web/src/api/",
+  "apps/web/src/lib/",
+  "apps/web/src/stores/",
+  "apps/web/src/hooks/",
+  "apps/web/src/test/",
+  "apps/api/app/api/",
+  "apps/api/app/services/",
+  "apps/api/app/core/",
+  "apps/api/app/deps.py",
+];
+
 function triggeredSpecialties(appCode) {
   const triggered = [];
   for (const suite of [...SUITE_CONTRACT, ...sharedContractEntries()]) {
@@ -317,14 +372,34 @@ function triggeredSpecialties(appCode) {
         because: `${suite.reason} (triggered by ${hit})`,
       });
   }
+  // Shared dependencies select every domain-consuming specialty.
+  const sharedHit = SHARED_DEPENDENCY_TRIGGERS.find((prefix) =>
+    appCode.some((path) => path.startsWith(prefix)),
+  );
+  if (sharedHit)
+    for (const suite of SUITE_CONTRACT.filter(
+      ({ scope, triggers }) => scope === "specialty" && triggers,
+    ))
+      triggered.push({
+        suite: suite.suite,
+        because: `${suite.reason} (triggered by shared dependency ${sharedHit})`,
+      });
   return triggered;
+}
+
+function triggeredSharedContracts(appCode) {
+  return Object.values(SHARED_CONTRACT_SUITES).some(
+    (suite) =>
+      suite.wired &&
+      suite.triggers.some((prefix) => appCode.some((path) => path.startsWith(prefix))),
+  );
 }
 
 /**
  * Shadow selection per plan §6.2/§6.3. Never drives the gate: the caller keeps
  * using `planE2ESuites` for the matrix and records the diff for P9.
  */
-export function selectSuites(eventName, paths) {
+export function selectSuites(eventName, paths, options = {}) {
   if (eventName === "push" || eventName === "schedule") {
     return {
       planned: allSuites.map(({ suite }) => suite),
@@ -437,8 +512,8 @@ export function selectSuites(eventName, paths) {
 
 /** Full shadow report: legacy gate suites vs the §6 selection, with the diff
  * and the newly-wired shared CPU contract suites surfaced for P9 review. */
-export function shadowPlan(eventName, paths) {
-  const { planned, classification, reasons, warnings } = selectSuites(eventName, paths);
+export function shadowPlan(eventName, paths, options = {}) {
+  const { planned, classification, reasons, warnings } = selectSuites(eventName, paths, options);
   const legacy = legacyInclude(eventName, paths);
   const legacySet = new Set(legacy);
   const plannedSet = new Set(planned);
@@ -460,10 +535,7 @@ export function shadowPlan(eventName, paths) {
     warnings,
     sharedContracts: {
       wired: wiredContracts,
-      qualification: [
-        ...Object.entries(SHARED_CONTRACT_SUITES),
-        ...ML_QUALIFICATION_SUITES.map((suite) => [suite.suite, suite]),
-      ]
+      qualification: Object.entries(SHARED_CONTRACT_SUITES)
         .filter(([, suite]) => !suite.wired)
         .map(([suite, suiteContract]) => ({ suite, ...suiteContract })),
     },
@@ -500,7 +572,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       .split("\0")
       .filter(Boolean);
   }
-  const shadow = shadowPlan(eventName, paths);
+  const dispatchScope = process.env.E2E_DISPATCH_SCOPE;
+  const shadow = shadowPlan(eventName, paths, { dispatchScope });
   console.log(`matrix=${JSON.stringify(planE2ESuites(eventName, paths))}`);
   // Shadow report for P9: recorded by the planning job, never drives the gate.
   console.log(`shadow=${JSON.stringify(shadow)}`);

@@ -35,13 +35,14 @@ last_reviewed: 2026-07-23
 
 两条当前事实：
 
-- ML backend 与 `apps/_shared` 三个共享包（`backend_runtime` / `mask_utils` /
-  `protocol_v2`）的 `tests/` 目前**没有**接入任何 workflow 或 npm script（本仓只读检索），
-  只能本地运行：在 `apps/<backend>` 下 `uv run --extra dev pytest -q`。
+- `apps/_shared` 的 CPU 契约套件（`protocol_v2`、`mask_utils`）已由 P8 接入 CI：PR 触及
+  `apps/_shared/protocol_v2|mask_utils` 或 `apps/sam3-backend|grounded-sam2-backend|yolo-backend`
+  路径时，`shared-contracts` 检查会以 `uv run --extra test pytest -q` 运行两者（纯 CPU，
+  无数据库、无 GPU）。`backend_runtime` 与五个 ML backend 的 `tests/` 仍未接入 PR 选择
+  （需要 torch 工具链与部分真实权重，属硬件/模型资格验证），本地运行方式：
+  在 `apps/<backend>` 下 `uv run --extra dev pytest -q`（`backend_runtime` 需 CPU torch）。
   各 backend 的 `pyproject.toml` 通过 `pythonpath` 注入 `../_shared/*/src`，共享包无需 editable
   安装；注意各 backend 可解析的共享包**并不相同**（图像/视频 backend 含 `mask_utils`）。
-  直接 `import torch` 的用例是 CPU tensor + fake predictor，安装 CPU wheel 即可执行，
-  不需要 GPU、权重或网络。
 - 页面测试优先在 MSW API 边界描述响应（`src/test/renderWithProviders.tsx` 与
   `src/test/dataManagerApi.ts` 是样板）；同一纯规则不要在页面测试里重复断言，
   已下沉的规则写在对应 `*UrlState.test.ts`。
