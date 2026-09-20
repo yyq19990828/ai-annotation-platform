@@ -38,6 +38,8 @@ from seed_screenshot_profile import (  # noqa: E402
 
 from app.config import settings
 from app.core.security import hash_password
+from app.db.models.project import Project
+from app.db.models.project_member import ProjectMember
 from app.db.models.user import User
 from app.services.screenshot_seed_catalog import (
     ScreenshotSeedCatalogError,
@@ -79,14 +81,14 @@ USERS = [
         "email": "qa",
         "name": "李晓华",
         "password": "123456",
-        "role": "reviewer",
+        "role": "employee",
         "group_name": "质检组",
     },
     {
         "email": "anno",
         "name": "王芳",
         "password": "123456",
-        "role": "annotator",
+        "role": "employee",
         "group_name": "标注组A",
     },
     {
@@ -100,17 +102,107 @@ USERS = [
         "email": "anno2",
         "name": "刘洋",
         "password": "123456",
-        "role": "annotator",
+        "role": "employee",
         "group_name": "标注组A",
     },
     {
         "email": "anno3",
         "name": "陈思远",
         "password": "123456",
-        "role": "annotator",
+        "role": "employee",
         "group_name": "标注组B",
     },
 ]
+
+# Demo 夹具创建的固定项目: 非 owner 的 persona 通过显式项目职责获取访问权,
+# 平台角色一律 employee / viewer (迁移 0174 后不再有 annotator / reviewer 平台身份).
+DEMO_PROJECT_DISPLAY_IDS = (
+    "P-COCO8",
+    "P-VIDEO-DEV",
+    "P-PC-DEV",
+    "P-PC-MULTI",
+    "P-OCR",
+)
+# (persona email, project duty) — 只授予 persona 声明用途所需的最小职责.
+# anno/anno2/anno3 是 seed.py 自述的标注员 (标注组A/B), qa 是质检员, viewer 只读;
+# pm / admin 通过项目负责人身份 (或超管) 管项目, 不写成员行.
+DEMO_PROJECT_MEMBERS = (
+    ("anno", "annotator"),
+    ("anno2", "annotator"),
+    ("anno3", "annotator"),
+    ("qa", "reviewer"),
+    ("viewer", "viewer"),
+)
+
+
+async def _ensure_demo_memberships(
+    db: AsyncSession,
+    *,
+    members: tuple[tuple[str, str], ...] = DEMO_PROJECT_MEMBERS,
+    display_ids: tuple[str, ...] = DEMO_PROJECT_DISPLAY_IDS,
+    assigner_emails: tuple[str, ...] = ("pm", "admin"),
+) -> int:
+    """Idempotently grant the demo personas their project duties.
+
+    Platform identity never authorizes project access on its own; a member row
+    with an explicit duty is required.  Managers (``project_admin``) and the
+    super administrator act through ownership, so they are deliberately not
+    given member rows.
+
+    Users are re-read here instead of reusing the ORM instances created above:
+    a fixture ``rollback()`` expires those instances, and touching an expired
+    attribute inside an async session raises ``MissingGreenlet``.  ``members``
+    and ``display_ids`` default to the seeded demo contract; tests pass their
+    own values because persona emails are globally unique.
+    """
+
+    wanted_emails = {email for email, _ in members} | set(assigner_emails)
+    by_email = {
+        user.email: user
+        for user in (
+            await db.execute(select(User).where(User.email.in_(wanted_emails)))
+        ).scalars()
+    }
+    assigner = next(
+        (by_email.get(email) for email in assigner_emails if by_email.get(email)), None
+    )
+    if assigner is None:
+        return 0
+    projects = list(
+        (
+            await db.execute(select(Project).where(Project.display_id.in_(display_ids)))
+        ).scalars()
+    )
+    changed = 0
+    for project in projects:
+        for email, role in members:
+            user = by_email.get(email)
+            if user is None:
+                continue
+            member = await db.scalar(
+                select(ProjectMember).where(
+                    ProjectMember.project_id == project.id,
+                    ProjectMember.user_id == user.id,
+                )
+            )
+            if member is None:
+                db.add(
+                    ProjectMember(
+                        project_id=project.id,
+                        user_id=user.id,
+                        role=role,
+                        assigned_by=assigner.id,
+                    )
+                )
+                changed += 1
+            elif member.role != role:
+                member.role = role
+                member.assigned_by = assigner.id
+                changed += 1
+    if changed:
+        await db.commit()
+    return changed
+
 
 # ── 主逻辑 ────────────────────────────────────────────────────────────────────
 # 示例项目不再造假数据:图片项目由 seed_coco8(真实 coco8) 单独建, 点云项目由
@@ -317,6 +409,10 @@ async def seed(
                     raise RuntimeError(
                         f"multi-camera point-cloud fixture failed: {e}"
                     ) from e
+
+        member_count = await _ensure_demo_memberships(db)
+        if member_count:
+            print(f"  add   project memberships={member_count}")
 
         if strict:
             if preparation is None or generated_assets is None:
