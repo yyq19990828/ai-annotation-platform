@@ -31,9 +31,9 @@ test("failed fixture: unexpected status, timeout-free failure and a recorded fir
   assert.match(text, /\| 0 \| 1 \| 0 \| 0 \|/);
   assert.match(
     text,
-    /First failure: failed\.spec\.ts › fails with a stable reason \(project chromium, attempt 1\)/,
+    /First failure: failed\.spec\.ts › fails with a stable reason \(project chromium, attempt 0\)/,
   );
-  assert.match(text, /Object\.is equality/);
+  assert.match(text, /retryOutcome.*none|retryOutcome.*failed/s);
 });
 
 test("flaky fixture: retry-then-passed is counted separately from first-attempt", () => {

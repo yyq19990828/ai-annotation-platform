@@ -285,15 +285,16 @@ const legacyInclude = (eventName, paths) =>
 // it ends in .md, and docs-site executable surfaces (dev/examples and the
 // VitePress build config) stay app code.
 const DOCS_ONLY = [
+  // File-type requirement (.md) keeps CI workflows, actions, configs, data
+  // files and package manifests out of the docs-only classification.
   /^README\.md$/,
   /^CHANGELOG\.md$/,
   /^CONTRIBUTING\.md$/,
   /^SECURITY\.md$/,
-  /^LICENSE$/,
   /^CODE_OF_CONDUCT\.md$/,
-  /^\.github\//,
-  /^docs\//,
-  /^docs-site\//,
+  /^\.github\/.*\.md$/,
+  /^docs\/.*\.md$/,
+  /^docs-site\/.*\.md$/,
 ];
 
 const DOCS_ONLY_EXCLUSIONS = [

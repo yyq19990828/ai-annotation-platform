@@ -99,6 +99,15 @@ test("executable docs examples and docs build config are app code, not docs-only
     "docs-site/dev/examples/protocol-demo.py",
     "docs-site/.vitepress/config.ts",
     "docs-site/dev/examples/data/fixture.json",
+    ".github/workflows/ci.yml",
+    ".github/actions/example/action.yml",
+    "scripts/plan-e2e-suites.mjs",
+    "pnpm-lock.yaml",
+    ".env.example",
+    "docs-site/package.json",
+    "docs-site/scripts/check-image-manifest.mjs",
+    "docs-site/.vitepress/theme/index.ts",
+    "docs-site/dev/examples/echo-ml-backend/README.md",
   ]) {
     const shadow = shadowPlan("pull_request", [path]);
     assert.equal(shadow.classification.docsOnly, false, path);

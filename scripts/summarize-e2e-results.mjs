@@ -15,7 +15,7 @@
  * fidelity improves.
  */
 
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 
 // Classification contract (locked Playwright 1.59 JSON report,
 // playwright/types/testReporter.d.ts): JSONReportTest.status is
@@ -55,30 +55,37 @@ function summarizeTests(report) {
           case "flaky":
             retriedPassed += 1;
             break;
-          case "unexpected": {
+          case "unexpected":
             failed += 1;
-            const lastStatus = last?.status;
-            if (lastStatus === "timedout") timeout += 1;
-            if (lastStatus === "interrupted") interrupted += 1;
-            if (!firstFailure)
-              firstFailure = {
-                file: spec.file,
-                title: spec.title,
-                projectId: test.projectId,
-                reason:
-                  (last?.error?.message ?? "")
-                    .replace(/\x1b\[[0-9;]*m/g, "")
-                    .split("\n")
-                    .find((line) => line.trim())
-                    ?.trim() ??
-                  last?.status ??
-                  "unknown",
-                retry: last?.retry ?? 0,
-              };
             break;
-          }
           default:
             break;
+        }
+        // §6.6: the FIRST failed attempt carries the failure evidence —
+        // including flaky tests, whose final status alone would hide it.
+        if (!firstFailure && (test.status === "unexpected" || test.status === "flaky")) {
+          const firstAttempt = attempts[0];
+          const lastStatus = last?.status;
+          if (test.status === "unexpected") {
+            if (lastStatus === "timedout") timeout += 1;
+            if (lastStatus === "interrupted") interrupted += 1;
+          }
+          firstFailure = {
+            file: spec.file,
+            title: spec.title,
+            projectId: test.projectId,
+            status: test.status,
+            reason:
+              (firstAttempt?.error?.message ?? "")
+                .replace(/\x1b\[[0-9;]*m/g, "")
+                .split("\n")
+                .find((line) => line.trim())
+                ?.trim() ??
+              firstAttempt?.status ??
+              "unknown",
+            retry: firstAttempt?.retry ?? 0,
+            retryOutcome: attempts.length > 1 ? (last?.status ?? "unknown") : "none",
+          };
         }
       }
     }
@@ -178,7 +185,6 @@ export function cli() {
     appendFileSync,
     readFileSync,
     existsSync,
-    writeFileSync: (...args) => import("node:fs").then((fs) => fs.writeFileSync(...args)),
     summaryPath: process.env.GITHUB_STEP_SUMMARY,
   };
   return main(process.argv.slice(2), process.env, io);
