@@ -196,7 +196,14 @@ Playwright 会自动准备专用逻辑库 `annotation_e2e`、执行迁移，并�
 
 布局矩阵按画布类型拆分 Playwright 项目：`workbench-pointcloud-layout-matrix.spec.ts` 只保留 3D 场景（pointcloud 项目，SwiftShader 软渲染 WebGL）；图片 / 视频场景在 `workbench-layout-matrix.spec.ts`，走 chromium 项目——它们的 Konva 画布不需要 WebGL，软渲染只会让 CI 压力重载时主线程更易被饿死。两份 spec 的用例注册共用 `e2e/helpers/workbench-layout-matrix.ts`，标题保持一致以稳定分片与扩展套件选集。
 
-路由脚本 `scripts/plan-e2e-suites.mjs` 保守地将前后端应用、共享包、依赖、容器及相关 CI 配置变更选入扩展检查。因此布局 PR 仍执行完整压力矩阵，获得独立的结果与超时边界。主分支执行全部套件；`E2E extended` 工作流每天北京时间 03:00 和手动执行视觉、压力两套检查。路径分析失败或已选套件失败都会使必需的 `Frontend E2E` 汇总失败。
+路由脚本 `scripts/plan-e2e-suites.mjs` 是套件选择的单一入口，当前执行 **P9 计划选择**（plan §6.2/§6.3）：
+PR 运行有界核心 smoke + 按路径触发的领域专项（Mask×3、video-pipeline、pointcloud），共享依赖/运行时/未映射路径/空 diff/多域/重命名删除等无法分类的输入保守放大到全量；纯文档（白名单 `.md`）显式跳过应用 E2E 并记录原因。每次运行都会同时输出冻结的旧全量选集作为对照（`legacy=`），便于比较与回退。
+
+有界核心 smoke 以 `--retries=0` 运行，且被标记为 `flakyPolicy=forbid`：重试后通过的核心会阻塞必需套件审计（非核心专项保留一次诊断重试，重试后通过仍单独计为 flaky）。必需套件审计（`scripts/audit-e2e-requirements.mjs`）按计划 manifest 校验每个选中套件的结果产物，缺失、取消、setup 失败、suite 名不匹配、格式错误或核心 flaky 都会使汇总失败。
+
+顶层入口与范围（§6.7-5 显式区分，不用事件名隐含）：`push` 与夜间 `E2E extended` 工作流（每天北京时间 03:00，`E2E_SCHEDULE_SCOPE=full`）执行全量（smoke + 全部分片 + 全部专项 + visual/layout-stress）；该工作流手动触发时用 `scope` 输入显式选择 `extended` 或 `full`；`ci.yml` 的 `Frontend E2E` 手动触发用 `e2e_scope` 输入做同样选择。所有入口都运行同一必需套件审计。
+
+**回退**：设置仓库变量 `E2E_SELECTION_MODE=legacy`（未设置或为空即计划模式）即可恢复 P8 前冻结的旧全量矩阵与对应必需清单，无需改代码；回退模式仍执行审计，但只要求它实际执行的 9 个旧套件。
 
 功能用例最多重试一次；扩展用例中视觉基线（`playwright.extended.config.ts`）不重试，压力用例（`playwright.stress.config.ts`）最多重试一次——压力重载在高负载 runner 上可能把渲染主线程冻结数十秒，重试用于区分确定性损坏（两次都失败仍红）与资源饥饿，重试后通过仍标记 flaky，不掩盖问题。CI 首个最终失败终止当前分片，每个进程/测试步骤/job 分别限时 15/20/30 分钟。每次失败保留 trace 与截图，Actions 摘要区分通过、失败、flaky 与跳过，避免把重试后通过误认为已消除不稳定性。HTML、原始测试产物及 `e2e-results.json` 随套件上传。
 

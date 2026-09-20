@@ -258,3 +258,47 @@ test("duplicate suite names and blank docs-only reasons fail closed", () => {
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test("core-flaky policy blocks a forbid-flaky suite that only passed on retry", () => {
+  const dir = mkdtempSync(join(tmpdir(), "e2e-audit-flaky-"));
+  try {
+    // A real flaky status artifact shape: stats.flaky > 0 with outcome success.
+    writeFileSync(
+      join(dir, "smoke.json"),
+      JSON.stringify({
+        suite: "smoke",
+        outcome: "success",
+        stats: { expected: 9, unexpected: 0, flaky: 1, skipped: 0 },
+      }),
+    );
+    writeFileSync(
+      join(dir, "mask-native.json"),
+      JSON.stringify({
+        suite: "mask-native",
+        outcome: "success",
+        stats: { expected: 20, unexpected: 0, flaky: 1, skipped: 2 },
+      }),
+    );
+    const blocked = auditE2ERequirements({
+      requiredSuites: [
+        { suite: "smoke", planned: true, flakyPolicy: "forbid" },
+        { suite: "mask-native", planned: true, flakyPolicy: "diagnostic" },
+      ],
+      statusDir: dir,
+    });
+    assert.equal(blocked.ok, false);
+    assert.deepEqual(
+      blocked.blockers.map((row) => [row.suite, row.state]),
+      [["smoke", "core-flaky"]],
+    );
+
+    // Without the forbid policy a flaky diagnostic suite still passes.
+    const allowed = auditE2ERequirements({
+      requiredSuites: [{ suite: "mask-native", planned: true, flakyPolicy: "diagnostic" }],
+      statusDir: dir,
+    });
+    assert.equal(allowed.ok, true);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

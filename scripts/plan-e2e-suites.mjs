@@ -7,8 +7,9 @@ import { pathToFileURL } from "node:url";
  * Two layers live here:
  *
  * 1. The LEGACY gate selection (`planE2ESuites`) that drives the actual
- *    `Frontend E2E` matrix. Its behavior is frozen: P9 owns any gate switch
- *    after comparative shadow execution.
+ *    `Frontend E2E` matrix. Its behavior stays byte-for-byte reproducible for
+ *    the documented `E2E_SELECTION_MODE=legacy` rollback, while the default
+ *    mode runs the planned §6 selection.
  * 2. The SHADOW selection (`selectSuites`/`shadowPlan`) implementing plan §6:
  *    explicit core/specialty/extended scopes with reasons, docs-only
  *    whitelist, fail-closed diff classification (empty diff, unknown paths,
@@ -120,17 +121,20 @@ const smoke = [
     suite: "smoke",
     legacyGate: false,
     command:
-      "test:e2e e2e/tests/auth.spec.ts e2e/tests/annotation.spec.ts e2e/tests/employee-project-roles.spec.ts e2e/tests/mask-session-guard.spec.ts --grep '健康检查|正确凭证|错密码|未登录访问|annotator 登录|bbox 真实绘制、选类、落库并刷新恢复|same employee annotates A|opposite project actions are denied|切工具离开 dirty session'",
+      "test:e2e --retries=0 e2e/tests/auth.spec.ts e2e/tests/annotation.spec.ts e2e/tests/employee-project-roles.spec.ts e2e/tests/mask-session-guard.spec.ts --grep '健康检查|正确凭证|错密码|未登录访问|annotator 登录|bbox 真实绘制、选类、落库并刷新恢复|same employee annotates A|opposite project actions are denied|切工具离开 dirty session'",
     built: true,
     scope: "smoke",
+    // §6.7: the bounded core must pass on the first attempt; retries stay a
+    // diagnostic tool for non-core suites only.
+    flakyPolicy: "forbid",
     reason:
       "bounded real chain (reviewer-owned membership: 9 tests / 4 existing files): UI login, real canvas save+refresh, annotator submit→review→complete across two projects, permission denial, dirty-session switch guard",
   },
 ];
 
 // Full functional matrix: four shards over every functional spec. Runs on
-// push/nightly (§6.2 全量) and as the broadened fallback; the legacy PR gate
-// still runs it until P9 switches.
+// push/nightly (§6.2 全量), in the conservative fallback, and in the legacy
+// rollback mode.
 const functional = [
   ...["one", "two", "three", "four"].map((name, index) => ({
     suite: `default-${name}`,
@@ -427,12 +431,31 @@ function triggeredSharedContracts(appCode) {
  * using `planE2ESuites` for the matrix and records the diff for P9.
  */
 export function selectSuites(eventName, paths, options = {}) {
-  if (eventName === "push" || eventName === "schedule") {
+  if (eventName === "schedule") {
+    // §6.7-5: the scheduled entry states its scope explicitly. Full is the
+    // default nightly contract; an explicit extended-only nightly is possible
+    // but must be requested and is reported as such.
+    const scope = process.env.E2E_SCHEDULE_SCOPE ?? "full";
+    if (!["extended", "full"].includes(scope))
+      throw new Error(`Invalid nightly E2E scope: ${scope} (expected extended or full)`);
+    if (scope === "extended")
+      return {
+        planned: extended.map(({ suite }) => suite),
+        classification: { event: "schedule", note: "nightly extended-only explicitly requested" },
+        reasons: [
+          {
+            suite: "visual+layout-stress",
+            selected: true,
+            because: "nightly scope set to extended-only",
+          },
+        ],
+        warnings: [],
+      };
     return {
       planned: allSuites.map(({ suite }) => suite),
       classification: {
-        event: eventName,
-        note: "explicit full scope: bounded smoke + full functional shards + extended (plan §6.2)",
+        event: "schedule",
+        note: "explicit full scope: bounded smoke + full functional shards + dedicated contracts + extended (plan §6.2)",
       },
       reasons: [
         {
@@ -445,14 +468,32 @@ export function selectSuites(eventName, paths, options = {}) {
       warnings:
         eventName === "schedule"
           ? [
-              "legacy gate runs extended-only for schedule; the shadow full selection is a proposed change for P9, not applied",
+              "the legacy rollback gate runs extended-only for schedule; the planned nightly selection is full",
             ]
           : [],
     };
   }
+  if (eventName === "push") {
+    return {
+      planned: allSuites.map(({ suite }) => suite),
+      classification: {
+        event: "push",
+        note: "explicit full scope: bounded smoke + full functional shards + dedicated contracts + extended",
+      },
+      reasons: [
+        {
+          suite: "all",
+          selected: true,
+          because: "post-merge verification is the explicit full scope",
+        },
+      ],
+      warnings: [],
+    };
+  }
   if (eventName === "workflow_dispatch") {
-    // Plan §6.7-5: manual entry states its scope explicitly. The legacy gate
-    // stays extended-only until P9; the shadow honours the requested scope.
+    // Plan §6.7-5: manual entry states its scope explicitly. The planned
+    // selection honours the requested scope; the legacy rollback gate keeps
+    // its extended-only behavior.
     const scope = options.dispatchScope ?? "extended";
     if (!["extended", "full"].includes(scope))
       throw new Error(`Invalid manual E2E scope: ${scope} (expected extended or full)`);
@@ -649,8 +690,9 @@ export function shadowPlan(eventName, paths, options = {}) {
   };
 }
 
-// Frozen gate selection derived from the authoritative table's legacyGate
-// membership. Byte-for-byte the pre-P8 outputs; P9 owns any change.
+// Frozen legacy selection derived from the authoritative table's legacyGate
+// membership. Byte-for-byte the pre-P8 outputs, used by the documented
+// E2E_SELECTION_MODE=legacy rollback.
 export function planE2ESuites(eventName, paths) {
   const legacy = SUITE_CONTRACT.filter((suite) => suite.legacyGate);
   const extendedOnly = ["visual", "layout-stress"];
@@ -698,13 +740,63 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   else if (eventName === "pull_request")
     mlCpu = (paths ?? []).some((path) => mlCpuTriggers.some((prefix) => path.startsWith(prefix)));
   else throw new Error(`Unsupported E2E event for ml-cpu wiring: ${eventName}`);
+
+  // P9 gate switch with a documented rollback: `E2E_SELECTION_MODE=legacy`
+  // restores the frozen pre-P8 selection without a code change.
+  // GitHub renders an unset repository variable as an empty string, so
+  // absent/empty/whitespace all mean the default planned mode; only a
+  // non-empty unknown value is rejected.
+  const selectionMode = (process.env.E2E_SELECTION_MODE ?? "").trim() || "planned";
+  if (!["planned", "legacy"].includes(selectionMode))
+    throw new Error(`Invalid E2E selection mode: ${selectionMode}`);
+  const legacyGate = planE2ESuites(eventName, paths);
+  const selection = selectSuites(eventName, paths, { dispatchScope });
   const shadow = { ...shadowPlan(eventName, paths, { dispatchScope }), mlCpu };
-  const gate = planE2ESuites(eventName, paths);
+  const plannedEntries = selection.planned
+    .map((suite) => SUITE_CONTRACT.find((entry) => entry.suite === suite))
+    .filter(Boolean);
+  const plannedGate = { include: plannedEntries };
+  const gate = selectionMode === "legacy" ? legacyGate : plannedGate;
+  // The required manifest always describes the EFFECTIVE gate: in legacy
+  // rollback mode the new-only smoke/video/pointcloud suites are not executed,
+  // so they must not be required either; a docs-only allowed skip only exists
+  // in planned mode (the legacy gate always runs suites).
+  const requiredSuites =
+    selectionMode === "legacy"
+      ? legacyGate.include.map((entry) => ({ suite: entry.suite, planned: true }))
+      : plannedEntries.map((entry) => ({
+          suite: entry.suite,
+          planned: true,
+          ...(entry.flakyPolicy ? { flakyPolicy: entry.flakyPolicy } : {}),
+        }));
+  const docsOnlySkip = selectionMode !== "legacy" && selection.classification.docsOnly;
   console.log(`matrix=${JSON.stringify(gate)}`);
+  // The comparison document always records the frozen legacy set next to the
+  // planned set, so every run leaves old/new evidence behind.
+  console.log(`legacy=${JSON.stringify(legacyGate)}`);
   console.log(
-    `required=${JSON.stringify(gate.include.map((entry) => ({ suite: entry.suite, planned: true })))}`,
+    `required=${JSON.stringify(
+      docsOnlySkip
+        ? {
+            classification: "docs-only",
+            reason:
+              selection.reasons.find((reason) => /docs-only/.test(reason.because))?.because ??
+              "docs-only change",
+            suites: [],
+          }
+        : {
+            classification: "app-code",
+            reason:
+              selectionMode === "legacy"
+                ? "legacy rollback gate (E2E_SELECTION_MODE=legacy)"
+                : "planned selection (plan §6.2/§6.3)",
+            suites: requiredSuites,
+          },
+    )}`,
   );
-  // Shadow report for P9: recorded by the planning job, never drives the gate.
+  console.log(`run_suites=${gate.include.length > 0}`);
+  console.log(`selection_mode=${selectionMode}`);
+  // Shadow report for P9: recorded by the planning job.
   console.log(`shadow=${JSON.stringify(shadow)}`);
   console.log(`ml_cpu=${mlCpu}`);
 }

@@ -368,6 +368,11 @@ test("标准和浮动布局使用日间与夜间语义主题", { tag: "@visual" 
   await seed.injectToken(page, data.admin_email);
   // Theme screenshots exercise the layout without depending on the seed's external ML service.
   const headers = { Authorization: `Bearer ${await seed.accessToken(data.admin_email)}` };
+  // The queue badge shows the task's own display id; derive it from the API
+  // instead of assuming the retired shared-fixture value.
+  const taskResponse = await page.request.get(`/api/v1/tasks/${data.task_ids[0]}`, { headers });
+  expect(taskResponse.ok(), await taskResponse.text()).toBe(true);
+  const taskDisplayId = ((await taskResponse.json()) as { display_id: string }).display_id;
   const configured = await page.request.patch(`/api/v1/projects/${data.project_id}`, {
     headers,
     data: { ai_enabled: false, ai_interactive_enabled: false, ml_backend_id: null },
@@ -394,7 +399,7 @@ test("标准和浮动布局使用日间与夜间语义主题", { tag: "@visual" 
   const workspace = page.locator("[data-workbench-workspace]");
   const queue = page.getByRole("tabpanel", { name: "任务队列", exact: true });
   await expect(queue.getByText("1 / 5", { exact: true })).toBeVisible();
-  await expect(queue.getByText("T-E2E-000001", { exact: true })).toHaveClass(/text-brand/);
+  await expect(queue.getByText(taskDisplayId, { exact: true })).toHaveClass(/text-brand/);
   await expect(queue.getByText("task-1.svg", { exact: true })).toBeVisible();
   for (const floating of [false, true]) {
     if (floating) await panelCommand(page, "讨论", "浮动面板");

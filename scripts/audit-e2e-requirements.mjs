@@ -78,11 +78,14 @@ export function validateRequiredManifest(manifest) {
       errors.push(`${suite}: docsAllowedSkip requires planned:false`);
     if (docsAllowedSkip && !String(raw.reason ?? "").trim())
       errors.push(`${suite}: docs-allowed skip requires an explicit reason`);
+    if (raw.flakyPolicy !== undefined && !["forbid", "diagnostic"].includes(raw.flakyPolicy))
+      errors.push(`${suite}: unknown flakyPolicy ${raw.flakyPolicy}`);
     suites.push({
       suite,
       planned: raw.planned ?? true,
       docsAllowedSkip: docsAllowedSkip && classification === "docs-only",
       reason: raw.reason,
+      flakyPolicy: raw.flakyPolicy,
     });
   }
   return { classification, reason, suites, errors };
@@ -168,6 +171,10 @@ export function auditE2ERequirements({ requiredSuites: requiredInput, statusDir 
           rows.push({ suite, state: "malformed-success", detail: "success without numeric stats" });
           continue;
         }
+        if (entry.flakyPolicy === "forbid" && status.stats.flaky > 0) {
+          rows.push({ suite, state: "core-flaky", detail: { flaky: status.stats.flaky } });
+          continue;
+        }
         rows.push({ suite, state: "passed", detail: status });
         continue;
       }
@@ -196,6 +203,7 @@ export function auditE2ERequirements({ requiredSuites: requiredInput, statusDir 
       "suite-mismatch",
       "unknown-outcome",
       "malformed-success",
+      "core-flaky",
     ];
     const blockers = rows.filter((row) => blockingStates.includes(row.state));
     return { rows, blockers, ok: blockers.length === 0 };
