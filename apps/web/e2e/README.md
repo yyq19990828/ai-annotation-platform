@@ -60,11 +60,24 @@ Mask 设置统一通过 `fixtures/mask-toolbar.ts` 打开：等待胶囊展开�
 ## 数据准备
 
 避免每个 spec 重复造数据：`e2e/fixtures/seed.ts` 通过
-`/api/v1/__test/seed/*` 创建固定 fixture。这组路由需要同时满足：
+`/api/v1/__test/seed/*` 创建 fixture。这组路由需要同时满足：
 
 - `E2E_SEED_ENABLED=true`；
 - 当前数据库名以 `_e2e` 或 `_test` 结尾；
 - `production` 环境永不挂载路由。
+
+**默认使用私有命名空间 fixture**：`await seed.owned()` 按 spec 文件 + 测试标题
+确定性派生命名空间（`^[a-z0-9]{4,12}$`，重试稳定、跨测试唯一），由 `/seed/owned`
+只创建该命名空间的标准工作台 fixture，测试结束后 seed fixture teardown 调用
+`/seed/owned-cleanup` 精确清理（含存储对象与 mock backend 注册项）；清理失败会让
+测试失败。`/seed/lidar`、`/seed/project-roles`、`/seed/filtering` 的命名空间参数
+同样只触碰各自命名空间；filtering manifest 暴露 `display_names`、`invitation_emails`、
+`search_keys`、`audit_scopes`，spec 必须用 manifest 值做全局列表搜索/文案/导出断言。
+
+`seed.reset()` 只保留给确属全局操作的套件：它破坏性重建共享命名空间并会收敛所有
+E2E 数据（含 owned 命名空间），是已记录的串行例外；不要再在普通用例中调用。需要
+跨命名空间存活/清理证据时，可用 `fixtures/storage-object-probe.py` 经真实存储客户端
+读取对象字节。
 
 正常结束时 `globalTeardown` 会调用 `/api/v1/__test/seed/cleanup` 清除固定 E2E
 数据。这只是卫生性兜底：强制中断或进程被终止时 teardown 可能来不及执行，

@@ -111,9 +111,11 @@ class _FilterIds:
         return f"{base} {self.namespace}"
 
     def display_name(self, base: str) -> str:
+        # Token-prefixed, so a namespace-unique search key (`[ns] Prefix`)
+        # stays a substring of every derived display name.
         if self.namespace is None:
             return base
-        return f"{base} {self.namespace}"
+        return f"[{self.namespace}] {base}"
 
     @property
     def namespace_token(self) -> str:
@@ -1575,13 +1577,15 @@ async def _seed_operations(
             "template_public": templates[1].name,
         },
         invitation_emails={
-            invitation.email.split("@", 1)[0].rsplit("-", 1)[0]: invitation.email
-            for invitation in invitations
+            "pending": invitations[0].email,
+            "accepted": invitations[1].email,
+            "expired": invitations[2].email,
+            "revoked": invitations[3].email,
         },
         search_keys={
-            "users": ids.namespace or "Filter",
+            "users": ids.namespace and f"[{ids.namespace}]" or "Filter",
             "projects": ids.display_name("Filter Ops"),
-            "templates": ids.namespace or "Filter",
+            "templates": ids.namespace and f"[{ids.namespace}]" or "Filter",
             "invitations": ids.invitation_search_key,
             "jobs": ids.job_prompt("alpha complete"),
         },
