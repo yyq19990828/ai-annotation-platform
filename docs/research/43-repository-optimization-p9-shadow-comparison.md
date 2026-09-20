@@ -97,6 +97,8 @@
 
 ## 6.1 候选上的真实失败（阻塞验收，不视为绿灯）
 
+**已记录但归属他人的失败**：`employee-project-roles.spec.ts` dashboard 项目名（授权 P9 在冻结执行结束后修复该单测）、`markdown-authoring.spec.ts` 表格单元图片重试（Markdown 独立工作流）、pointcloud `workbench-pointcloud-tools.spec.ts:379` 与相关清理（清理所有者负责）。以下为 P9 自有失败与验证边界。
+
 同候选联合执行发现两处真实失败，均已保留首次证据、未放宽断言、未跳过保护：
 
 1. **visual**：`apps/web/e2e/tests/workbench-layout.spec.ts:397` 在 `seed.owned()` 之后仍断言旧共享显示 id `T-E2E-000001`；owned 任务的显示 id 为命名空间形态。属 P7 迁移遗留的消费方缺陷（与已修复的 pointcloud/lidar 同类），已请求 bounded separate fix（保留 `text-brand` 与文件名断言）。
