@@ -115,7 +115,7 @@ class TestAsyncJobService:
 
 
 async def test_removed_project_member_cannot_read_or_list_export_result(
-    httpx_client_bound, db_session, super_admin, annotator
+    httpx_client, db_session, super_admin, annotator
 ):
     owner, owner_token = super_admin
     member, member_token = annotator
@@ -145,27 +145,27 @@ async def test_removed_project_member_cannot_read_or_list_export_result(
 
     member_headers = _bearer(member_token)
     await db_session.refresh(job)
-    visible = await httpx_client_bound.get(
+    visible = await httpx_client.get(
         f"/api/v1/async-jobs/{job.id}", headers=member_headers
     )
     assert visible.status_code == 200, visible.text
-    listed = await httpx_client_bound.get(
+    listed = await httpx_client.get(
         f"/api/v1/async-jobs?project_id={project.id}", headers=member_headers
     )
     assert listed.status_code == 200, listed.text
     assert listed.json()["total"] == 1
 
-    removed = await httpx_client_bound.delete(
+    removed = await httpx_client.delete(
         f"/api/v1/projects/{project.id}/members/{membership.id}",
         headers=_bearer(owner_token),
     )
     assert removed.status_code == 204, removed.text
 
-    denied = await httpx_client_bound.get(
+    denied = await httpx_client.get(
         f"/api/v1/async-jobs/{job.id}", headers=member_headers
     )
     assert denied.status_code == 403, denied.text
-    listed_after = await httpx_client_bound.get(
+    listed_after = await httpx_client.get(
         f"/api/v1/async-jobs?project_id={project.id}", headers=member_headers
     )
     assert listed_after.status_code == 200, listed_after.text
@@ -279,7 +279,7 @@ class TestAsyncJobTerminalNotifications:
 
 
 class TestAsyncJobsAPI:
-    async def test_list_owner_scoped(self, httpx_client_bound, db_session, annotator):
+    async def test_list_owner_scoped(self, httpx_client, db_session, annotator):
         user, token = annotator
         # 自己的 job
         own = await async_job_svc.create_job(
@@ -289,7 +289,7 @@ class TestAsyncJobsAPI:
         await async_job_svc.create_job(db_session, kind="batch_predict")
         await db_session.flush()
 
-        r = await httpx_client_bound.get("/api/v1/async-jobs", headers=_bearer(token))
+        r = await httpx_client.get("/api/v1/async-jobs", headers=_bearer(token))
         assert r.status_code == 200
         body = r.json()
         ids = {item["id"] for item in body["items"]}
@@ -298,7 +298,7 @@ class TestAsyncJobsAPI:
         assert all(item["user_id"] == str(user.id) for item in body["items"])
 
     async def test_super_admin_sees_all(
-        self, httpx_client_bound, db_session, super_admin, annotator
+        self, httpx_client, db_session, super_admin, annotator
     ):
         _, admin_token = super_admin
         anno_user, _ = annotator
@@ -307,14 +307,12 @@ class TestAsyncJobsAPI:
         )
         await db_session.flush()
 
-        r = await httpx_client_bound.get(
-            "/api/v1/async-jobs", headers=_bearer(admin_token)
-        )
+        r = await httpx_client.get("/api/v1/async-jobs", headers=_bearer(admin_token))
         assert r.status_code == 200
         assert r.json()["total"] >= 1
 
     async def test_list_filters_and_project_meta(
-        self, httpx_client_bound, db_session, project_admin
+        self, httpx_client, db_session, project_admin
     ):
         # Project-scoped list access needs current management of the owned
         # project; use the administrative owner so the scope matches.
@@ -363,7 +361,7 @@ class TestAsyncJobsAPI:
         )
         await db_session.flush()
 
-        r = await httpx_client_bound.get(
+        r = await httpx_client.get(
             "/api/v1/async-jobs",
             params=[
                 ("project_id", str(project.id)),
@@ -383,7 +381,7 @@ class TestAsyncJobsAPI:
         assert item["project_name"] == "Async Jobs Project"
 
     async def test_list_filters_multiple_kinds(
-        self, httpx_client_bound, db_session, annotator
+        self, httpx_client, db_session, annotator
     ):
         user, token = annotator
         batch_job = await async_job_svc.create_job(
@@ -397,7 +395,7 @@ class TestAsyncJobsAPI:
         )
         await db_session.flush()
 
-        r = await httpx_client_bound.get(
+        r = await httpx_client.get(
             "/api/v1/async-jobs",
             params=[("kind", "batch_predict"), ("kind", "prediction_retry")],
             headers=_bearer(token),
@@ -410,7 +408,7 @@ class TestAsyncJobsAPI:
         assert r.json()["total"] == 2
 
     async def test_retry_failed_batch_predict_items_queues_recorded_failures(
-        self, httpx_client_bound, db_session, project_admin, monkeypatch
+        self, httpx_client, db_session, project_admin, monkeypatch
     ):
         user, token = project_admin
         project = Project(
@@ -466,7 +464,7 @@ class TestAsyncJobsAPI:
             lambda failed_id, user_id: queued.append((failed_id, user_id)),
         )
 
-        r = await httpx_client_bound.post(
+        r = await httpx_client.post(
             f"/api/v1/async-jobs/{aj.id}/retry-failed", headers=_bearer(token)
         )
 
@@ -475,14 +473,14 @@ class TestAsyncJobsAPI:
         assert r.json()["skipped"] == 1
         assert queued == [(str(retryable.id), str(user.id))]
 
-        repeated = await httpx_client_bound.post(
+        repeated = await httpx_client.post(
             f"/api/v1/async-jobs/{aj.id}/retry-failed", headers=_bearer(token)
         )
         assert repeated.status_code == 409
         assert queued == [(str(retryable.id), str(user.id))]
 
     async def test_retry_failed_batch_predict_items_requires_recorded_ids(
-        self, httpx_client_bound, db_session, project_admin
+        self, httpx_client, db_session, project_admin
     ):
         user, token = project_admin
         aj = await async_job_svc.create_job(
@@ -497,7 +495,7 @@ class TestAsyncJobsAPI:
         )
         await db_session.flush()
 
-        r = await httpx_client_bound.post(
+        r = await httpx_client.post(
             f"/api/v1/async-jobs/{aj.id}/retry-failed", headers=_bearer(token)
         )
 
@@ -505,7 +503,7 @@ class TestAsyncJobsAPI:
         assert "no retryable failed prediction ids" in r.json()["detail"]
 
     async def test_cancel_unsupported_kind_rejected(
-        self, httpx_client_bound, db_session, annotator
+        self, httpx_client, db_session, annotator
     ):
         user, token = annotator
         aj = await async_job_svc.create_job(
@@ -514,14 +512,14 @@ class TestAsyncJobsAPI:
         await async_job_svc.mark_running(db_session, aj.id)
         await db_session.flush()
 
-        r = await httpx_client_bound.post(
+        r = await httpx_client.post(
             f"/api/v1/async-jobs/{aj.id}/cancel", headers=_bearer(token)
         )
         assert r.status_code == 400
         assert "not cancellable" in r.json()["detail"]
 
     async def test_cancel_running_batch_predict_requests_cooperative_cancel(
-        self, httpx_client_bound, db_session, annotator, monkeypatch
+        self, httpx_client, db_session, annotator, monkeypatch
     ):
         user, token = annotator
         aj = await async_job_svc.create_job(
@@ -544,7 +542,7 @@ class TestAsyncJobsAPI:
 
         monkeypatch.setattr(celery_app.control, "revoke", fake_revoke)
 
-        r = await httpx_client_bound.post(
+        r = await httpx_client.post(
             f"/api/v1/async-jobs/{aj.id}/cancel", headers=_bearer(token)
         )
 
@@ -566,7 +564,7 @@ class TestAsyncJobsAPI:
         assert rows == []
 
     async def test_cancel_pending_batch_predict_marks_cancelled(
-        self, httpx_client_bound, db_session, annotator, monkeypatch
+        self, httpx_client, db_session, annotator, monkeypatch
     ):
         user, token = annotator
         aj = await async_job_svc.create_job(
@@ -589,7 +587,7 @@ class TestAsyncJobsAPI:
             ),
         )
 
-        r = await httpx_client_bound.post(
+        r = await httpx_client.post(
             f"/api/v1/async-jobs/{aj.id}/cancel", headers=_bearer(token)
         )
 
@@ -602,7 +600,7 @@ class TestAsyncJobsAPI:
         assert called == {"task_id": "celery-batch-pending", "terminate": False}
 
     async def test_cancel_supported_kind_succeeds(
-        self, httpx_client_bound, db_session, annotator
+        self, httpx_client, db_session, annotator
     ):
         user, token = annotator
         aj = await async_job_svc.create_job(
@@ -611,7 +609,7 @@ class TestAsyncJobsAPI:
         await async_job_svc.mark_running(db_session, aj.id)
         await db_session.flush()
 
-        r = await httpx_client_bound.post(
+        r = await httpx_client.post(
             f"/api/v1/async-jobs/{aj.id}/cancel", headers=_bearer(token)
         )
         assert r.status_code == 200
@@ -632,7 +630,7 @@ class TestAsyncJobsAPI:
         assert rows[0].target_id == aj.id
 
     async def test_cancel_already_terminal_rejected(
-        self, httpx_client_bound, db_session, annotator
+        self, httpx_client, db_session, annotator
     ):
         user, token = annotator
         aj = await async_job_svc.create_job(
@@ -641,13 +639,13 @@ class TestAsyncJobsAPI:
         await async_job_svc.mark_complete(db_session, aj.id)
         await db_session.flush()
 
-        r = await httpx_client_bound.post(
+        r = await httpx_client.post(
             f"/api/v1/async-jobs/{aj.id}/cancel", headers=_bearer(token)
         )
         assert r.status_code == 409
 
     async def test_export_job_without_project_is_hidden(
-        self, httpx_client_bound, db_session, project_admin
+        self, httpx_client, db_session, project_admin
     ):
         """A projectless export row has no legitimate global mode."""
 
@@ -660,13 +658,11 @@ class TestAsyncJobsAPI:
         )
         await db_session.commit()
 
-        detail = await httpx_client_bound.get(
+        detail = await httpx_client.get(
             f"/api/v1/async-jobs/{aj.id}", headers=_bearer(token)
         )
         assert detail.status_code == 403, detail.text
 
-        listed = await httpx_client_bound.get(
-            "/api/v1/async-jobs", headers=_bearer(token)
-        )
+        listed = await httpx_client.get("/api/v1/async-jobs", headers=_bearer(token))
         assert listed.status_code == 200, listed.text
         assert str(aj.id) not in {item["id"] for item in listed.json()["items"]}

@@ -34,6 +34,7 @@ from app.db.models.task import Task
 from app.services.annotations_import import import_aap_json_annotations
 from app.services.task_dataset_link import link_items
 from tests.test_track_operations import _seed_scene
+from tests.factory import build_tool_bindings
 
 pytestmark = pytest.mark.asyncio
 
@@ -58,8 +59,7 @@ async def _seed_project_with_tasks(
         type_label="测试",
         owner_id=owner_id,
         status="in_progress",
-        classes=["car", "truck"],
-        tool_bindings=tool_bindings or {},
+        tool_bindings=tool_bindings or build_tool_bindings(["car", "truck"]),
     )
     db.add(project)
     await db.flush()

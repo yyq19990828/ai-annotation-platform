@@ -58,7 +58,7 @@ async def _seed_backend(db, project_id) -> MLBackendRegistry:
 
 
 async def test_list_backends_denied_for_non_member_annotator(
-    httpx_client_bound, super_admin, annotator, db_session
+    httpx_client, super_admin, annotator, db_session
 ):
     """非项目成员的 annotator 读他人项目 backend 列表 → 404 (隐藏存在性)。"""
     owner, _ = super_admin
@@ -67,7 +67,7 @@ async def test_list_backends_denied_for_non_member_annotator(
     await _seed_backend(db_session, proj.id)
     await db_session.commit()
 
-    resp = await httpx_client_bound.get(
+    resp = await httpx_client.get(
         f"/api/v1/projects/{proj.id}/ml-backends",
         headers={"Authorization": f"Bearer {anno_token}"},
     )
@@ -75,7 +75,7 @@ async def test_list_backends_denied_for_non_member_annotator(
 
 
 async def test_list_backends_ok_for_member_annotator(
-    httpx_client_bound, super_admin, annotator, db_session
+    httpx_client, super_admin, annotator, db_session
 ):
     """项目成员的 annotator 可读本项目 backend 列表 → 200 (未被过度收紧)。"""
     owner, _ = super_admin
@@ -92,7 +92,7 @@ async def test_list_backends_ok_for_member_annotator(
     )
     await db_session.commit()
 
-    resp = await httpx_client_bound.get(
+    resp = await httpx_client.get(
         f"/api/v1/projects/{proj.id}/ml-backends",
         headers={"Authorization": f"Bearer {anno_token}"},
     )
@@ -101,7 +101,7 @@ async def test_list_backends_ok_for_member_annotator(
 
 
 async def test_project_backend_list_keeps_malformed_health_meta_observable(
-    httpx_client_bound, super_admin, db_session
+    httpx_client, super_admin, db_session
 ):
     """第三方历史坏 health JSON 不能让项目 backend 列表整体 500。"""
     owner, token = super_admin
@@ -114,7 +114,7 @@ async def test_project_backend_list_keeps_malformed_health_meta_observable(
     }
     await db_session.commit()
 
-    resp = await httpx_client_bound.get(
+    resp = await httpx_client.get(
         f"/api/v1/projects/{proj.id}/ml-backends",
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -127,7 +127,7 @@ async def test_project_backend_list_keeps_malformed_health_meta_observable(
 
 
 async def test_create_backend_denied_for_non_owner_project_admin(
-    httpx_client_bound, super_admin, project_admin, db_session
+    httpx_client, super_admin, project_admin, db_session
 ):
     """非 owner 的 project_admin 给他人项目加 backend → 403。"""
     owner, _ = super_admin
@@ -142,7 +142,7 @@ async def test_create_backend_denied_for_non_owner_project_admin(
     )
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/ml-backends",
         json={"name": "sam3", "url": "http://sam3-scope/", "is_interactive": True},
         headers={"Authorization": f"Bearer {pm_token}"},
@@ -151,14 +151,14 @@ async def test_create_backend_denied_for_non_owner_project_admin(
 
 
 async def test_create_backend_denied_for_owning_project_admin(
-    httpx_client_bound, project_admin, db_session
+    httpx_client, project_admin, db_session
 ):
     """create 会写全局注册行，项目 owner 也不能执行。"""
     pm, pm_token = project_admin
     proj = await _seed_project(db_session, pm.id)
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/ml-backends",
         json={"name": "sam3", "url": "http://sam3-own/", "is_interactive": True},
         headers={"Authorization": f"Bearer {pm_token}"},
@@ -176,7 +176,7 @@ async def test_create_backend_denied_for_owning_project_admin(
 
 
 async def test_unload_denied_for_owning_project_admin(
-    httpx_client_bound, project_admin, db_session
+    httpx_client, project_admin, db_session
 ):
     """卸载作用于全局显存驻留 → 即便是项目 owner 的 project_admin 也 403 (仅 super_admin)。"""
     pm, pm_token = project_admin
@@ -184,7 +184,7 @@ async def test_unload_denied_for_owning_project_admin(
     backend = await _seed_backend(db_session, proj.id)
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/unload",
         headers={"Authorization": f"Bearer {pm_token}"},
     )
@@ -192,7 +192,7 @@ async def test_unload_denied_for_owning_project_admin(
 
 
 async def test_unload_allowed_for_super_admin(
-    httpx_client_bound, super_admin, db_session, monkeypatch
+    httpx_client, super_admin, db_session, monkeypatch
 ):
     """super_admin 通过鉴权闸 (service 已 mock, backend HTTP 不打真网) → 200。"""
     owner, admin_token = super_admin
@@ -211,7 +211,7 @@ async def test_unload_allowed_for_super_admin(
         _allow_quiescent,
     )
     monkeypatch.setattr("app.services.ml_backend.MLBackendService.unload", _fake_unload)
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/unload",
         headers={"Authorization": f"Bearer {admin_token}"},
     )
@@ -219,7 +219,7 @@ async def test_unload_allowed_for_super_admin(
 
 
 async def test_reload_denied_for_owning_project_admin(
-    httpx_client_bound, project_admin, db_session
+    httpx_client, project_admin, db_session
 ):
     """重载会改写全局常驻变体 → 项目 owner 的 project_admin 也 403 (仅 super_admin)。"""
     pm, pm_token = project_admin
@@ -227,7 +227,7 @@ async def test_reload_denied_for_owning_project_admin(
     backend = await _seed_backend(db_session, proj.id)
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/reload",
         headers={"Authorization": f"Bearer {pm_token}"},
     )
@@ -235,7 +235,7 @@ async def test_reload_denied_for_owning_project_admin(
 
 
 async def test_reload_allowed_for_super_admin(
-    httpx_client_bound, super_admin, db_session, monkeypatch
+    httpx_client, super_admin, db_session, monkeypatch
 ):
     """super_admin 通过鉴权闸 → 200。"""
     owner, admin_token = super_admin
@@ -249,7 +249,7 @@ async def test_reload_allowed_for_super_admin(
         return {"ok": True, "reloaded": True}
 
     monkeypatch.setattr("app.services.ml_backend.MLBackendService.reload", _fake_reload)
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/reload",
         headers={"Authorization": f"Bearer {admin_token}"},
     )
@@ -257,7 +257,7 @@ async def test_reload_allowed_for_super_admin(
 
 
 async def test_residency_routes_preserve_gpu_arbiter_error_contract(
-    httpx_client_bound, super_admin, db_session, monkeypatch
+    httpx_client, super_admin, db_session, monkeypatch
 ):
     owner, admin_token = super_admin
     proj = await _seed_project(db_session, owner.id)
@@ -285,7 +285,7 @@ async def test_residency_routes_preserve_gpu_arbiter_error_contract(
         )
 
     for operation in ("unload", "reload", "warmup"):
-        response = await httpx_client_bound.post(
+        response = await httpx_client.post(
             f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/{operation}",
             json={} if operation != "unload" else None,
             headers={"Authorization": f"Bearer {admin_token}"},
@@ -304,7 +304,7 @@ async def test_residency_routes_preserve_gpu_arbiter_error_contract(
 
 
 async def test_warmup_denied_for_non_owner_project_admin(
-    httpx_client_bound, super_admin, project_admin, db_session
+    httpx_client, super_admin, project_admin, db_session
 ):
     """非 owner 的 project_admin 预热他人项目 backend → 403 (owner 闸仍生效)。"""
     owner, _ = super_admin
@@ -318,7 +318,7 @@ async def test_warmup_denied_for_non_owner_project_admin(
     backend = await _seed_backend(db_session, proj.id)
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/warmup",
         json={},
         headers={"Authorization": f"Bearer {pm_token}"},
@@ -327,7 +327,7 @@ async def test_warmup_denied_for_non_owner_project_admin(
 
 
 async def test_warmup_allowed_for_owning_project_admin(
-    httpx_client_bound, project_admin, db_session, monkeypatch
+    httpx_client, project_admin, db_session, monkeypatch
 ):
     """owner project_admin 可预热自己项目的 backend → 200 (证明未被收口到 super_admin)。"""
     pm, pm_token = project_admin
@@ -339,7 +339,7 @@ async def test_warmup_allowed_for_owning_project_admin(
         return {"ok": True, "cache_hit": False}
 
     monkeypatch.setattr("app.services.ml_backend.MLBackendService.warmup", _fake_warmup)
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/ml-backends/{backend.id}/warmup",
         json={},
         headers={"Authorization": f"Bearer {pm_token}"},

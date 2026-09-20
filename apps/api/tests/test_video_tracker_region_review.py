@@ -198,7 +198,7 @@ def _decision(
 
 
 async def test_region_accept_changes_only_issue_pixels_and_keeps_residual_candidate(
-    httpx_client_bound, super_admin, db_session, monkeypatch
+    httpx_client, super_admin, db_session, monkeypatch
 ):
     user, token = super_admin
     current = _rle(["....", ".##.", ".##.", "...."])
@@ -214,7 +214,7 @@ async def test_region_accept_changes_only_issue_pixels_and_keeps_residual_candid
     )
     payload = _decision(annotation, job, issue, row["geometry_digest"])
 
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/video-tracker-jobs/{job.id}/decisions",
         json=payload,
         headers=_bearer(token),
@@ -238,7 +238,7 @@ async def test_region_accept_changes_only_issue_pixels_and_keeps_residual_candid
     assert scope.result_annotation_version == 2
     assert scope.region_digest == issue.region_digest
 
-    replay = await httpx_client_bound.post(
+    replay = await httpx_client.post(
         f"/api/v1/video-tracker-jobs/{job.id}/decisions",
         json=payload,
         headers=_bearer(token),
@@ -249,7 +249,7 @@ async def test_region_accept_changes_only_issue_pixels_and_keeps_residual_candid
 
 
 async def test_region_reject_consumes_only_region_and_rotates_candidate_digest(
-    httpx_client_bound, super_admin, db_session, monkeypatch
+    httpx_client, super_admin, db_session, monkeypatch
 ):
     user, token = super_admin
     current = _rle(["....", ".##.", ".##.", "...."])
@@ -268,7 +268,7 @@ async def test_region_reject_consumes_only_region_and_rotates_candidate_digest(
         "decision": "reject",
     }
 
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/video-tracker-jobs/{job.id}/decisions",
         json=payload,
         headers=_bearer(token),
@@ -295,7 +295,7 @@ async def test_region_reject_consumes_only_region_and_rotates_candidate_digest(
 
 
 async def test_region_decision_rechecks_manual_annotation_segment_and_reviewed_locks(
-    httpx_client_bound, super_admin, reviewer, db_session, monkeypatch
+    httpx_client, super_admin, reviewer, db_session, monkeypatch
 ):
     user, token = super_admin
     other_user, _other_token = reviewer
@@ -317,7 +317,7 @@ async def test_region_decision_rechecks_manual_annotation_segment_and_reviewed_l
     job_id = job.id
     dataset_item_id = job.dataset_item_id
     payload = _decision(annotation, job, issue, row["geometry_digest"])
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/video-tracker-jobs/{job_id}/decisions",
         json=payload,
         headers=_bearer(token),
@@ -337,7 +337,7 @@ async def test_region_decision_rechecks_manual_annotation_segment_and_reviewed_l
     payload = _decision(annotation, job, issue, row["geometry_digest"])
     annotation.is_locked = True
     await db_session.commit()
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/video-tracker-jobs/{job_id}/decisions",
         json=payload,
         headers=_bearer(token),
@@ -371,7 +371,7 @@ async def test_region_decision_rechecks_manual_annotation_segment_and_reviewed_l
     )
     db_session.add(scope)
     await db_session.commit()
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/video-tracker-jobs/{job_id}/decisions",
         json=payload,
         headers=_bearer(token),
@@ -401,7 +401,7 @@ async def test_region_decision_rechecks_manual_annotation_segment_and_reviewed_l
     await db_session.flush()
     job.segment_id = segment.id
     await db_session.commit()
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/video-tracker-jobs/{job_id}/decisions",
         json=payload,
         headers=_bearer(token),
@@ -456,7 +456,7 @@ async def test_legacy_scope_guard_ignores_unselected_gap_frames(
 
 
 async def test_claimed_reviewer_can_decide_job_created_by_annotator(
-    httpx_client_bound, super_admin, reviewer, db_session, monkeypatch
+    httpx_client, super_admin, reviewer, db_session, monkeypatch
 ):
     owner, _owner_token = super_admin
     reviewer_user, reviewer_token = reviewer
@@ -506,7 +506,7 @@ async def test_claimed_reviewer_can_decide_job_created_by_annotator(
         **_decision(annotation, job, issue, row["geometry_digest"]),
         "decision": "reject",
     }
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/video-tracker-jobs/{job.id}/decisions",
         json=payload,
         headers=_bearer(reviewer_token),
@@ -527,7 +527,7 @@ async def test_claimed_reviewer_can_decide_job_created_by_annotator(
     }
     task.reviewer_claimed_at = None
     await db_session.commit()
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/video-tracker-jobs/{job.id}/decisions",
         json=payload,
         headers=_bearer(reviewer_token),
@@ -538,7 +538,7 @@ async def test_claimed_reviewer_can_decide_job_created_by_annotator(
     task.status = "completed"
     task.reviewer_claimed_at = datetime.now(timezone.utc)
     await db_session.commit()
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/video-tracker-jobs/{job.id}/decisions",
         json=payload,
         headers=_bearer(reviewer_token),

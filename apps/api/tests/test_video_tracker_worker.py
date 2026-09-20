@@ -13,6 +13,7 @@ from app.services.ml_client import PredictionResult
 from app.services.video_tracking.adapters import TrackerContext, TrackerFrameResult
 from app.services.video_tracking.runner import accept_tracker_job, run_tracker_job
 from tests.conftest import create_registry_with_pool
+from tests.factory import build_tool_bindings
 
 
 async def _make_video_task(db_session, owner_id):
@@ -22,7 +23,7 @@ async def _make_video_task(db_session, owner_id):
         type_key="video-track",
         type_label="视频 · 时序追踪",
         owner_id=owner_id,
-        classes=["car"],
+        tool_bindings=build_tool_bindings(["car"]),
     )
     dataset = Dataset(
         display_id=f"D-VTW-{uuid.uuid4().hex[:6]}",

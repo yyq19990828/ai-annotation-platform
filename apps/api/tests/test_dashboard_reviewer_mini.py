@@ -78,9 +78,9 @@ async def _seed_task(
 
 
 @pytest.mark.asyncio
-async def test_reviewer_mini_zeros_when_no_data(httpx_client_bound, super_admin):
+async def test_reviewer_mini_zeros_when_no_data(httpx_client, super_admin):
     user, token = super_admin
-    resp = await httpx_client_bound.get(
+    resp = await httpx_client.get(
         "/api/v1/dashboard/reviewer/today-mini",
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -93,7 +93,7 @@ async def test_reviewer_mini_zeros_when_no_data(httpx_client_bound, super_admin)
 
 
 @pytest.mark.asyncio
-async def test_reviewer_mini_today_counts(httpx_client_bound, db_session, super_admin):
+async def test_reviewer_mini_today_counts(httpx_client, db_session, super_admin):
     user, token = super_admin
     proj = await _seed_project(db_session, user.id)
     now = datetime.now(timezone.utc)
@@ -130,7 +130,7 @@ async def test_reviewer_mini_today_counts(httpx_client_bound, db_session, super_
     )
     await db_session.commit()
 
-    resp = await httpx_client_bound.get(
+    resp = await httpx_client.get(
         "/api/v1/dashboard/reviewer/today-mini",
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -144,9 +144,7 @@ async def test_reviewer_mini_today_counts(httpx_client_bound, db_session, super_
 
 
 @pytest.mark.asyncio
-async def test_reviewer_mini_other_user_isolated(
-    httpx_client_bound, db_session, super_admin
-):
+async def test_reviewer_mini_other_user_isolated(httpx_client, db_session, super_admin):
     """v0.8.7 · 不同 reviewer 看到自己的数。"""
     admin_user, admin_token = super_admin
     proj = await _seed_project(db_session, admin_user.id)
@@ -175,11 +173,11 @@ async def test_reviewer_mini_other_user_isolated(
         )
     await db_session.commit()
 
-    r_admin = await httpx_client_bound.get(
+    r_admin = await httpx_client.get(
         "/api/v1/dashboard/reviewer/today-mini",
         headers={"Authorization": f"Bearer {admin_token}"},
     )
-    r_rev = await httpx_client_bound.get(
+    r_rev = await httpx_client.get(
         "/api/v1/dashboard/reviewer/today-mini",
         headers={"Authorization": f"Bearer {rev_token}"},
     )
@@ -189,16 +187,14 @@ async def test_reviewer_mini_other_user_isolated(
 
 
 @pytest.mark.asyncio
-async def test_reviewer_mini_rejects_legacy_global_annotator(
-    httpx_client_bound, db_session
-):
+async def test_reviewer_mini_rejects_legacy_global_annotator(httpx_client, db_session):
     """Legacy global annotator must not access the reviewer mini endpoint."""
     legacy = await create_user(
         db_session, "annotator", f"legacy-mini-{uuid.uuid4()}@test.local", "Legacy"
     )
     await db_session.commit()
     token = create_access_token(subject=str(legacy.id), role=legacy.role)
-    resp = await httpx_client_bound.get(
+    resp = await httpx_client.get(
         "/api/v1/dashboard/reviewer/today-mini",
         headers={"Authorization": f"Bearer {token}"},
     )
@@ -207,7 +203,7 @@ async def test_reviewer_mini_rejects_legacy_global_annotator(
 
 @pytest.mark.asyncio
 async def test_reviewer_mini_employee_without_review_membership_is_empty(
-    httpx_client_bound, db_session
+    httpx_client, db_session
 ):
     """An employee with no reviewer membership gets an empty (not forbidden) set."""
     employee = await create_user(
@@ -215,7 +211,7 @@ async def test_reviewer_mini_employee_without_review_membership_is_empty(
     )
     await db_session.commit()
     token = create_access_token(subject=str(employee.id), role=employee.role)
-    resp = await httpx_client_bound.get(
+    resp = await httpx_client.get(
         "/api/v1/dashboard/reviewer/today-mini",
         headers={"Authorization": f"Bearer {token}"},
     )

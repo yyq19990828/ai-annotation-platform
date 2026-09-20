@@ -122,14 +122,14 @@ async def test_read_and_delete_service_methods_do_not_publish(
 
 @pytest.mark.asyncio
 async def test_admin_status_change_notifies_reporter(
-    httpx_client_bound, db_session, annotator, super_admin
+    httpx_client, db_session, annotator, super_admin
 ):
     reporter, _ = annotator
     admin, admin_token = super_admin
     report = await _seed_bug(db_session, reporter.id, status="new")
     await db_session.commit()
 
-    resp = await httpx_client_bound.patch(
+    resp = await httpx_client.patch(
         f"/api/v1/bug_reports/{report.id}",
         json={"status": "fixed", "resolution": "ok"},
         headers=_bearer(admin_token),
@@ -155,7 +155,7 @@ async def test_admin_status_change_notifies_reporter(
 
 @pytest.mark.asyncio
 async def test_reporter_reopen_notifies_assignee(
-    httpx_client_bound, db_session, annotator, super_admin
+    httpx_client, db_session, annotator, super_admin
 ):
     reporter, reporter_token = annotator
     admin, _ = super_admin
@@ -164,7 +164,7 @@ async def test_reporter_reopen_notifies_assignee(
     )
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/bug_reports/{report.id}/comments",
         json={"body": "依然有问题"},
         headers=_bearer(reporter_token),
@@ -190,7 +190,7 @@ async def test_reporter_reopen_notifies_assignee(
 
 @pytest.mark.asyncio
 async def test_admin_comment_notifies_reporter(
-    httpx_client_bound, db_session, annotator, super_admin
+    httpx_client, db_session, annotator, super_admin
 ):
     reporter, _ = annotator
     admin, admin_token = super_admin
@@ -199,7 +199,7 @@ async def test_admin_comment_notifies_reporter(
     )
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/bug_reports/{report.id}/comments",
         json={"body": "在跟进"},
         headers=_bearer(admin_token),
@@ -222,7 +222,7 @@ async def test_admin_comment_notifies_reporter(
 
 @pytest.mark.asyncio
 async def test_notifications_endpoints_only_return_own(
-    httpx_client_bound, db_session, annotator, reviewer
+    httpx_client, db_session, annotator, reviewer
 ):
     user_a, token_a = annotator
     user_b, _ = reviewer
@@ -235,15 +235,13 @@ async def test_notifications_endpoints_only_return_own(
     )
     await db_session.commit()
 
-    resp = await httpx_client_bound.get(
-        "/api/v1/notifications", headers=_bearer(token_a)
-    )
+    resp = await httpx_client.get("/api/v1/notifications", headers=_bearer(token_a))
     assert resp.status_code == 200
     data = resp.json()
     assert data["total"] == 1
     assert data["unread"] == 1
 
-    cnt = await httpx_client_bound.get(
+    cnt = await httpx_client.get(
         "/api/v1/notifications/unread-count", headers=_bearer(token_a)
     )
     assert cnt.status_code == 200
@@ -252,7 +250,7 @@ async def test_notifications_endpoints_only_return_own(
 
 @pytest.mark.asyncio
 async def test_delete_notification_owner_scoped(
-    httpx_client_bound, db_session, annotator, reviewer
+    httpx_client, db_session, annotator, reviewer
 ):
     user_a, token_a = annotator
     user_b, _ = reviewer
@@ -265,7 +263,7 @@ async def test_delete_notification_owner_scoped(
     )
     await db_session.commit()
 
-    resp = await httpx_client_bound.delete(
+    resp = await httpx_client.delete(
         f"/api/v1/notifications/{own.id}", headers=_bearer(token_a)
     )
     assert resp.status_code == 200
@@ -283,7 +281,7 @@ async def test_delete_notification_owner_scoped(
     assert rows == []
     assert await svc.unread_count(user_a.id) == 0
 
-    forbidden = await httpx_client_bound.delete(
+    forbidden = await httpx_client.delete(
         f"/api/v1/notifications/{other.id}", headers=_bearer(token_a)
     )
     assert forbidden.status_code == 404
@@ -291,7 +289,7 @@ async def test_delete_notification_owner_scoped(
 
 @pytest.mark.asyncio
 async def test_clear_read_deletes_only_current_users_read_notifications(
-    httpx_client_bound, db_session, annotator, reviewer
+    httpx_client, db_session, annotator, reviewer
 ):
     user_a, token_a = annotator
     user_b, _ = reviewer
@@ -309,7 +307,7 @@ async def test_clear_read_deletes_only_current_users_read_notifications(
     await svc.mark_read(user_b.id, other_read.id)
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         "/api/v1/notifications/clear-read", headers=_bearer(token_a)
     )
     assert resp.status_code == 200
@@ -340,15 +338,13 @@ async def test_clear_read_deletes_only_current_users_read_notifications(
 
 
 @pytest.mark.asyncio
-async def test_self_action_does_not_notify_self(
-    httpx_client_bound, db_session, super_admin
-):
+async def test_self_action_does_not_notify_self(httpx_client, db_session, super_admin):
     """super_admin 自己改自己的状态不应通知自己（reporter == admin 同一人）。"""
     admin, admin_token = super_admin
     report = await _seed_bug(db_session, admin.id, status="new")
     await db_session.commit()
 
-    resp = await httpx_client_bound.patch(
+    resp = await httpx_client.patch(
         f"/api/v1/bug_reports/{report.id}",
         json={"status": "triaged"},
         headers=_bearer(admin_token),
@@ -394,7 +390,7 @@ def _record_publish(monkeypatch, sink: list, *, user_id=None):
 
 @pytest.mark.asyncio
 async def test_read_and_delete_endpoints_publish_after_commit(
-    httpx_client_bound, db_session, annotator, monkeypatch
+    httpx_client, db_session, annotator, monkeypatch
 ):
     user, token = annotator
     svc = NotificationService(db_session)
@@ -410,7 +406,7 @@ async def test_read_and_delete_endpoints_publish_after_commit(
     _record_publish(monkeypatch, messages, user_id=user.id)
     commits = _commit_spy(db_session, monkeypatch)
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/notifications/{n1.id}/read", headers=_bearer(token)
     )
     assert resp.status_code == 200
@@ -418,7 +414,7 @@ async def test_read_and_delete_endpoints_publish_after_commit(
 
     # 已读行存在 → clear-read 删除并发布 deleted 同步
     messages.clear()
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         "/api/v1/notifications/clear-read", headers=_bearer(token)
     )
     assert resp.status_code == 200
@@ -427,12 +423,12 @@ async def test_read_and_delete_endpoints_publish_after_commit(
 
     # no-op（没有已读行）不发布；已删除的行再删 → 404 不发布
     messages.clear()
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         "/api/v1/notifications/clear-read", headers=_bearer(token)
     )
     assert resp.status_code == 200
     assert resp.json() == {"deleted": 0}
-    resp = await httpx_client_bound.delete(
+    resp = await httpx_client.delete(
         f"/api/v1/notifications/{n1.id}", headers=_bearer(token)
     )
     assert resp.status_code == 404
@@ -441,7 +437,7 @@ async def test_read_and_delete_endpoints_publish_after_commit(
     # 已读再标 → 404，不发布
     await svc.mark_read(user.id, n2.id)
     await db_session.commit()
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/notifications/{n2.id}/read", headers=_bearer(token)
     )
     assert resp.status_code == 404
@@ -450,14 +446,14 @@ async def test_read_and_delete_endpoints_publish_after_commit(
 
 @pytest.mark.asyncio
 async def test_mark_all_read_publishes_only_with_changes(
-    httpx_client_bound, db_session, annotator, monkeypatch
+    httpx_client, db_session, annotator, monkeypatch
 ):
     user, token = annotator
     messages: list[dict] = []
     _record_publish(monkeypatch, messages, user_id=user.id)
     _commit_spy(db_session, monkeypatch)
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         "/api/v1/notifications/mark-all-read", headers=_bearer(token)
     )
     assert resp.status_code == 200
@@ -471,7 +467,7 @@ async def test_mark_all_read_publishes_only_with_changes(
     await db_session.commit()
     # notify 自身发布的是新通知消息，不是 sync；这里只关心 sync 事件
     messages.clear()
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         "/api/v1/notifications/mark-all-read", headers=_bearer(token)
     )
     assert resp.json() == {"updated": 1}
@@ -480,7 +476,7 @@ async def test_mark_all_read_publishes_only_with_changes(
 
 @pytest.mark.asyncio
 async def test_failed_commit_does_not_publish(
-    httpx_client_bound, db_session, annotator, monkeypatch
+    httpx_client, db_session, annotator, monkeypatch
 ):
     user, token = annotator
     svc = NotificationService(db_session)
@@ -498,7 +494,7 @@ async def test_failed_commit_does_not_publish(
     monkeypatch.setattr(db_session, "commit", failing_commit)
 
     with pytest.raises(RuntimeError):
-        await httpx_client_bound.post(
+        await httpx_client.post(
             f"/api/v1/notifications/{row.id}/read", headers=_bearer(token)
         )
     assert messages == []
@@ -506,7 +502,7 @@ async def test_failed_commit_does_not_publish(
 
 @pytest.mark.asyncio
 async def test_publication_failure_does_not_fail_committed_request(
-    httpx_client_bound, db_session, annotator, monkeypatch
+    httpx_client, db_session, annotator, monkeypatch
 ):
     user, token = annotator
     svc = NotificationService(db_session)
@@ -520,7 +516,7 @@ async def test_publication_failure_does_not_fail_committed_request(
 
     monkeypatch.setattr("app.services.notification._publish", broken_publish)
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/notifications/{row.id}/read", headers=_bearer(token)
     )
     assert resp.status_code == 200
@@ -536,10 +532,10 @@ def _pref_by_type(payload: dict) -> dict[str, dict]:
 
 @pytest.mark.asyncio
 async def test_get_preferences_defaults_for_account_without_rows(
-    httpx_client_bound, annotator
+    httpx_client, annotator
 ):
     user, token = annotator
-    resp = await httpx_client_bound.get(
+    resp = await httpx_client.get(
         "/api/v1/notification-preferences", headers=_bearer(token)
     )
     assert resp.status_code == 200
@@ -556,7 +552,7 @@ async def test_get_preferences_defaults_for_account_without_rows(
 
 @pytest.mark.asyncio
 async def test_legacy_row_without_toast_uses_type_default(
-    httpx_client_bound, db_session, annotator
+    httpx_client, db_session, annotator
 ):
     user, token = annotator
     db_session.add(
@@ -568,7 +564,7 @@ async def test_legacy_row_without_toast_uses_type_default(
     )
     await db_session.commit()
 
-    resp = await httpx_client_bound.get(
+    resp = await httpx_client.get(
         "/api/v1/notification-preferences", headers=_bearer(token)
     )
     item = _pref_by_type(resp.json())["task.rejected"]
@@ -577,18 +573,18 @@ async def test_legacy_row_without_toast_uses_type_default(
 
 @pytest.mark.asyncio
 async def test_receipt_only_update_keeps_stored_toast(
-    httpx_client_bound, db_session, annotator
+    httpx_client, db_session, annotator
 ):
     """旧客户端只发 {type, in_app}：不得清除已存的弹出选择。"""
     user, token = annotator
-    resp = await httpx_client_bound.put(
+    resp = await httpx_client.put(
         "/api/v1/notification-preferences",
         json={"type": "task.rejected", "toast": False},
         headers=_bearer(token),
     )
     assert resp.status_code == 200
 
-    resp = await httpx_client_bound.put(
+    resp = await httpx_client.put(
         "/api/v1/notification-preferences",
         json={"type": "task.rejected", "in_app": False},
         headers=_bearer(token),
@@ -597,7 +593,7 @@ async def test_receipt_only_update_keeps_stored_toast(
 
     item = _pref_by_type(
         (
-            await httpx_client_bound.get(
+            await httpx_client.get(
                 "/api/v1/notification-preferences", headers=_bearer(token)
             )
         ).json()
@@ -608,7 +604,7 @@ async def test_receipt_only_update_keeps_stored_toast(
 
 @pytest.mark.asyncio
 async def test_toast_only_update_keeps_receipt_and_reserved_email(
-    httpx_client_bound, db_session, annotator
+    httpx_client, db_session, annotator
 ):
     user, token = annotator
     db_session.add(
@@ -620,7 +616,7 @@ async def test_toast_only_update_keeps_receipt_and_reserved_email(
     )
     await db_session.commit()
 
-    resp = await httpx_client_bound.put(
+    resp = await httpx_client.put(
         "/api/v1/notification-preferences",
         json={"type": "job.failed", "toast": True},
         headers=_bearer(token),
@@ -629,7 +625,7 @@ async def test_toast_only_update_keeps_receipt_and_reserved_email(
 
     item = _pref_by_type(
         (
-            await httpx_client_bound.get(
+            await httpx_client.get(
                 "/api/v1/notification-preferences", headers=_bearer(token)
             )
         ).json()
@@ -641,12 +637,12 @@ async def test_toast_only_update_keeps_receipt_and_reserved_email(
 
 @pytest.mark.asyncio
 async def test_sequential_updates_merge_channel_keys_atomically(
-    httpx_client_bound, annotator
+    httpx_client, annotator
 ):
     """并发标签页写不同键（测试中以两次顺序请求模拟）互不覆盖。"""
     user, token = annotator
     for body in ({"in_app": False}, {"toast": True}):
-        resp = await httpx_client_bound.put(
+        resp = await httpx_client.put(
             "/api/v1/notification-preferences",
             json={"type": "batch.rejected", **body},
             headers=_bearer(token),
@@ -655,7 +651,7 @@ async def test_sequential_updates_merge_channel_keys_atomically(
 
     item = _pref_by_type(
         (
-            await httpx_client_bound.get(
+            await httpx_client.get(
                 "/api/v1/notification-preferences", headers=_bearer(token)
             )
         ).json()
@@ -665,28 +661,28 @@ async def test_sequential_updates_merge_channel_keys_atomically(
 
 
 @pytest.mark.asyncio
-async def test_preference_update_validation(httpx_client_bound, annotator):
+async def test_preference_update_validation(httpx_client, annotator):
     user, token = annotator
     base = "/api/v1/notification-preferences"
 
     # 未知类型
-    resp = await httpx_client_bound.put(
+    resp = await httpx_client.put(
         base, json={"type": "nope.nope", "in_app": True}, headers=_bearer(token)
     )
     assert resp.status_code == 400
     # 两个开关都缺
-    resp = await httpx_client_bound.put(
+    resp = await httpx_client.put(
         base, json={"type": "task.rejected"}, headers=_bearer(token)
     )
     assert resp.status_code == 400
     # 显式 null 值拒绝（pydantic 校验失败 → 422）
-    resp = await httpx_client_bound.put(
+    resp = await httpx_client.put(
         base,
         json={"type": "task.rejected", "in_app": None},
         headers=_bearer(token),
     )
     assert resp.status_code == 422
-    resp = await httpx_client_bound.put(
+    resp = await httpx_client.put(
         base,
         json={"type": "task.rejected", "in_app": True, "toast": None},
         headers=_bearer(token),
@@ -695,10 +691,10 @@ async def test_preference_update_validation(httpx_client_bound, annotator):
 
 
 @pytest.mark.asyncio
-async def test_preferences_are_owner_scoped(httpx_client_bound, annotator, reviewer):
+async def test_preferences_are_owner_scoped(httpx_client, annotator, reviewer):
     user_a, token_a = annotator
     user_b, token_b = reviewer
-    resp = await httpx_client_bound.put(
+    resp = await httpx_client.put(
         "/api/v1/notification-preferences",
         json={"type": "task.rejected", "in_app": False, "toast": False},
         headers=_bearer(token_a),
@@ -707,14 +703,14 @@ async def test_preferences_are_owner_scoped(httpx_client_bound, annotator, revie
 
     item_a = _pref_by_type(
         (
-            await httpx_client_bound.get(
+            await httpx_client.get(
                 "/api/v1/notification-preferences", headers=_bearer(token_a)
             )
         ).json()
     )["task.rejected"]
     item_b = _pref_by_type(
         (
-            await httpx_client_bound.get(
+            await httpx_client.get(
                 "/api/v1/notification-preferences", headers=_bearer(token_b)
             )
         ).json()
@@ -725,14 +721,14 @@ async def test_preferences_are_owner_scoped(httpx_client_bound, annotator, revie
 
 @pytest.mark.asyncio
 async def test_preference_update_publishes_preferences_sync_after_commit(
-    httpx_client_bound, db_session, annotator, monkeypatch
+    httpx_client, db_session, annotator, monkeypatch
 ):
     user, token = annotator
     messages: list[dict] = []
     _record_publish(monkeypatch, messages, user_id=user.id)
     commits = _commit_spy(db_session, monkeypatch)
 
-    resp = await httpx_client_bound.put(
+    resp = await httpx_client.put(
         "/api/v1/notification-preferences",
         json={"type": "export.failed", "toast": False},
         headers=_bearer(token),

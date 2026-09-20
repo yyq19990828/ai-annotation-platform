@@ -8,6 +8,7 @@ import httpx
 import pytest
 from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncSession
+from tests.factory import build_tool_bindings
 
 pytestmark = pytest.mark.asyncio
 
@@ -129,7 +130,7 @@ async def test_project_export_creates_audit_log(
         data_type="video",
         owner_id=user.id,
         status="in_progress",
-        classes=["a"],
+        tool_bindings=build_tool_bindings(["a"]),
     )
     db_session.add(project)
     await db_session.flush()

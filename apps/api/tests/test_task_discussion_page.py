@@ -17,6 +17,7 @@ from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
+from tests.factory import build_tool_bindings
 
 pytestmark = pytest.mark.asyncio
 
@@ -39,7 +40,7 @@ async def _seed_task(
         type_label="图像-检测",
         type_key="image-det",
         owner_id=owner_id,
-        classes=["car"],
+        tool_bindings=build_tool_bindings(["car"]),
     )
     db.add(project)
     await db.flush()
@@ -179,7 +180,7 @@ def _task_feedback(
 
 
 async def test_mixed_pages_are_source_aware_and_exactly_ordered(
-    httpx_client_bound,
+    httpx_client,
     db_session: AsyncSession,
     super_admin,
 ):
@@ -293,7 +294,7 @@ async def test_mixed_pages_are_source_aware_and_exactly_ordered(
         params = {"limit": 3}
         if cursor:
             params["cursor"] = cursor
-        response = await httpx_client_bound.get(
+        response = await httpx_client.get(
             f"/api/v1/tasks/{task.id}/discussion/page",
             params=params,
             headers=headers,
@@ -358,7 +359,7 @@ async def test_mixed_pages_are_source_aware_and_exactly_ordered(
 
 
 async def test_scope_and_cursor_bindings_are_enforced(
-    httpx_client_bound,
+    httpx_client,
     db_session: AsyncSession,
     super_admin,
 ):
@@ -388,7 +389,7 @@ async def test_scope_and_cursor_bindings_are_enforced(
     await db_session.commit()
     headers = _bearer(token)
 
-    annotation_page = await httpx_client_bound.get(
+    annotation_page = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/discussion/page",
         params={"scope": "annotation", "annotation_id": annotation.id},
         headers=headers,
@@ -400,7 +401,7 @@ async def test_scope_and_cursor_bindings_are_enforced(
         for item in annotation_page.json()["items"]
     )
 
-    task_page = await httpx_client_bound.get(
+    task_page = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/discussion/page",
         params={"scope": "task"},
         headers=headers,
@@ -409,20 +410,20 @@ async def test_scope_and_cursor_bindings_are_enforced(
     assert task_page.json()["total"] == 1
     assert task_page.json()["items"][0]["source"] == "feedback"
 
-    missing_annotation = await httpx_client_bound.get(
+    missing_annotation = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/discussion/page",
         params={"scope": "annotation"},
         headers=headers,
     )
     assert missing_annotation.status_code == 422
-    contradictory = await httpx_client_bound.get(
+    contradictory = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/discussion/page",
         params={"scope": "task", "annotation_id": annotation.id},
         headers=headers,
     )
     assert contradictory.status_code == 422
 
-    first = await httpx_client_bound.get(
+    first = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/discussion/page?limit=1",
         headers=headers,
     )
@@ -433,7 +434,7 @@ async def test_scope_and_cursor_bindings_are_enforced(
     bool_version_cursor = base64.urlsafe_b64encode(
         json.dumps(cursor_payload, separators=(",", ":")).encode("utf-8")
     ).decode("ascii")
-    bool_version = await httpx_client_bound.get(
+    bool_version = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/discussion/page",
         params={"cursor": bool_version_cursor},
         headers=headers,
@@ -442,25 +443,25 @@ async def test_scope_and_cursor_bindings_are_enforced(
 
     _, other_task, _, _ = await _seed_task(db_session, user.id)
     await db_session.commit()
-    mismatched_task = await httpx_client_bound.get(
+    mismatched_task = await httpx_client.get(
         f"/api/v1/tasks/{other_task.id}/discussion/page",
         params={"cursor": cursor},
         headers=headers,
     )
     assert mismatched_task.status_code == 400
 
-    mismatched_scope = await httpx_client_bound.get(
+    mismatched_scope = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/discussion/page",
         params={"scope": "task", "cursor": cursor},
         headers=headers,
     )
     assert mismatched_scope.status_code == 400
-    malformed = await httpx_client_bound.get(
+    malformed = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/discussion/page?cursor=garbage",
         headers=headers,
     )
     assert malformed.status_code == 400
-    oversized = await httpx_client_bound.get(
+    oversized = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/discussion/page",
         params={"cursor": "a" * 2049},
         headers=headers,
@@ -469,7 +470,7 @@ async def test_scope_and_cursor_bindings_are_enforced(
 
 
 async def test_deleted_annotation_comments_remain_readable_but_writes_require_active_annotation(
-    httpx_client_bound,
+    httpx_client,
     db_session: AsyncSession,
     super_admin,
 ):
@@ -493,7 +494,7 @@ async def test_deleted_annotation_comments_remain_readable_but_writes_require_ac
         f"/api/v1/annotations/{annotation.id}/comments",
         f"/api/v1/annotations/{annotation.id}/comments/page",
     ):
-        response = await httpx_client_bound.get(path, headers=headers)
+        response = await httpx_client.get(path, headers=headers)
         assert response.status_code == 200, response.text
         if path.endswith("comments") or path.endswith("comments/page"):
             items = (
@@ -503,13 +504,13 @@ async def test_deleted_annotation_comments_remain_readable_but_writes_require_ac
             )
             assert items[0]["body"] == "historical comment"
 
-    create = await httpx_client_bound.post(
+    create = await httpx_client.post(
         f"/api/v1/annotations/{annotation.id}/comments",
         json={"body": "new", "mentions": [], "attachments": []},
         headers=headers,
     )
     assert create.status_code == 404
-    upload = await httpx_client_bound.post(
+    upload = await httpx_client.post(
         f"/api/v1/annotations/{annotation.id}/comment-attachments/upload-init",
         json={"file_name": "x.txt", "content_type": "text/plain"},
         headers=headers,
@@ -518,7 +519,7 @@ async def test_deleted_annotation_comments_remain_readable_but_writes_require_ac
 
 
 async def test_assigned_away_task_is_hidden_from_new_and_legacy_comment_routes(
-    httpx_client_bound,
+    httpx_client,
     db_session: AsyncSession,
     super_admin,
     annotator,
@@ -579,27 +580,27 @@ async def test_assigned_away_task_is_hidden_from_new_and_legacy_comment_routes(
             or path.endswith("/comments/page")
             or "discussion/page" in path
         ):
-            response = await httpx_client_bound.get(path, headers=headers)
+            response = await httpx_client.get(path, headers=headers)
         elif path.endswith("upload-init"):
-            response = await httpx_client_bound.post(
+            response = await httpx_client.post(
                 path,
                 json={"file_name": "x.txt", "content_type": "text/plain"},
                 headers=headers,
             )
         elif "/comments/" in path:
-            response = await httpx_client_bound.patch(
+            response = await httpx_client.patch(
                 path,
                 json={"body": "attempt"},
                 headers=headers,
             )
         else:
-            response = await httpx_client_bound.get(path, headers=headers)
+            response = await httpx_client.get(path, headers=headers)
         assert response.status_code == 404, (path, response.text)
 
 
 @pytest.mark.parametrize("as_json", [False, True])
 async def test_attachment_download_json_retains_visibility_and_legacy_redirect(
-    httpx_client_bound,
+    httpx_client,
     db_session: AsyncSession,
     super_admin,
     monkeypatch,
@@ -621,13 +622,11 @@ async def test_attachment_download_json_retains_visibility_and_legacy_redirect(
     monkeypatch.setattr(storage_service, "generate_download_url", generate_download_url)
     path = f"/api/v1/annotations/{annotation.id}/comment-attachments/download"
     params = {"as_json": str(as_json).lower(), "key": key}
-    anonymous = await httpx_client_bound.get(
-        path, params=params, follow_redirects=False
-    )
+    anonymous = await httpx_client.get(path, params=params, follow_redirects=False)
     assert anonymous.status_code in {401, 403}
     assert issued == []
 
-    response = await httpx_client_bound.get(
+    response = await httpx_client.get(
         path, params=params, headers=_bearer(token), follow_redirects=False
     )
     if as_json:
@@ -641,7 +640,7 @@ async def test_attachment_download_json_retains_visibility_and_legacy_redirect(
     other_path = (
         f"/api/v1/annotations/{other_annotation.id}/comment-attachments/download"
     )
-    mismatch = await httpx_client_bound.get(
+    mismatch = await httpx_client.get(
         other_path, params=params, headers=_bearer(token), follow_redirects=False
     )
     assert mismatch.status_code == 400
@@ -649,7 +648,7 @@ async def test_attachment_download_json_retains_visibility_and_legacy_redirect(
 
 
 async def test_cross_project_reviewer_and_annotator_are_hidden_from_comment_surfaces(
-    httpx_client_bound,
+    httpx_client,
     db_session: AsyncSession,
     super_admin,
     reviewer,
@@ -699,35 +698,35 @@ async def test_cross_project_reviewer_and_annotator_are_hidden_from_comment_surf
             f"/api/v1/annotations/{annotation.id}/comments/page",
         )
         for path in read_routes:
-            response = await httpx_client_bound.get(path, headers=headers)
+            response = await httpx_client.get(path, headers=headers)
             assert response.status_code == 404, (path, response.text)
 
-        create = await httpx_client_bound.post(
+        create = await httpx_client.post(
             f"/api/v1/annotations/{annotation.id}/comments",
             json={"body": "attempt", "mentions": [], "attachments": []},
             headers=headers,
         )
         assert create.status_code == 404
 
-        patch = await httpx_client_bound.patch(
+        patch = await httpx_client.patch(
             f"/api/v1/comments/{comment.id}",
             json={"body": "attempt"},
             headers=headers,
         )
         assert patch.status_code == 404
-        delete = await httpx_client_bound.delete(
+        delete = await httpx_client.delete(
             f"/api/v1/comments/{comment.id}",
             headers=headers,
         )
         assert delete.status_code == 404
 
-        upload = await httpx_client_bound.post(
+        upload = await httpx_client.post(
             f"/api/v1/annotations/{annotation.id}/comment-attachments/upload-init",
             json={"file_name": "outside.txt", "content_type": "text/plain"},
             headers=headers,
         )
         assert upload.status_code == 404
-        download = await httpx_client_bound.get(
+        download = await httpx_client.get(
             f"/api/v1/annotations/{annotation.id}/comment-attachments/download",
             params={"key": f"comment-attachments/{annotation.id}/file.png"},
             headers=headers,

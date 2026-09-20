@@ -14,6 +14,7 @@ from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
+from tests.factory import build_tool_bindings
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -33,7 +34,7 @@ async def test_attribute_change_writes_one_audit_per_changed_key(
         type_label="图像-检测",
         type_key="image-det",
         owner_id=ann_user.id,
-        classes=["car"],
+        tool_bindings=build_tool_bindings(["car"]),
     )
     db_session.add(project)
     await db_session.flush()

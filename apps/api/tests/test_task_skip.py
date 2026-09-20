@@ -13,7 +13,7 @@ from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from sqlalchemy import select
-from tests.factory import create_user
+from tests.factory import create_user, build_tool_bindings
 
 
 async def _seed_project_task(
@@ -47,13 +47,13 @@ async def _seed_project_task(
 
 @pytest.mark.asyncio
 async def test_skip_task_success_transitions_to_review(
-    httpx_client_bound, db_session, super_admin
+    httpx_client, db_session, super_admin
 ):
     user, token = super_admin
     _, task = await _seed_project_task(db_session, user.id, status="pending")
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/skip",
         json={"reason": "image_corrupt"},
         headers={"Authorization": f"Bearer {token}"},
@@ -72,14 +72,12 @@ async def test_skip_task_success_transitions_to_review(
 
 
 @pytest.mark.asyncio
-async def test_skip_task_invalid_reason_422(
-    httpx_client_bound, db_session, super_admin
-):
+async def test_skip_task_invalid_reason_422(httpx_client, db_session, super_admin):
     user, token = super_admin
     _, task = await _seed_project_task(db_session, user.id)
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/skip",
         json={"reason": "garbage"},
         headers={"Authorization": f"Bearer {token}"},
@@ -89,12 +87,12 @@ async def test_skip_task_invalid_reason_422(
 
 
 @pytest.mark.asyncio
-async def test_skip_task_status_review_409(httpx_client_bound, db_session, super_admin):
+async def test_skip_task_status_review_409(httpx_client, db_session, super_admin):
     user, token = super_admin
     _, task = await _seed_project_task(db_session, user.id, status="review")
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/skip",
         json={"reason": "no_target"},
         headers={"Authorization": f"Bearer {token}"},
@@ -103,12 +101,12 @@ async def test_skip_task_status_review_409(httpx_client_bound, db_session, super
 
 
 @pytest.mark.asyncio
-async def test_skip_task_audit_log_emitted(httpx_client_bound, db_session, super_admin):
+async def test_skip_task_audit_log_emitted(httpx_client, db_session, super_admin):
     user, token = super_admin
     _, task = await _seed_project_task(db_session, user.id)
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/skip",
         json={"reason": "unclear", "note": "图像模糊"},
         headers={"Authorization": f"Bearer {token}"},
@@ -134,7 +132,7 @@ async def test_skip_task_audit_log_emitted(httpx_client_bound, db_session, super
 
 @pytest.mark.asyncio
 async def test_skip_task_assigns_to_caller_when_unassigned(
-    httpx_client_bound, db_session, annotator
+    httpx_client, db_session, annotator
 ):
     """v0.8.7 F7 · 跳过未派任务时，自动把 assignee 设为当前用户（同 submit 行为）。"""
     user, token = annotator
@@ -157,7 +155,7 @@ async def test_skip_task_assigns_to_caller_when_unassigned(
     task.batch_id = batch.id
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/skip",
         json={"reason": "other", "note": "其他"},
         headers={"Authorization": f"Bearer {token}"},
@@ -171,7 +169,7 @@ async def test_skip_task_assigns_to_caller_when_unassigned(
 
 @pytest.mark.asyncio
 async def test_skip_task_rejects_task_assigned_to_another_annotator(
-    httpx_client_bound, db_session, super_admin, annotator
+    httpx_client, db_session, super_admin, annotator
 ):
     owner, _ = super_admin
     actor, token = annotator
@@ -188,7 +186,7 @@ async def test_skip_task_rejects_task_assigned_to_another_annotator(
         type_label="image-det",
         type_key="image-det",
         owner_id=owner.id,
-        classes=["car"],
+        tool_bindings=build_tool_bindings(["car"]),
     )
     db_session.add(project)
     await db_session.flush()
@@ -233,7 +231,7 @@ async def test_skip_task_rejects_task_assigned_to_another_annotator(
     await db_session.flush()
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/skip",
         json={"reason": "no_target"},
         headers={"Authorization": f"Bearer {token}"},

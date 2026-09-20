@@ -115,11 +115,11 @@ def _mock_celery(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_preannotate_backend_not_found(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     owner, token = super_admin
     proj, _, _ = await _seed(db_session, owner.id)
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={"ml_backend_id": str(uuid.uuid4())},
@@ -130,11 +130,11 @@ async def test_preannotate_backend_not_found(
 
 @pytest.mark.asyncio
 async def test_preannotate_batch_not_found(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     owner, token = super_admin
     proj, backend, _ = await _seed(db_session, owner.id)
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -148,14 +148,14 @@ async def test_preannotate_batch_not_found(
 
 @pytest.mark.asyncio
 async def test_preannotate_batch_wrong_status(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     """已进入人工流程的批次 (非 active / 非 draft) 仍按状态拒绝。"""
     owner, token = super_admin
     proj, backend, batch = await _seed(
         db_session, owner.id, batch_status=BatchStatus.ANNOTATING
     )
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -171,7 +171,7 @@ async def test_preannotate_batch_wrong_status(
 
 @pytest.mark.asyncio
 async def test_preannotate_unassigned_draft_batch_allowed(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     """issue #124 · 未分派标注员与质检员的 draft 批次可直接批量预标。
 
@@ -181,7 +181,7 @@ async def test_preannotate_unassigned_draft_batch_allowed(
     proj, backend, batch = await _seed(
         db_session, owner.id, batch_status=BatchStatus.DRAFT
     )
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -199,7 +199,7 @@ async def test_preannotate_unassigned_draft_batch_allowed(
 
 @pytest.mark.asyncio
 async def test_preannotate_assigned_draft_batch_rejected(
-    httpx_client_bound, super_admin, annotator, db_session, _mock_celery
+    httpx_client, super_admin, annotator, db_session, _mock_celery
 ):
     """issue #124 · 已分派人员 (标注员或质检员) 的 draft 批次拒绝批量预标。"""
     owner, token = super_admin
@@ -210,7 +210,7 @@ async def test_preannotate_assigned_draft_batch_rejected(
         batch_status=BatchStatus.DRAFT,
         annotator_id=anno_user.id,
     )
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -226,7 +226,7 @@ async def test_preannotate_assigned_draft_batch_rejected(
 
 @pytest.mark.asyncio
 async def test_preannotate_assigned_draft_reviewer_rejected(
-    httpx_client_bound, super_admin, reviewer, db_session, _mock_celery
+    httpx_client, super_admin, reviewer, db_session, _mock_celery
 ):
     """issue #124 · 仅分派了质检员的 draft 批次同样拒绝。"""
     owner, token = super_admin
@@ -237,7 +237,7 @@ async def test_preannotate_assigned_draft_reviewer_rejected(
         batch_status=BatchStatus.DRAFT,
         reviewer_id=reviewer_user.id,
     )
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -252,7 +252,7 @@ async def test_preannotate_assigned_draft_reviewer_rejected(
 
 @pytest.mark.asyncio
 async def test_preannotate_explicit_tasks_in_unassigned_draft_allowed(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     """issue #124 · 显式选择未分派 draft 批次内的 pending 任务可预标 (数据管理入口)。"""
     owner, token = super_admin
@@ -264,7 +264,7 @@ async def test_preannotate_explicit_tasks_in_unassigned_draft_allowed(
         .scalars()
         .all()
     )
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -279,7 +279,7 @@ async def test_preannotate_explicit_tasks_in_unassigned_draft_allowed(
 
 @pytest.mark.asyncio
 async def test_preannotate_explicit_tasks_in_assigned_draft_rejected(
-    httpx_client_bound, super_admin, annotator, db_session, _mock_celery
+    httpx_client, super_admin, annotator, db_session, _mock_celery
 ):
     """issue #124 · 显式选择已分派 draft 批次的任务仍被拒 (批量路径)。"""
     owner, token = super_admin
@@ -295,7 +295,7 @@ async def test_preannotate_explicit_tasks_in_assigned_draft_rejected(
         .scalars()
         .all()
     )
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -311,11 +311,11 @@ async def test_preannotate_explicit_tasks_in_assigned_draft_rejected(
 
 @pytest.mark.asyncio
 async def test_preannotate_happy_path_text_box_mode(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     owner, token = super_admin
     proj, backend, batch = await _seed(db_session, owner.id)
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -341,12 +341,12 @@ async def test_preannotate_happy_path_text_box_mode(
 
 @pytest.mark.asyncio
 async def test_preannotate_forwards_model_id_and_task_type(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     """v0.14.9 · 协议 v2: model_id / task_type 透传到 batch_predict.delay kwargs。"""
     owner, token = super_admin
     proj, backend, batch = await _seed(db_session, owner.id)
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -363,11 +363,11 @@ async def test_preannotate_forwards_model_id_and_task_type(
 
 @pytest.mark.asyncio
 async def test_preannotate_invalid_output_mode_rejected(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     owner, token = super_admin
     proj, backend, batch = await _seed(db_session, owner.id)
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -381,11 +381,11 @@ async def test_preannotate_invalid_output_mode_rejected(
 
 @pytest.mark.asyncio
 async def test_preannotate_rejects_oversized_retry_context(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     owner, token = super_admin
     proj, backend, batch = await _seed(db_session, owner.id)
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -400,11 +400,11 @@ async def test_preannotate_rejects_oversized_retry_context(
 
 @pytest.mark.asyncio
 async def test_preannotate_sizes_normalized_retry_context(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     owner, token = super_admin
     proj, backend, batch = await _seed(db_session, owner.id)
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={

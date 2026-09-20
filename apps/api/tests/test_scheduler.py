@@ -22,6 +22,7 @@ from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.services.display_id import next_display_id
+from tests.factory import build_tool_bindings
 
 
 # ── 共用 seed helper ─────────────────────────────────────────────────────────
@@ -45,7 +46,7 @@ async def _seed(
         type_label="图像-检测",
         type_key="image-det",
         owner_id=owner_id,
-        classes=["car"],
+        tool_bindings=build_tool_bindings(["car"]),
     )
     db.add(p)
     await db.flush()

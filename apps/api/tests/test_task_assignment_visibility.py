@@ -104,7 +104,7 @@ async def _apply_reviewer_assignment(
 
 @pytest.mark.asyncio
 async def test_task_assignment_scopes_batch_query_get_and_next(
-    httpx_client_bound, db_session, super_admin, annotator
+    httpx_client, db_session, super_admin, annotator
 ):
     owner, owner_token = super_admin
     batch_assignee, batch_assignee_token = annotator
@@ -157,7 +157,7 @@ async def test_task_assignment_scopes_batch_query_get_and_next(
     await db_session.commit()
 
     assignment = await _apply_annotator_assignment(
-        httpx_client_bound,
+        httpx_client,
         project_id=project.id,
         owner_token=owner_token,
         task_ids=[selected.id],
@@ -167,7 +167,7 @@ async def test_task_assignment_scopes_batch_query_get_and_next(
     assert assignment_item["effective_before_annotator_id"] == str(batch_assignee.id)
     assert assignment_item["effective_after_annotator_id"] == str(target.id)
 
-    target_list = await httpx_client_bound.get(
+    target_list = await httpx_client.get(
         f"/api/v1/tasks?project_id={project.id}&limit=200",
         headers=_bearer(target_token),
     )
@@ -175,7 +175,7 @@ async def test_task_assignment_scopes_batch_query_get_and_next(
     assert {item["id"] for item in target_list.json()["items"]} == {str(selected.id)}
     assert target_list.json()["total"] == 1
 
-    target_query = await httpx_client_bound.post(
+    target_query = await httpx_client.post(
         f"/api/v1/projects/{project.id}/tasks/query",
         headers=_bearer(target_token),
         json={"filter_json": {}},
@@ -187,7 +187,7 @@ async def test_task_assignment_scopes_batch_query_get_and_next(
 
     # The owner sees batch defaults in both the table projection and filters,
     # while the physical task override remains null for untouched siblings.
-    batch_scope = await httpx_client_bound.post(
+    batch_scope = await httpx_client.post(
         f"/api/v1/projects/{project.id}/tasks/query",
         headers=_bearer(owner_token),
         json={
@@ -206,17 +206,17 @@ async def test_task_assignment_scopes_batch_query_get_and_next(
     assert projected["effective_assignee"]["id"] == str(batch_assignee.id)
 
     assert (
-        await httpx_client_bound.get(
+        await httpx_client.get(
             f"/api/v1/tasks/{selected.id}", headers=_bearer(target_token)
         )
     ).status_code == 200
     assert (
-        await httpx_client_bound.get(
+        await httpx_client.get(
             f"/api/v1/tasks/{sibling.id}", headers=_bearer(target_token)
         )
     ).status_code == 404
 
-    claimed = await httpx_client_bound.get(
+    claimed = await httpx_client.get(
         f"/api/v1/tasks/next?project_id={project.id}&batch_id={batch.id}",
         headers=_bearer(target_token),
     )
@@ -228,14 +228,14 @@ async def test_task_assignment_scopes_batch_query_get_and_next(
     # itself was excluded from the candidate query.
     sibling.is_labeled = True
     await db_session.flush()
-    old_assignee_next = await httpx_client_bound.get(
+    old_assignee_next = await httpx_client.get(
         f"/api/v1/tasks/next?project_id={project.id}&batch_id={batch.id}",
         headers=_bearer(batch_assignee_token),
     )
     assert old_assignee_next.status_code == 200, old_assignee_next.text
     assert old_assignee_next.json() is None
     assert (
-        await httpx_client_bound.post(
+        await httpx_client.post(
             f"/api/v1/tasks/{selected.id}/lock",
             headers=_bearer(batch_assignee_token),
         )
@@ -244,7 +244,7 @@ async def test_task_assignment_scopes_batch_query_get_and_next(
 
 @pytest.mark.asyncio
 async def test_explicitly_assigned_unbatched_task_is_visible_and_claimable(
-    httpx_client_bound, db_session, super_admin, annotator
+    httpx_client, db_session, super_admin, annotator
 ):
     owner, owner_token = super_admin
     old_assignee, old_assignee_token = annotator
@@ -280,20 +280,20 @@ async def test_explicitly_assigned_unbatched_task_is_visible_and_claimable(
     await db_session.commit()
 
     await _apply_annotator_assignment(
-        httpx_client_bound,
+        httpx_client,
         project_id=project.id,
         owner_token=owner_token,
         task_ids=[task.id],
         annotator_id=target.id,
     )
 
-    listed = await httpx_client_bound.get(
+    listed = await httpx_client.get(
         f"/api/v1/tasks?project_id={project.id}&unbatched=true&limit=200",
         headers=_bearer(target_token),
     )
     assert listed.status_code == 200, listed.text
     assert [item["id"] for item in listed.json()["items"]] == [str(task.id)]
-    query = await httpx_client_bound.post(
+    query = await httpx_client.post(
         f"/api/v1/projects/{project.id}/tasks/query",
         headers=_bearer(target_token),
         json={"filter_json": {}},
@@ -301,18 +301,18 @@ async def test_explicitly_assigned_unbatched_task_is_visible_and_claimable(
     assert query.status_code == 200, query.text
     assert [item["id"] for item in query.json()["items"]] == [str(task.id)]
     assert (
-        await httpx_client_bound.get(
+        await httpx_client.get(
             f"/api/v1/tasks/{task.id}", headers=_bearer(target_token)
         )
     ).status_code == 200
 
-    claimed = await httpx_client_bound.get(
+    claimed = await httpx_client.get(
         f"/api/v1/tasks/next?project_id={project.id}",
         headers=_bearer(target_token),
     )
     assert claimed.status_code == 200, claimed.text
     assert claimed.json()["id"] == str(task.id)
-    old_assignee_next = await httpx_client_bound.get(
+    old_assignee_next = await httpx_client.get(
         f"/api/v1/tasks/next?project_id={project.id}",
         headers=_bearer(old_assignee_token),
     )
@@ -322,7 +322,7 @@ async def test_explicitly_assigned_unbatched_task_is_visible_and_claimable(
 
 @pytest.mark.asyncio
 async def test_removed_member_cannot_reuse_assigned_task_url_or_write(
-    httpx_client_bound, db_session, super_admin, annotator
+    httpx_client, db_session, super_admin, annotator
 ):
     owner, owner_token = super_admin
     member, member_token = annotator
@@ -342,7 +342,7 @@ async def test_removed_member_cannot_reuse_assigned_task_url_or_write(
     await db_session.commit()
 
     await _apply_annotator_assignment(
-        httpx_client_bound,
+        httpx_client,
         project_id=project.id,
         owner_token=owner_token,
         task_ids=[task.id],
@@ -351,7 +351,7 @@ async def test_removed_member_cannot_reuse_assigned_task_url_or_write(
     await db_session.refresh(task)
     member_headers = _bearer(member_token)
     assert (
-        await httpx_client_bound.get(f"/api/v1/tasks/{task.id}", headers=member_headers)
+        await httpx_client.get(f"/api/v1/tasks/{task.id}", headers=member_headers)
     ).status_code == 200
 
     # Member removal is blocked while unfinished work remains, so hand the task
@@ -373,13 +373,13 @@ async def test_removed_member_cannot_reuse_assigned_task_url_or_write(
     )
     await db_session.flush()
     await _apply_annotator_assignment(
-        httpx_client_bound,
+        httpx_client,
         project_id=project.id,
         owner_token=owner_token,
         task_ids=[task.id],
         annotator_id=receiver.id,
     )
-    removed = await httpx_client_bound.delete(
+    removed = await httpx_client.delete(
         f"/api/v1/projects/{project.id}/members/{membership.id}",
         headers=_bearer(owner_token),
     )
@@ -388,9 +388,9 @@ async def test_removed_member_cannot_reuse_assigned_task_url_or_write(
     assert task.assignee_id == receiver.id
 
     assert (
-        await httpx_client_bound.get(f"/api/v1/tasks/{task.id}", headers=member_headers)
+        await httpx_client.get(f"/api/v1/tasks/{task.id}", headers=member_headers)
     ).status_code == 404
-    denied_write = await httpx_client_bound.post(
+    denied_write = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/annotations",
         headers=member_headers,
         json={
@@ -408,7 +408,7 @@ async def test_removed_member_cannot_reuse_assigned_task_url_or_write(
 )
 @pytest.mark.asyncio
 async def test_batch_fallback_controls_lifecycle_ownership(
-    endpoint, status, httpx_client_bound, db_session, super_admin, annotator
+    endpoint, status, httpx_client, db_session, super_admin, annotator
 ):
     owner, _ = super_admin
     member, member_token = annotator
@@ -439,7 +439,7 @@ async def test_batch_fallback_controls_lifecycle_ownership(
     task.status = status
     await db_session.commit()
 
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/{endpoint}", headers=_bearer(member_token)
     )
     assert response.status_code == 200, response.text
@@ -447,7 +447,7 @@ async def test_batch_fallback_controls_lifecycle_ownership(
 
 @pytest.mark.asyncio
 async def test_batch_fallback_prevents_reviewer_from_submitting_for_annotator(
-    httpx_client_bound, db_session, super_admin, annotator, reviewer
+    httpx_client, db_session, super_admin, annotator, reviewer
 ):
     owner, _ = super_admin
     member, member_token = annotator
@@ -487,14 +487,14 @@ async def test_batch_fallback_prevents_reviewer_from_submitting_for_annotator(
     task.status = "in_progress"
     await db_session.commit()
 
-    reviewer_submit = await httpx_client_bound.post(
+    reviewer_submit = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/submit", headers=_bearer(review_token)
     )
     assert reviewer_submit.status_code == 403, reviewer_submit.text
     await db_session.refresh(task)
     assert task.status == "in_progress"
 
-    annotator_submit = await httpx_client_bound.post(
+    annotator_submit = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/submit", headers=_bearer(member_token)
     )
     assert annotator_submit.status_code == 200, annotator_submit.text
@@ -502,7 +502,7 @@ async def test_batch_fallback_prevents_reviewer_from_submitting_for_annotator(
 
 @pytest.mark.asyncio
 async def test_batch_fallback_assignee_can_take_over_task_lock(
-    httpx_client_bound, db_session, super_admin, annotator, reviewer
+    httpx_client, db_session, super_admin, annotator, reviewer
 ):
     owner, _ = super_admin
     member, member_token = annotator
@@ -540,7 +540,7 @@ async def test_batch_fallback_assignee_can_take_over_task_lock(
     )
     await db_session.commit()
 
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/lock", headers=_bearer(member_token)
     )
     assert response.status_code == 200, response.text
@@ -554,7 +554,7 @@ async def test_batch_fallback_assignee_can_take_over_task_lock(
 
 @pytest.mark.asyncio
 async def test_reviewer_assignment_reserves_review_claim_and_can_be_cleared(
-    httpx_client_bound, db_session, super_admin, reviewer
+    httpx_client, db_session, super_admin, reviewer
 ):
     owner, owner_token = super_admin
     first_reviewer, _ = reviewer
@@ -626,7 +626,7 @@ async def test_reviewer_assignment_reserves_review_claim_and_can_be_cleared(
     await db_session.commit()
 
     reserved = await _apply_reviewer_assignment(
-        httpx_client_bound,
+        httpx_client,
         project_id=project.id,
         owner_token=owner_token,
         task_id=task.id,
@@ -637,13 +637,13 @@ async def test_reviewer_assignment_reserves_review_claim_and_can_be_cleared(
     assert reserved_item["effective_before_reviewer_id"] == str(first_reviewer.id)
     assert reserved_item["effective_after_reviewer_id"] == str(reserved_reviewer.id)
 
-    other_claim = await httpx_client_bound.post(
+    other_claim = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/review/claim",
         headers=_bearer(first_token),
     )
     assert other_claim.status_code == 409, other_claim.text
     assert other_claim.json()["detail"]["reason"] == "task_review_assigned_to_other"
-    own_claim = await httpx_client_bound.post(
+    own_claim = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/review/claim",
         headers=_bearer(reserved_token),
     )
@@ -651,7 +651,7 @@ async def test_reviewer_assignment_reserves_review_claim_and_can_be_cleared(
     assert own_claim.json()["reviewer_id"] == str(reserved_reviewer.id)
 
     cleared = await _apply_reviewer_assignment(
-        httpx_client_bound,
+        httpx_client,
         project_id=project.id,
         owner_token=owner_token,
         task_id=task.id,
@@ -659,19 +659,19 @@ async def test_reviewer_assignment_reserves_review_claim_and_can_be_cleared(
     )
     assert cleared["succeeded"] == [str(task.id)]
     assert cleared["items"][0]["effective_after_reviewer_id"] == str(first_reviewer.id)
-    reopened_claim = await httpx_client_bound.post(
+    reopened_claim = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/review/claim",
         headers=_bearer(first_token),
     )
     assert reopened_claim.status_code == 200, reopened_claim.text
     assert reopened_claim.json()["reviewer_id"] == str(first_reviewer.id)
 
-    pool_claim = await httpx_client_bound.post(
+    pool_claim = await httpx_client.post(
         f"/api/v1/tasks/{pool_task.id}/review/claim",
         headers=_bearer(first_token),
     )
     assert pool_claim.status_code == 200, pool_claim.text
-    pending_preview = await httpx_client_bound.post(
+    pending_preview = await httpx_client.post(
         f"/api/v1/projects/{project.id}/data-manager/tasks/assignment-preview",
         headers=_bearer(owner_token),
         json={
@@ -689,7 +689,7 @@ async def test_reviewer_assignment_reserves_review_claim_and_can_be_cleared(
 
 @pytest.mark.asyncio
 async def test_unbatched_reviewer_assignment_is_visible_and_claimable(
-    httpx_client_bound, db_session, super_admin, reviewer
+    httpx_client, db_session, super_admin, reviewer
 ):
     owner, owner_token = super_admin
     other_reviewer, other_token = reviewer
@@ -733,7 +733,7 @@ async def test_unbatched_reviewer_assignment_is_visible_and_claimable(
     await db_session.commit()
 
     assigned = await _apply_reviewer_assignment(
-        httpx_client_bound,
+        httpx_client,
         project_id=project.id,
         owner_token=owner_token,
         task_id=task.id,
@@ -741,7 +741,7 @@ async def test_unbatched_reviewer_assignment_is_visible_and_claimable(
     )
     assert assigned["succeeded"] == [str(task.id)]
 
-    query = await httpx_client_bound.post(
+    query = await httpx_client.post(
         f"/api/v1/projects/{project.id}/tasks/query",
         headers=_bearer(assigned_token),
         json={"filter_json": {}},
@@ -749,12 +749,12 @@ async def test_unbatched_reviewer_assignment_is_visible_and_claimable(
     assert query.status_code == 200, query.text
     assert [item["id"] for item in query.json()["items"]] == [str(task.id)]
     assert (
-        await httpx_client_bound.get(
+        await httpx_client.get(
             f"/api/v1/tasks/{task.id}", headers=_bearer(assigned_token)
         )
     ).status_code == 200
 
-    other_query = await httpx_client_bound.post(
+    other_query = await httpx_client.post(
         f"/api/v1/projects/{project.id}/tasks/query",
         headers=_bearer(other_token),
         json={"filter_json": {}},
@@ -762,17 +762,15 @@ async def test_unbatched_reviewer_assignment_is_visible_and_claimable(
     assert other_query.status_code == 200, other_query.text
     assert other_query.json()["items"] == []
     assert (
-        await httpx_client_bound.get(
-            f"/api/v1/tasks/{task.id}", headers=_bearer(other_token)
-        )
+        await httpx_client.get(f"/api/v1/tasks/{task.id}", headers=_bearer(other_token))
     ).status_code == 404
-    other_claim = await httpx_client_bound.post(
+    other_claim = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/review/claim",
         headers=_bearer(other_token),
     )
     assert other_claim.status_code == 404, other_claim.text
 
-    claim = await httpx_client_bound.post(
+    claim = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/review/claim",
         headers=_bearer(assigned_token),
     )

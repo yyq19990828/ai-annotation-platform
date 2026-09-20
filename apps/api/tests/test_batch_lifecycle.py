@@ -23,6 +23,7 @@ from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.services.display_id import next_display_id
+from tests.factory import build_tool_bindings
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -48,7 +49,7 @@ async def _seed(
         type_label="图像-检测",
         type_key="image-det",
         owner_id=owner_id,
-        classes=["car"],
+        tool_bindings=build_tool_bindings(["car"]),
     )
     db.add(p)
     await db.flush()
@@ -112,7 +113,7 @@ class TestTransitionAuth:
     @pytest.mark.asyncio
     async def test_annotator_cannot_skip_to_approved(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -127,7 +128,7 @@ class TestTransitionAuth:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
             json={"target_status": "approved"},
             headers=_bearer(token),
@@ -138,7 +139,7 @@ class TestTransitionAuth:
     @pytest.mark.asyncio
     async def test_annotator_can_submit_for_review(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -154,7 +155,7 @@ class TestTransitionAuth:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
             json={"target_status": "reviewing"},
             headers=_bearer(token),
@@ -165,7 +166,7 @@ class TestTransitionAuth:
     @pytest.mark.asyncio
     async def test_unassigned_annotator_cannot_submit(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -185,7 +186,7 @@ class TestTransitionAuth:
         batch.assigned_user_ids = []
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
             json={"target_status": "reviewing"},
             headers=_bearer(token),
@@ -195,7 +196,7 @@ class TestTransitionAuth:
     @pytest.mark.asyncio
     async def test_reviewer_can_approve(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         reviewer,
@@ -213,7 +214,7 @@ class TestTransitionAuth:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
             json={"target_status": "approved"},
             headers=_bearer(rev_token),
@@ -224,7 +225,7 @@ class TestTransitionAuth:
     @pytest.mark.asyncio
     async def test_owner_can_archive(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -239,7 +240,7 @@ class TestTransitionAuth:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
             json={"target_status": "archived"},
             headers=_bearer(owner_token),
@@ -250,7 +251,7 @@ class TestTransitionAuth:
     @pytest.mark.asyncio
     async def test_annotator_cannot_archive(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -265,7 +266,7 @@ class TestTransitionAuth:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
             json={"target_status": "archived"},
             headers=_bearer(token),
@@ -280,7 +281,7 @@ class TestRejectBatchSoftReset:
     @pytest.mark.asyncio
     async def test_reject_resets_only_review_completed_to_pending(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -313,7 +314,7 @@ class TestRejectBatchSoftReset:
             )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/reject",
             json={"feedback": "请修正第一张图的边界框"},
             headers=_bearer(owner_token),
@@ -350,7 +351,7 @@ class TestRejectBatchSoftReset:
     @pytest.mark.asyncio
     async def test_reject_creates_notification_for_assigned(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -365,7 +366,7 @@ class TestRejectBatchSoftReset:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/reject",
             json={"feedback": "需要重做"},
             headers=_bearer(owner_token),
@@ -392,7 +393,7 @@ class TestRejectBatchSoftReset:
     @pytest.mark.asyncio
     async def test_reject_requires_feedback(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -407,7 +408,7 @@ class TestRejectBatchSoftReset:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/reject",
             json={"feedback": ""},
             headers=_bearer(owner_token),
@@ -417,7 +418,7 @@ class TestRejectBatchSoftReset:
     @pytest.mark.asyncio
     async def test_annotator_cannot_reject(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -432,7 +433,7 @@ class TestRejectBatchSoftReset:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/reject",
             json={"feedback": "xxx"},
             headers=_bearer(token),
@@ -448,7 +449,7 @@ class TestEmptyBatchActivation:
     @pytest.mark.asyncio
     async def test_empty_batch_cannot_activate(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -464,7 +465,7 @@ class TestEmptyBatchActivation:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
             json={"target_status": "active"},
             headers=_bearer(owner_token),
@@ -475,7 +476,7 @@ class TestEmptyBatchActivation:
     @pytest.mark.asyncio
     async def test_non_empty_batch_can_activate(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -491,7 +492,7 @@ class TestEmptyBatchActivation:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
             json={"target_status": "active"},
             headers=_bearer(owner_token),
@@ -507,7 +508,7 @@ class TestWithdrawCascade:
     @pytest.mark.asyncio
     async def test_reviewing_drops_back_to_annotating_after_withdraw(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -560,7 +561,7 @@ class TestReviewerVisibility:
     @pytest.mark.asyncio
     async def test_reviewer_sees_reviewing_batch_tasks(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         reviewer,
@@ -580,7 +581,7 @@ class TestReviewerVisibility:
         batch.assigned_user_ids = [str(uuid.uuid4())]  # 别人
         await db_session.commit()
 
-        resp = await httpx_client_bound.get(
+        resp = await httpx_client.get(
             f"/api/v1/tasks?project_id={p.id}&status=review&limit=200",
             headers=_bearer(rev_token),
         )
@@ -591,7 +592,7 @@ class TestReviewerVisibility:
     @pytest.mark.asyncio
     async def test_annotator_sees_rejected_batch_when_assigned(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -609,7 +610,7 @@ class TestReviewerVisibility:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.get(
+        resp = await httpx_client.get(
             f"/api/v1/tasks?project_id={p.id}&limit=200",
             headers=_bearer(token),
         )
@@ -620,7 +621,7 @@ class TestReviewerVisibility:
     @pytest.mark.asyncio
     async def test_unassigned_annotator_cannot_see_rejected(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -639,7 +640,7 @@ class TestReviewerVisibility:
         batch.assigned_user_ids = []
         await db_session.commit()
 
-        resp = await httpx_client_bound.get(
+        resp = await httpx_client.get(
             f"/api/v1/tasks?project_id={p.id}&limit=200",
             headers=_bearer(token),
         )
@@ -655,7 +656,7 @@ class TestReverseTransitions:
     @pytest.mark.asyncio
     async def test_owner_can_unarchive(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -670,7 +671,7 @@ class TestReverseTransitions:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
             json={"target_status": "active", "reason": "误归档恢复"},
             headers=_bearer(owner_token),
@@ -700,7 +701,7 @@ class TestReverseTransitions:
     @pytest.mark.asyncio
     async def test_reverse_requires_reason(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -715,7 +716,7 @@ class TestReverseTransitions:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
             json={"target_status": "active"},  # 缺 reason
             headers=_bearer(owner_token),
@@ -726,7 +727,7 @@ class TestReverseTransitions:
     @pytest.mark.asyncio
     async def test_owner_can_reopen_approved_clears_metadata(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -747,7 +748,7 @@ class TestReverseTransitions:
         batch.reviewed_by = owner.id
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
             json={"target_status": "reviewing", "reason": "漏审重开"},
             headers=_bearer(owner_token),
@@ -762,7 +763,7 @@ class TestReverseTransitions:
     @pytest.mark.asyncio
     async def test_owner_can_reopen_rejected_keeps_feedback(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -783,7 +784,7 @@ class TestReverseTransitions:
         batch.reviewed_by = owner.id
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
             json={"target_status": "reviewing", "reason": "标注员申诉，直接复审"},
             headers=_bearer(owner_token),
@@ -797,7 +798,7 @@ class TestReverseTransitions:
     @pytest.mark.asyncio
     async def test_non_owner_cannot_reverse(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -812,7 +813,7 @@ class TestReverseTransitions:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/transition",
             json={"target_status": "active", "reason": "test"},
             headers=_bearer(token),
@@ -840,7 +841,7 @@ async def _seed_multi(
         type_label="图像-检测",
         type_key="image-det",
         owner_id=owner_id,
-        classes=["car"],
+        tool_bindings=build_tool_bindings(["car"]),
     )
     db.add(p)
     await db.flush()
@@ -894,7 +895,7 @@ class TestBulkOperations:
     @pytest.mark.asyncio
     async def test_bulk_archive_succeeds(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -909,7 +910,7 @@ class TestBulkOperations:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/bulk-archive",
             json={"batch_ids": [str(b.id) for b in batches]},
             headers=_bearer(owner_token),
@@ -923,7 +924,7 @@ class TestBulkOperations:
     @pytest.mark.asyncio
     async def test_bulk_activate_partial_success(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -946,7 +947,7 @@ class TestBulkOperations:
         await db_session.execute(delete(Task).where(Task.batch_id == batches[2].id))
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/bulk-activate",
             json={"batch_ids": [str(b.id) for b in batches]},
             headers=_bearer(owner_token),
@@ -963,7 +964,7 @@ class TestBulkOperations:
     @pytest.mark.asyncio
     async def test_bulk_reassign_atomic(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -990,7 +991,7 @@ class TestBulkOperations:
         await db_session.commit()
 
         # 把 reviewer_id 改派为 rev（annotator_id 不变）
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/bulk-reassign",
             json={
                 "batch_ids": [str(b.id) for b in batches],
@@ -1017,7 +1018,7 @@ class TestBulkOperations:
     @pytest.mark.asyncio
     async def test_non_owner_cannot_bulk(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -1032,7 +1033,7 @@ class TestBulkOperations:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/bulk-archive",
             json={"batch_ids": [str(batches[0].id)]},
             headers=_bearer(token),
@@ -1047,7 +1048,7 @@ class TestBatchAuditLogs:
     @pytest.mark.asyncio
     async def test_returns_direct_and_bulk_events(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -1063,19 +1064,19 @@ class TestBatchAuditLogs:
         await db_session.commit()
 
         # 先做一次 bulk-archive（含 batches[0] 和 batches[1]）
-        await httpx_client_bound.post(
+        await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/bulk-archive",
             json={"batch_ids": [str(b.id) for b in batches]},
             headers=_bearer(owner_token),
         )
         # 再单独 unarchive batches[0] 走逆向迁移
-        await httpx_client_bound.post(
+        await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batches[0].id}/transition",
             json={"target_status": "active", "reason": "撤回"},
             headers=_bearer(owner_token),
         )
 
-        resp = await httpx_client_bound.get(
+        resp = await httpx_client.get(
             f"/api/v1/projects/{p.id}/batches/{batches[0].id}/audit-logs",
             headers=_bearer(owner_token),
         )
@@ -1092,7 +1093,7 @@ class TestBatchAuditLogs:
 class TestAdminLock:
     @pytest.mark.asyncio
     async def test_owner_can_lock_batch(
-        self, httpx_client_bound, db_session, super_admin, annotator
+        self, httpx_client, db_session, super_admin, annotator
     ):
         owner, owner_token = super_admin
         user, _ = annotator
@@ -1101,7 +1102,7 @@ class TestAdminLock:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/admin-lock",
             json={"reason": "质量问题暂停"},
             headers=_bearer(owner_token),
@@ -1115,7 +1116,7 @@ class TestAdminLock:
 
     @pytest.mark.asyncio
     async def test_owner_can_unlock_batch(
-        self, httpx_client_bound, db_session, super_admin, annotator
+        self, httpx_client, db_session, super_admin, annotator
     ):
         owner, owner_token = super_admin
         user, _ = annotator
@@ -1126,7 +1127,7 @@ class TestAdminLock:
         batch.admin_lock_reason = "test"
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/admin-unlock",
             headers=_bearer(owner_token),
         )
@@ -1139,7 +1140,7 @@ class TestAdminLock:
 
     @pytest.mark.asyncio
     async def test_non_owner_cannot_lock(
-        self, httpx_client_bound, db_session, super_admin, annotator
+        self, httpx_client, db_session, super_admin, annotator
     ):
         owner, _ = super_admin
         user, token = annotator
@@ -1148,7 +1149,7 @@ class TestAdminLock:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/admin-lock",
             json={"reason": "尝试锁"},
             headers=_bearer(token),
@@ -1157,7 +1158,7 @@ class TestAdminLock:
 
     @pytest.mark.asyncio
     async def test_repeated_lock_returns_409(
-        self, httpx_client_bound, db_session, super_admin, annotator
+        self, httpx_client, db_session, super_admin, annotator
     ):
         owner, owner_token = super_admin
         user, _ = annotator
@@ -1168,7 +1169,7 @@ class TestAdminLock:
         batch.admin_lock_reason = "already"
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/admin-lock",
             json={"reason": "再锁"},
             headers=_bearer(owner_token),
@@ -1177,7 +1178,7 @@ class TestAdminLock:
 
     @pytest.mark.asyncio
     async def test_repeated_unlock_returns_409(
-        self, httpx_client_bound, db_session, super_admin, annotator
+        self, httpx_client, db_session, super_admin, annotator
     ):
         owner, owner_token = super_admin
         user, _ = annotator
@@ -1186,7 +1187,7 @@ class TestAdminLock:
         )
         await db_session.commit()  # admin_locked defaults to False
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/admin-unlock",
             headers=_bearer(owner_token),
         )
@@ -1194,14 +1195,14 @@ class TestAdminLock:
 
     @pytest.mark.asyncio
     async def test_lock_creates_audit_log(
-        self, httpx_client_bound, db_session, super_admin, annotator
+        self, httpx_client, db_session, super_admin, annotator
     ):
         owner, owner_token = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(db_session, owner.id, user.id, batch_status="active")
         await db_session.commit()
 
-        await httpx_client_bound.post(
+        await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/admin-lock",
             json={"reason": "审计测试"},
             headers=_bearer(owner_token),
@@ -1225,7 +1226,7 @@ class TestAdminLock:
 
     @pytest.mark.asyncio
     async def test_lock_sends_notification_to_annotator(
-        self, httpx_client_bound, db_session, super_admin, annotator
+        self, httpx_client, db_session, super_admin, annotator
     ):
         owner, owner_token = super_admin
         user, _ = annotator
@@ -1234,7 +1235,7 @@ class TestAdminLock:
         )
         await db_session.commit()
 
-        await httpx_client_bound.post(
+        await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/admin-lock",
             json={"reason": "通知测试"},
             headers=_bearer(owner_token),
@@ -1306,14 +1307,14 @@ class TestAdminLock:
 
     @pytest.mark.asyncio
     async def test_batch_out_includes_lock_fields(
-        self, httpx_client_bound, db_session, super_admin, annotator
+        self, httpx_client, db_session, super_admin, annotator
     ):
         owner, owner_token = super_admin
         user, _ = annotator
         p, batch, _ = await _seed(db_session, owner.id, user.id, batch_status="active")
         await db_session.commit()
 
-        resp = await httpx_client_bound.get(
+        resp = await httpx_client.get(
             f"/api/v1/projects/{p.id}/batches/{batch.id}",
             headers=_bearer(owner_token),
         )
@@ -1330,7 +1331,7 @@ class TestAdminLock:
 class TestBulkApproveReject:
     @pytest.mark.asyncio
     async def test_bulk_approve_reviewing_batches(
-        self, httpx_client_bound, db_session, super_admin, annotator
+        self, httpx_client, db_session, super_admin, annotator
     ):
         owner, owner_token = super_admin
         user, _ = annotator
@@ -1343,7 +1344,7 @@ class TestBulkApproveReject:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/bulk-approve",
             json={"batch_ids": [str(b.id) for b in batches]},
             headers=_bearer(owner_token),
@@ -1356,7 +1357,7 @@ class TestBulkApproveReject:
 
     @pytest.mark.asyncio
     async def test_bulk_approve_skips_already_approved(
-        self, httpx_client_bound, db_session, super_admin, annotator
+        self, httpx_client, db_session, super_admin, annotator
     ):
         owner, owner_token = super_admin
         user, _ = annotator
@@ -1369,7 +1370,7 @@ class TestBulkApproveReject:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/bulk-approve",
             json={"batch_ids": [str(b.id) for b in batches]},
             headers=_bearer(owner_token),
@@ -1383,7 +1384,7 @@ class TestBulkApproveReject:
 
     @pytest.mark.asyncio
     async def test_bulk_approve_fails_non_reviewing(
-        self, httpx_client_bound, db_session, super_admin, annotator
+        self, httpx_client, db_session, super_admin, annotator
     ):
         owner, owner_token = super_admin
         user, _ = annotator
@@ -1396,7 +1397,7 @@ class TestBulkApproveReject:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/bulk-approve",
             json={"batch_ids": [str(b.id) for b in batches]},
             headers=_bearer(owner_token),
@@ -1409,7 +1410,7 @@ class TestBulkApproveReject:
 
     @pytest.mark.asyncio
     async def test_bulk_reject_with_feedback_resets_tasks(
-        self, httpx_client_bound, db_session, super_admin, annotator
+        self, httpx_client, db_session, super_admin, annotator
     ):
         owner, owner_token = super_admin
         user, _ = annotator
@@ -1430,7 +1431,7 @@ class TestBulkApproveReject:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/bulk-reject",
             json={
                 "batch_ids": [str(b.id) for b in batches],
@@ -1463,7 +1464,7 @@ class TestBulkApproveReject:
 
     @pytest.mark.asyncio
     async def test_bulk_reject_sends_notification_to_annotator(
-        self, httpx_client_bound, db_session, super_admin, annotator
+        self, httpx_client, db_session, super_admin, annotator
     ):
         owner, owner_token = super_admin
         user, _ = annotator
@@ -1476,7 +1477,7 @@ class TestBulkApproveReject:
         )
         await db_session.commit()
 
-        await httpx_client_bound.post(
+        await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/bulk-reject",
             json={
                 "batch_ids": [str(batches[0].id)],
@@ -1502,7 +1503,7 @@ class TestBulkApproveReject:
 
     @pytest.mark.asyncio
     async def test_annotator_cannot_bulk_approve(
-        self, httpx_client_bound, db_session, super_admin, annotator
+        self, httpx_client, db_session, super_admin, annotator
     ):
         owner, _ = super_admin
         user, token = annotator
@@ -1515,7 +1516,7 @@ class TestBulkApproveReject:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/bulk-approve",
             json={"batch_ids": [str(batches[0].id)]},
             headers=_bearer(token),
@@ -1524,7 +1525,7 @@ class TestBulkApproveReject:
 
     @pytest.mark.asyncio
     async def test_reviewer_can_bulk_approve(
-        self, httpx_client_bound, db_session, super_admin, annotator, reviewer
+        self, httpx_client, db_session, super_admin, annotator, reviewer
     ):
         owner, _ = super_admin
         user, _ = annotator
@@ -1543,7 +1544,7 @@ class TestBulkApproveReject:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/bulk-approve",
             json={"batch_ids": [str(batches[0].id)]},
             headers=_bearer(rev_token),
@@ -1554,7 +1555,7 @@ class TestBulkApproveReject:
 
     @pytest.mark.asyncio
     async def test_bulk_approve_creates_audit_log(
-        self, httpx_client_bound, db_session, super_admin, annotator
+        self, httpx_client, db_session, super_admin, annotator
     ):
         owner, owner_token = super_admin
         user, _ = annotator
@@ -1567,7 +1568,7 @@ class TestBulkApproveReject:
         )
         await db_session.commit()
 
-        await httpx_client_bound.post(
+        await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/bulk-approve",
             json={"batch_ids": [str(batches[0].id)]},
             headers=_bearer(owner_token),
@@ -1596,7 +1597,7 @@ class TestBatchSubmitReview:
     @pytest.mark.asyncio
     async def test_assigned_annotator_submits_all_pending(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -1615,7 +1616,7 @@ class TestBatchSubmitReview:
         tasks[0].status = "in_progress"
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/submit-review",
             headers=_bearer(token),
         )
@@ -1634,7 +1635,7 @@ class TestBatchSubmitReview:
     @pytest.mark.asyncio
     async def test_rejected_tasks_are_skipped(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -1654,7 +1655,7 @@ class TestBatchSubmitReview:
         tasks[1].status = "rejected"
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/submit-review",
             headers=_bearer(token),
         )
@@ -1674,7 +1675,7 @@ class TestBatchSubmitReview:
     @pytest.mark.asyncio
     async def test_unassigned_annotator_cannot_submit_batch(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -1693,7 +1694,7 @@ class TestBatchSubmitReview:
         batch.assigned_user_ids = []
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/submit-review",
             headers=_bearer(token),
         )
@@ -1702,7 +1703,7 @@ class TestBatchSubmitReview:
     @pytest.mark.asyncio
     async def test_rejects_batch_in_incompatible_status(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -1720,7 +1721,7 @@ class TestBatchSubmitReview:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/submit-review",
             headers=_bearer(owner_token),
         )
@@ -1732,7 +1733,7 @@ class TestBatchSubmitReview:
     @pytest.mark.asyncio
     async def test_owner_submission_preserves_effective_assignee(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -1752,7 +1753,7 @@ class TestBatchSubmitReview:
             assert t.assignee_id is None
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/submit-review",
             headers=_bearer(owner_token),
         )
@@ -1766,7 +1767,7 @@ class TestBatchSubmitReview:
     @pytest.mark.asyncio
     async def test_owner_can_submit_partial_reviewing_batch(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -1786,7 +1787,7 @@ class TestBatchSubmitReview:
         batch.review_tasks = 1
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/submit-review",
             headers=_bearer(owner_token),
         )
@@ -1804,7 +1805,7 @@ class TestRejectPartialBatch:
     @pytest.mark.asyncio
     async def test_owner_can_reject_annotating_batch(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         annotator,
@@ -1832,7 +1833,7 @@ class TestRejectPartialBatch:
         batch.completed_tasks = 1
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/reject",
             json={"feedback": "整批打回重做"},
             headers=_bearer(owner_token),
@@ -1847,7 +1848,7 @@ class TestRejectPartialBatch:
     @pytest.mark.asyncio
     async def test_reviewer_can_reject_annotating_batch(
         self,
-        httpx_client_bound,
+        httpx_client,
         db_session,
         super_admin,
         reviewer,
@@ -1876,7 +1877,7 @@ class TestRejectPartialBatch:
         )
         await db_session.commit()
 
-        resp = await httpx_client_bound.post(
+        resp = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/reject",
             json={"feedback": "请修正后重新送审"},
             headers=_bearer(rev_token),

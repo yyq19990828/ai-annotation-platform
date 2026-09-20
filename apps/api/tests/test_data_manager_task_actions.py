@@ -163,7 +163,7 @@ async def test_assignment_preview_becomes_stale_after_task_state_changes(
 
 
 async def test_assignment_route_rejects_non_owner_and_skips_owner_edit_lock(
-    httpx_client_bound, db_session, super_admin, annotator
+    httpx_client, db_session, super_admin, annotator
 ):
     owner, owner_token = super_admin
     member, member_token = annotator
@@ -191,11 +191,11 @@ async def test_assignment_route_rejects_non_owner_and_skips_owner_edit_lock(
     await db_session.commit()
     endpoint = f"/api/v1/projects/{project.id}/data-manager/tasks/assignment-preview"
     payload = {"task_ids": [str(task.id)], "annotator_id": str(member.id)}
-    denied = await httpx_client_bound.post(
+    denied = await httpx_client.post(
         endpoint, headers={"Authorization": f"Bearer {member_token}"}, json=payload
     )
     assert denied.status_code == 403
-    preview = await httpx_client_bound.post(
+    preview = await httpx_client.post(
         endpoint, headers={"Authorization": f"Bearer {owner_token}"}, json=payload
     )
     assert preview.status_code == 200, preview.text
@@ -204,7 +204,7 @@ async def test_assignment_route_rejects_non_owner_and_skips_owner_edit_lock(
 
 
 async def test_export_keeps_exact_task_scope_in_job_worker_and_artifact(
-    httpx_client_bound, db_session, super_admin, monkeypatch
+    httpx_client, db_session, super_admin, monkeypatch
 ):
     from app.api.v1 import data_manager
     from app.services.exporting.service import ExportService
@@ -229,7 +229,7 @@ async def test_export_keeps_exact_task_scope_in_job_worker_and_artifact(
         "Idempotency-Key": f"export-{uuid.uuid4()}",
     }
     body = {"task_ids": [str(selected.id)], "targets": ["aap_json"]}
-    first = await httpx_client_bound.post(endpoint, headers=headers, json=body)
+    first = await httpx_client.post(endpoint, headers=headers, json=body)
     assert first.status_code == 202, first.text
     job_id = uuid.UUID(first.json()["job_id"])
     job = await db_session.get(AsyncJob, job_id)
@@ -239,15 +239,15 @@ async def test_export_keeps_exact_task_scope_in_job_worker_and_artifact(
 
     # Pending publication can be retried using the same durable job; a running
     # job must not be dispatched again, and a changed request conflicts.
-    retried = await httpx_client_bound.post(endpoint, headers=headers, json=body)
+    retried = await httpx_client.post(endpoint, headers=headers, json=body)
     assert retried.json()["job_id"] == str(job_id)
     assert dispatch.call_count == 2
     job.status = "running"
     await db_session.commit()
-    running = await httpx_client_bound.post(endpoint, headers=headers, json=body)
+    running = await httpx_client.post(endpoint, headers=headers, json=body)
     assert running.json()["job_id"] == str(job_id)
     assert dispatch.call_count == 2
-    conflict = await httpx_client_bound.post(
+    conflict = await httpx_client.post(
         endpoint, headers=headers, json={**body, "task_ids": [str(sibling.id)]}
     )
     assert conflict.status_code == 409
@@ -270,7 +270,7 @@ async def test_export_keeps_exact_task_scope_in_job_worker_and_artifact(
 
 
 async def test_export_rejects_foreign_tasks_empty_selection_and_partial_scene_format(
-    httpx_client_bound, db_session, super_admin, monkeypatch
+    httpx_client, db_session, super_admin, monkeypatch
 ):
     from app.api.v1 import data_manager
 
@@ -304,6 +304,6 @@ async def test_export_rejects_foreign_tasks_empty_selection_and_partial_scene_fo
             422,
         ),
     ]:
-        response = await httpx_client_bound.post(endpoint, headers=headers, json=body)
+        response = await httpx_client.post(endpoint, headers=headers, json=body)
         assert response.status_code == status, response.text
     dispatch.assert_not_called()

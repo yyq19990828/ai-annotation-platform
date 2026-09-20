@@ -154,7 +154,7 @@ async def test_selected_assignments_survive_batch_reassignment(
 
 @pytest.mark.parametrize("transition", ["submit", "skip", "reopen"])
 async def test_new_review_round_releases_previous_reviewer_override(
-    httpx_client_bound, db_session, super_admin, annotator, reviewer, transition
+    httpx_client, db_session, super_admin, annotator, reviewer, transition
 ):
     owner, _ = super_admin
     actor, actor_token = annotator
@@ -214,7 +214,7 @@ async def test_new_review_round_releases_previous_reviewer_override(
     # assignment intent produced by the real selected-task operation.
     task.status = "completed" if transition == "reopen" else "in_progress"
     await db_session.flush()
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/{transition}",
         headers={"Authorization": f"Bearer {actor_token}"},
         **({"json": {"reason": "no_target"}} if transition == "skip" else {}),
@@ -223,12 +223,12 @@ async def test_new_review_round_releases_previous_reviewer_override(
     await db_session.refresh(task)
     assert task.reviewer_is_override is False
     if transition == "reopen":
-        response = await httpx_client_bound.post(
+        response = await httpx_client.post(
             f"/api/v1/tasks/{task.id}/submit",
             headers={"Authorization": f"Bearer {actor_token}"},
         )
         assert response.status_code == 200, response.text
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/review/claim",
         headers={"Authorization": f"Bearer {reviewer_token}"},
     )

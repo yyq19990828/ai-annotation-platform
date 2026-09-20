@@ -67,7 +67,6 @@ async def _seed_project_with_tasks(
         owner_id=owner_id,
         status="in_progress",
         raster_mask_native_editing_enabled=True,
-        classes=["car", "truck"],
         tool_bindings={
             "bbox": {
                 "enabled": True,
@@ -865,7 +864,7 @@ async def test_import_aap_json_video_prediction_requires_video_context(
 
 
 async def test_prediction_video_mask_content_is_task_scoped_and_frame_resolved(
-    httpx_client_bound: httpx.AsyncClient,
+    httpx_client: httpx.AsyncClient,
     super_admin,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
@@ -904,15 +903,15 @@ async def test_prediction_video_mask_content_is_task_scoped_and_frame_resolved(
     await db_session.commit()
     headers = {"Authorization": f"Bearer {token}"}
 
-    visible = await httpx_client_bound.get(
+    visible = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/predictions/{prediction.id}/mask-content/0/5",
         headers=headers,
     )
-    outside = await httpx_client_bound.get(
+    outside = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/predictions/{prediction.id}/mask-content/0/8",
         headers=headers,
     )
-    wrong_task = await httpx_client_bound.get(
+    wrong_task = await httpx_client.get(
         f"/api/v1/tasks/{uuid.uuid4()}/predictions/{prediction.id}/mask-content/0/5",
         headers=headers,
     )
