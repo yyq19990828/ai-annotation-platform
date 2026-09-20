@@ -337,8 +337,25 @@ repo-scripts 4 / screenshots-tooling 12 / worktree-runtime 8；
 
 - **接受提交（当前验收根 `e91ac8dfd`）**：P0–P8 全部接受；P8 修正在 root `6c47d68de`（CI 选择/报告 [36]、CPU 接线 [37]、核心 smoke [38]、迁移真实验证 [39]）；P10 验证通道 [40]（后端/SDK/ML 契约，`7efcb27a0`/`f90dea73e`）、[41]（前端 coverage/build/docs，`6fb6b13e6`/`b8897df28`）、[42]（渲染器资格，`5e2ad830e`/`ac2eae8d8`/`e91ac8dfd`）；点云/lidar 消费者回归修复 `d807b3482`/`e41e4973c`/`112df2009`（[44]）。
 - **阶段状态**：P0–P8 **完成**；P9 **进行中**（由他处 lane 拥有 `docs/research/43`、`docs-site/dev/testing.md` 与 CI 门禁）；P10 **未开始（pending）**，仅产出草稿证据矩阵 [45]。
-- **清单 delta（确定性发现，本文件在 `e91ac8dfd` 复核）**：发现 **1134 可执行测试 + 4 测试支撑 = 1138**；§10/TSV 记录 1136（1132 + 4）。差异为 P8 新增的 `scripts/audit-e2e-requirements.test.mjs`、`scripts/summarize-e2e-results.test.mjs` 两行尚未回填，且 `status` 列为 P6 静态口径。TSV 不在本轮 ownership；回填属 P10 终验（明细见 [45§5]）。
+- **清单（已收口）**：TSV 已按确定性发现回填至 **1138 行 = 1134 可执行 + 4 测试支撑**；`git ls-files` 发现集与 TSV 路径双向比对 **0 缺口**；状态 **ci-wired 1123 / script-wired 15 / not-wired 0**。方法与接线依据见 §12。
 - **结构收敛（`9cec9751a`→`e91ac8dfd`，`git show`）**：`useWorkbenchShellModel.tsx` 8919→6646；`…helpers.ts` 480→306；`signals.py` 225→121；`ProjectDataManagerPage.flow.test.tsx` 946→401；`vite.config.ts` 163→141；`conftest.py` 311→317。
 - **覆盖率口径**：阈值 `45/45/45/70` **未变**；前端实测 72.28/79.33/66.92/72.28（[41]），后端 line 73.61 / branch 55.33（[40]）；不存在为绿灯调低阈值。
 - **版本叙事**：计划 §7.1 指定文件命中由 36 → 0（本文件在 `e91ac8dfd` 复核 `git grep`）。
-- **未决**：P9 影子对比与门禁切换、候选远程 CI、P10 终验复跑与最终 docs 构建；见 [45§5]。
+- **未决**：P9 影子对比与门禁切换（他处进行中）、P10 终验（按复用规则，仅复跑实际变更/未验证的行为）、P9 的 `43` 就绪后的最终 docs 构建；见 [45§5]。
+
+## 12. 测试清单收口（P8 接线后的最终状态，2026-09-20）
+
+> P8（root `6c47d68de`）接线后，机器可读清单的 2 个新增文件与先前的 90 个 `not-wired` 全部落实；本节记录回填方法与最终计数，供 P10 复用。本节在 `e91ac8dfd` 上执行，只读。
+
+- **发现谓词（只读、确定性）**：`git ls-files` 全量 ∩ 文件名匹配 `*.test.ts(x)` / `*.spec.ts(x)` / `*.test.mjs` / `test_*.py` / `test-*.py`；显式排除路径片段 `/vendor/`、`/fixtures/`、`/generated/`、`node_modules`、`/checkpoints/`、`/_fixtures/` 与文件名 `conftest.py`、`__init__.py`。在 `e91ac8dfd` 上得到 **1134 个可执行测试文件**。
+- **双向比对**：`git ls-files` 发现集 ↔ TSV 可执行行（`path` 列）逐行比对，**两侧各 0 缺口**（不多、不少）；1134 可执行 + 4 支撑 = 1138 行。
+- **新增 2 行（P8）**：`scripts/audit-e2e-requirements.test.mjs`（必需套件审计 fail-closed 8 例）与 `scripts/summarize-e2e-results.test.mjs`（结果分类 11 例），均登记为 repo-scripts / `ci-wired`（`ci.yml` “Repository Node script tests” 的 `node --test` 列表）。
+- **接线状态更正（依据 `.github/workflows/ci.yml` 与 `ml-cpu-test.yml`）**：
+  - 原 `not-wired` 的 89 个 ML/共享/根脚本测试 = 88 个 ML/共享测试文件（`apps/_shared/backend_runtime` 9、`protocol_v2` 4、`mask_utils` 5，以及 5 个 ML backend 19+20+16+7+8=70）+ `scripts/image-reference-utils.test.mjs`。前 88 个由 `ci.yml` 的 `ML CPU contract tests` job 调用可复用 `ml-cpu-test.yml`（`suites: "all"`）执行；`runner` 列按目录映射到 8 个 suite（`shared-backend-runtime` / `shared-protocol-v2` / `shared-mask-utils` / `grounded-sam2` / `sam3` / `yolo` / `rapidocr` / `onnxtools`），状态置 `ci-wired`。
+  - `scripts/image-reference-utils.test.mjs` 接入 `ci.yml` “Repository Node script tests” → `ci-wired`。
+  - `scripts/test_alembic_migration_policy.py` 由 `ci.yml` “Migration policy pure tests”（`uv run python ../../scripts/test_alembic_migration_policy.py`）运行 → `ci-wired`。
+  - 4 个 `apps/api/tests` 测试支撑模块维持 `test-support` / `ci-wired`（随后端 pytest job）；不声称它们是可执行测试，发现侧仍显式排除。
+- **最终分层计数（可加和）**：backend-api 360 / frontend-unit 558 / repo-scripts 7 / test-support 4 / docs-tooling 2 / e2e-browser 67 / frontend-tooling 5 / mask-utils-shared 5 / ml-backend 70 / ml-backend-shared 13 / ml-examples 2 / python-sdk 25 / screenshots-tooling 12 / worktree-runtime 8 = **1138**。
+- **接线状态（静态读取）**：**ci-wired 1123 / script-wired 15 / not-wired 0**。
+- **边界**：`ci-wired` 仍为**静态接线**判定（workflow/命令引用），不是执行证据；各 suite 的实际本地执行证据见 [34]/[37]/[40]，远程 CI 未运行（无 push，如实记录）。
+- **决定/理由保留**：既有行的 `decision`（KEEP）与 `reason`（`pending-review` 或具名证据）均未改动；新增行给出具名 P8 理由。

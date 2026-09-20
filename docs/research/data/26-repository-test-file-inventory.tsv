@@ -1,17 +1,17 @@
 path	layer	runner	dependency	decision	reason	replacement	status
-apps/_shared/backend_runtime/tests/test_config.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review		not-wired
-apps/_shared/backend_runtime/tests/test_device.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review		not-wired
-apps/_shared/backend_runtime/tests/test_gpu.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review		not-wired
-apps/_shared/backend_runtime/tests/test_image.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review		not-wired
-apps/_shared/backend_runtime/tests/test_lifecycle_evidence.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review		not-wired
-apps/_shared/backend_runtime/tests/test_lifecycle_validation.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review		not-wired
-apps/_shared/backend_runtime/tests/test_tracker_sessions.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review		not-wired
-apps/_shared/backend_runtime/tests/test_versions.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review		not-wired
-apps/_shared/mask_utils/tests/test_multi_polygon.py	mask-utils-shared	pytest (local)	none (numpy/opencv)	KEEP	pending-review		not-wired
-apps/_shared/mask_utils/tests/test_polygon.py	mask-utils-shared	pytest (local)	none (numpy/opencv)	KEEP	pending-review		not-wired
-apps/_shared/mask_utils/tests/test_preview_polygon.py	mask-utils-shared	pytest (local)	none (numpy/opencv)	KEEP	pending-review		not-wired
-apps/_shared/mask_utils/tests/test_prompt_adapters.py	mask-utils-shared	pytest (local)	none (numpy/opencv)	KEEP	pending-review		not-wired
-apps/_shared/mask_utils/tests/test_rle.py	mask-utils-shared	pytest (local)	none (numpy/opencv)	KEEP	pending-review		not-wired
+apps/_shared/backend_runtime/tests/test_config.py	ml-backend-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-backend-runtime	none/optional model runtime	KEEP	pending-review		ci-wired
+apps/_shared/backend_runtime/tests/test_device.py	ml-backend-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-backend-runtime	none/optional model runtime	KEEP	pending-review		ci-wired
+apps/_shared/backend_runtime/tests/test_gpu.py	ml-backend-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-backend-runtime	none/optional model runtime	KEEP	pending-review		ci-wired
+apps/_shared/backend_runtime/tests/test_image.py	ml-backend-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-backend-runtime	none/optional model runtime	KEEP	pending-review		ci-wired
+apps/_shared/backend_runtime/tests/test_lifecycle_evidence.py	ml-backend-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-backend-runtime	none/optional model runtime	KEEP	pending-review		ci-wired
+apps/_shared/backend_runtime/tests/test_lifecycle_validation.py	ml-backend-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-backend-runtime	none/optional model runtime	KEEP	pending-review		ci-wired
+apps/_shared/backend_runtime/tests/test_tracker_sessions.py	ml-backend-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-backend-runtime	none/optional model runtime	KEEP	pending-review		ci-wired
+apps/_shared/backend_runtime/tests/test_versions.py	ml-backend-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-backend-runtime	none/optional model runtime	KEEP	pending-review		ci-wired
+apps/_shared/mask_utils/tests/test_multi_polygon.py	mask-utils-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-mask-utils	none (numpy/opencv)	KEEP	pending-review		ci-wired
+apps/_shared/mask_utils/tests/test_polygon.py	mask-utils-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-mask-utils	none (numpy/opencv)	KEEP	pending-review		ci-wired
+apps/_shared/mask_utils/tests/test_preview_polygon.py	mask-utils-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-mask-utils	none (numpy/opencv)	KEEP	pending-review		ci-wired
+apps/_shared/mask_utils/tests/test_prompt_adapters.py	mask-utils-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-mask-utils	none (numpy/opencv)	KEEP	pending-review		ci-wired
+apps/_shared/mask_utils/tests/test_rle.py	mask-utils-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-mask-utils	none (numpy/opencv)	KEEP	pending-review		ci-wired
 apps/api/tests/__init__.py	test-support	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	test-support module（P0 登记；非可执行测试，发现侧显式排除）		ci-wired
 apps/api/tests/_avatar_storage.py	test-support	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	test-support module（P0 登记；非可执行测试，发现侧显式排除）		ci-wired
 apps/api/tests/conftest.py	test-support	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	test-support module（P0 登记；非可执行测试，发现侧显式排除）		ci-wired
@@ -1032,10 +1032,10 @@ packages/python-sdk/tests/test_service_pools.py	python-sdk	pytest packages/pytho
 packages/python-sdk/tests/test_tasks.py	python-sdk	pytest packages/python-sdk (uv --extra test)	none (mock transports)	KEEP	pending-review		ci-wired
 packages/python-sdk/tests/test_tui_app.py	python-sdk	pytest packages/python-sdk (uv --extra test)	none (mock transports)	KEEP	pending-review		ci-wired
 packages/python-sdk/tests/test_tui_states.py	python-sdk	pytest packages/python-sdk (uv --extra test)	none (mock transports)	KEEP	pending-review		ci-wired
-scripts/check-workflow-names.test.mjs	repo-scripts	node --test scripts/<name> (manual if not in CI list)	none	KEEP	pending-review		ci-wired
-scripts/dev-worktree.test.mjs	repo-scripts	node --test scripts/<name> (manual if not in CI list)	none	KEEP	pending-review		ci-wired
-scripts/image-reference-utils.test.mjs	repo-scripts	node --test scripts/<name> (manual if not in CI list)	none	KEEP	pending-review		not-wired
-scripts/plan-e2e-suites.test.mjs	repo-scripts	node --test scripts/<name> (manual if not in CI list)	none	KEEP	pending-review		ci-wired
+scripts/check-workflow-names.test.mjs	repo-scripts	node --test scripts/check-workflow-names.test.mjs (ci.yml "Repository Node script tests")	none	KEEP	pending-review		ci-wired
+scripts/dev-worktree.test.mjs	repo-scripts	node --test scripts/dev-worktree.test.mjs (ci.yml "Repository Node script tests")	none	KEEP	pending-review		ci-wired
+scripts/image-reference-utils.test.mjs	repo-scripts	node --test scripts/image-reference-utils.test.mjs (ci.yml "Repository Node script tests")	none	KEEP	pending-review		ci-wired
+scripts/plan-e2e-suites.test.mjs	repo-scripts	node --test scripts/plan-e2e-suites.test.mjs (ci.yml "Repository Node script tests")	none	KEEP	pending-review		ci-wired
 scripts/test-orca-worktree-setup.py	worktree-runtime	direct python (apps/api workdir: uv run python ../../scripts/test-orca-worktree-setup.py)	filesystem only	KEEP	pending-review		ci-wired
 scripts/test_development_restart.py	worktree-runtime	standalone python script	runtime environment	KEEP	pending-review		ci-wired
 scripts/test_production_health_recover.py	worktree-runtime	standalone python script	runtime environment	KEEP	pending-review		ci-wired
@@ -1044,81 +1044,81 @@ scripts/test_worktree_filtering.py	worktree-runtime	python -m unittest discover 
 scripts/test_worktree_maintenance.py	worktree-runtime	python -m unittest discover scripts 'test_worktree*.py'	disposable owned docker/postgres resources	KEEP	pending-review		ci-wired
 scripts/test_worktree_review.py	worktree-runtime	python -m unittest discover scripts 'test_worktree*.py'	disposable owned docker/postgres resources	KEEP	pending-review		ci-wired
 scripts/test_worktree_runtime.py	worktree-runtime	python -m unittest discover scripts 'test_worktree*.py'	disposable owned docker/postgres resources	KEEP	pending-review		ci-wired
-apps/grounded-sam2-backend/tests/test_box_seg_predictor.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_device_fallback.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_embedding_cache.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_gpu_lifecycle.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_interactive_multimask.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_interactive_schema.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_lifecycle_endpoints.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_mask_ai_observability.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_multi_polygon_output.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_native_mask_schema.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_pool_observability_v14_14.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_predict_text_output_modes.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_protocol_v21.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_setup_protocol_v2_models.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_setup_variants.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_simplify_tolerance_injection.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_validate_managed_lifecycle.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_video_pool_observability.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/grounded-sam2-backend/tests/test_video_predictor.py	ml-backend	pytest (local)	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_coerce_exemplars.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_device_policy.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_embedding_cache.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_gpu_lifecycle.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_gpu_lifecycle_contract.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_idle_unload.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_interactive_schema.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_lifecycle_endpoints.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_mask_ai_observability.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_pool_status_v14_14.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_predictor_exemplar.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_protocol_v21.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_pvs_mask_seed.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_schemas_exemplar.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_setup_protocol_v2_models.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_setup_variants.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_validate_managed_lifecycle.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_video_continuation_prompt.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_video_mask_rle.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/sam3-backend/tests/test_video_session_cleanup.py	ml-backend	pytest (local)	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		not-wired
-apps/yolo-backend/tests/test_class_whitelist.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
-apps/yolo-backend/tests/test_gpu_lifecycle.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
-apps/yolo-backend/tests/test_gpu_lifecycle_endpoints.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
-apps/yolo-backend/tests/test_model_pool_concurrency.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
-apps/yolo-backend/tests/test_model_registry.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
-apps/yolo-backend/tests/test_open_text.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
-apps/yolo-backend/tests/test_open_text_predict.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
-apps/yolo-backend/tests/test_pool_observability.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
-apps/yolo-backend/tests/test_predict_contract.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
-apps/yolo-backend/tests/test_predict_request_validation.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
-apps/yolo-backend/tests/test_predictor_concurrency.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
-apps/yolo-backend/tests/test_protocol_v21.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
-apps/yolo-backend/tests/test_setup_shape.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
-apps/yolo-backend/tests/test_tracker_aggregate.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
-apps/yolo-backend/tests/test_validate_managed_lifecycle.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
-apps/yolo-backend/tests/test_warmup_and_health.py	ml-backend	pytest (local)	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		not-wired
-apps/rapidocr-backend/tests/test_catalog_params.py	ml-backend	pytest (local)	none/optional onnxruntime	KEEP	pending-review		not-wired
-apps/rapidocr-backend/tests/test_engine_pool_concurrency.py	ml-backend	pytest (local)	none/optional onnxruntime	KEEP	pending-review		not-wired
-apps/rapidocr-backend/tests/test_gpu_lifecycle.py	ml-backend	pytest (local)	none/optional onnxruntime	KEEP	pending-review		not-wired
-apps/rapidocr-backend/tests/test_gpu_lifecycle_endpoints.py	ml-backend	pytest (local)	none/optional onnxruntime	KEEP	pending-review		not-wired
-apps/rapidocr-backend/tests/test_predictor_runtime.py	ml-backend	pytest (local)	none/optional onnxruntime	KEEP	pending-review		not-wired
-apps/rapidocr-backend/tests/test_provider_probe.py	ml-backend	pytest (local)	none/optional onnxruntime	KEEP	pending-review		not-wired
-apps/rapidocr-backend/tests/test_validate_managed_lifecycle.py	ml-backend	pytest (local)	none/optional onnxruntime	KEEP	pending-review		not-wired
-apps/onnxtools-backend/tests/test_attribute_schema.py	ml-backend	pytest (local)	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		not-wired
-apps/onnxtools-backend/tests/test_gpu_lifecycle.py	ml-backend	pytest (local)	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		not-wired
-apps/onnxtools-backend/tests/test_gpu_lifecycle_endpoints.py	ml-backend	pytest (local)	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		not-wired
-apps/onnxtools-backend/tests/test_handle_pool_concurrency.py	ml-backend	pytest (local)	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		not-wired
-apps/onnxtools-backend/tests/test_predictor_lazy.py	ml-backend	pytest (local)	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		not-wired
-apps/onnxtools-backend/tests/test_predictor_mapping.py	ml-backend	pytest (local)	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		not-wired
-apps/onnxtools-backend/tests/test_provider_probe.py	ml-backend	pytest (local)	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		not-wired
-apps/onnxtools-backend/tests/test_validate_managed_lifecycle.py	ml-backend	pytest (local)	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		not-wired
-apps/_shared/backend_runtime/tests/test_managed_pool_concurrency.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review	replaces apps/grounded-sam2-backend/tests/test_managed_pool_concurrency.py + apps/sam3-backend/tests/test_managed_pool_concurrency.py (P6 pool consolidation)	not-wired
-apps/_shared/protocol_v2/tests/test_lifecycle.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review		not-wired
-apps/_shared/protocol_v2/tests/test_mask_codec.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review		not-wired
-apps/_shared/protocol_v2/tests/test_schemas.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review		not-wired
-apps/_shared/protocol_v2/tests/test_vocab.py	ml-backend-shared	pytest (local)	none/optional model runtime	KEEP	pending-review		not-wired
+apps/grounded-sam2-backend/tests/test_box_seg_predictor.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_device_fallback.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_embedding_cache.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_gpu_lifecycle.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_interactive_multimask.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_interactive_schema.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_lifecycle_endpoints.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_mask_ai_observability.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_multi_polygon_output.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_native_mask_schema.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_pool_observability_v14_14.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_predict_text_output_modes.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_protocol_v21.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_setup_protocol_v2_models.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_setup_variants.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_simplify_tolerance_injection.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_validate_managed_lifecycle.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_video_pool_observability.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/grounded-sam2-backend/tests/test_video_predictor.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run grounded-sam2	cpu torch + cv2 (3 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_coerce_exemplars.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_device_policy.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_embedding_cache.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_gpu_lifecycle.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_gpu_lifecycle_contract.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_idle_unload.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_interactive_schema.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_lifecycle_endpoints.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_mask_ai_observability.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_pool_status_v14_14.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_predictor_exemplar.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_protocol_v21.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_pvs_mask_seed.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_schemas_exemplar.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_setup_protocol_v2_models.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_setup_variants.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_validate_managed_lifecycle.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_video_continuation_prompt.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_video_mask_rle.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/sam3-backend/tests/test_video_session_cleanup.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run sam3	cpu torch (2 files); other files stub vendor deps	KEEP	pending-review		ci-wired
+apps/yolo-backend/tests/test_class_whitelist.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run yolo	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		ci-wired
+apps/yolo-backend/tests/test_gpu_lifecycle.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run yolo	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		ci-wired
+apps/yolo-backend/tests/test_gpu_lifecycle_endpoints.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run yolo	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		ci-wired
+apps/yolo-backend/tests/test_model_pool_concurrency.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run yolo	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		ci-wired
+apps/yolo-backend/tests/test_model_registry.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run yolo	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		ci-wired
+apps/yolo-backend/tests/test_open_text.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run yolo	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		ci-wired
+apps/yolo-backend/tests/test_open_text_predict.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run yolo	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		ci-wired
+apps/yolo-backend/tests/test_pool_observability.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run yolo	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		ci-wired
+apps/yolo-backend/tests/test_predict_contract.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run yolo	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		ci-wired
+apps/yolo-backend/tests/test_predict_request_validation.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run yolo	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		ci-wired
+apps/yolo-backend/tests/test_predictor_concurrency.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run yolo	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		ci-wired
+apps/yolo-backend/tests/test_protocol_v21.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run yolo	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		ci-wired
+apps/yolo-backend/tests/test_setup_shape.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run yolo	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		ci-wired
+apps/yolo-backend/tests/test_tracker_aggregate.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run yolo	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		ci-wired
+apps/yolo-backend/tests/test_validate_managed_lifecycle.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run yolo	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		ci-wired
+apps/yolo-backend/tests/test_warmup_and_health.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run yolo	none (torch/ultralytics stubbed in committed tests)	KEEP	pending-review		ci-wired
+apps/rapidocr-backend/tests/test_catalog_params.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run rapidocr	none/optional onnxruntime	KEEP	pending-review		ci-wired
+apps/rapidocr-backend/tests/test_engine_pool_concurrency.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run rapidocr	none/optional onnxruntime	KEEP	pending-review		ci-wired
+apps/rapidocr-backend/tests/test_gpu_lifecycle.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run rapidocr	none/optional onnxruntime	KEEP	pending-review		ci-wired
+apps/rapidocr-backend/tests/test_gpu_lifecycle_endpoints.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run rapidocr	none/optional onnxruntime	KEEP	pending-review		ci-wired
+apps/rapidocr-backend/tests/test_predictor_runtime.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run rapidocr	none/optional onnxruntime	KEEP	pending-review		ci-wired
+apps/rapidocr-backend/tests/test_provider_probe.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run rapidocr	none/optional onnxruntime	KEEP	pending-review		ci-wired
+apps/rapidocr-backend/tests/test_validate_managed_lifecycle.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run rapidocr	none/optional onnxruntime	KEEP	pending-review		ci-wired
+apps/onnxtools-backend/tests/test_attribute_schema.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run onnxtools	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		ci-wired
+apps/onnxtools-backend/tests/test_gpu_lifecycle.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run onnxtools	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		ci-wired
+apps/onnxtools-backend/tests/test_gpu_lifecycle_endpoints.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run onnxtools	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		ci-wired
+apps/onnxtools-backend/tests/test_handle_pool_concurrency.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run onnxtools	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		ci-wired
+apps/onnxtools-backend/tests/test_predictor_lazy.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run onnxtools	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		ci-wired
+apps/onnxtools-backend/tests/test_predictor_mapping.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run onnxtools	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		ci-wired
+apps/onnxtools-backend/tests/test_provider_probe.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run onnxtools	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		ci-wired
+apps/onnxtools-backend/tests/test_validate_managed_lifecycle.py	ml-backend	pytest via scripts/run-ml-cpu-tests.sh run onnxtools	cv2 required; upstream onnxtools package optional (3 skips)	KEEP	pending-review		ci-wired
+apps/_shared/backend_runtime/tests/test_managed_pool_concurrency.py	ml-backend-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-backend-runtime	none/optional model runtime	KEEP	pending-review	replaces apps/grounded-sam2-backend/tests/test_managed_pool_concurrency.py + apps/sam3-backend/tests/test_managed_pool_concurrency.py (P6 pool consolidation)	ci-wired
+apps/_shared/protocol_v2/tests/test_lifecycle.py	ml-backend-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-protocol-v2	none/optional model runtime	KEEP	pending-review		ci-wired
+apps/_shared/protocol_v2/tests/test_mask_codec.py	ml-backend-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-protocol-v2	none/optional model runtime	KEEP	pending-review		ci-wired
+apps/_shared/protocol_v2/tests/test_schemas.py	ml-backend-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-protocol-v2	none/optional model runtime	KEEP	pending-review		ci-wired
+apps/_shared/protocol_v2/tests/test_vocab.py	ml-backend-shared	pytest via scripts/run-ml-cpu-tests.sh run shared-protocol-v2	none/optional model runtime	KEEP	pending-review		ci-wired
 apps/api/tests/test_project_access_predicates.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
 apps/api/tests/test_worker_signals.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	postgres via TEST_DATABASE_URL (worktree-owned aap_wt_* preferred; default-name fallback annotation_test; seed guard suffix _test/_e2e)	KEEP	pending-review		ci-wired
 apps/web/src/pages/Projects/ProjectDataManagerPage.schemaError.test.tsx	frontend-unit	vitest (pnpm --filter @anno/web test)	none (MSW)	KEEP	pending-review		ci-wired
@@ -1134,4 +1134,6 @@ apps/web/src/pages/Workbench/state/taskNavigation.test.ts	frontend-unit	vitest a
 apps/web/src/pages/Workbench/state/trackerSeedPrompts.test.ts	frontend-unit	vitest apps/web	none (MSW + Konva DOM stub)	KEEP	P5 种子→prompts 分组纯函数回归（4 例）		ci-wired
 apps/web/src/pages/Workbench/state/useBatchBackendSelection.test.ts	frontend-unit	vitest apps/web	none (MSW + Konva DOM stub)	KEEP	P5 批量线后端选择粘滞规则回归（4 例）		ci-wired
 apps/web/src/pages/Workbench/state/useMaskMutationWorkflows.test.ts	frontend-unit	vitest apps/web	none (MSW + Konva DOM stub)	KEEP	P5 原生 Mask 变更工作流回归（4 例）		ci-wired
-scripts/test_alembic_migration_policy.py	repo-scripts	standalone python (unittest; apps/api venv)	none (pure revision-graph/ownership policy)	KEEP	§7.2 迁移验证策略回归（33 例）；随 scripts/validate_migrations.py 由 P8 接入 CI		not-wired
+scripts/test_alembic_migration_policy.py	repo-scripts	uv run python ../../scripts/test_alembic_migration_policy.py (ci.yml "Migration policy pure tests")	none (pure revision-graph/ownership policy)	KEEP	§7.2 迁移验证策略回归（33 例）；随 scripts/validate_migrations.py 由 P8 接入 CI		ci-wired
+scripts/audit-e2e-requirements.test.mjs	repo-scripts	node --test scripts/audit-e2e-requirements.test.mjs (ci.yml "Repository Node script tests")	none	KEEP	P8 必需套件审计 fail-closed 回归（8 例：状态/文档跳过/空清单幂等/malformed/array-manifest 负向）		ci-wired
+scripts/summarize-e2e-results.test.mjs	repo-scripts	node --test scripts/summarize-e2e-results.test.mjs (ci.yml "Repository Node script tests")	none	KEEP	P8 E2E 结果分类回归（11 例：首过/flaky/expected-failure/skip/not-run/计时/missing-report fail-closed）		ci-wired
