@@ -559,6 +559,9 @@ def _task_state(task: Task, batch: TaskBatch | None) -> dict[str, Any]:
         "reviewer_id": str(task.reviewer_id) if task.reviewer_id else None,
         "reviewer_is_override": bool(task.reviewer_is_override),
         "reviewer_claimed": task.reviewer_claimed_at is not None,
+        "review_round_id": (
+            str(task.review_round_id) if task.review_round_id else None
+        ),
         "effective_assignee_id": (
             str(task.assignee_id)
             if task.assignee_id
@@ -691,6 +694,9 @@ async def build_member_resource_snapshot(
         | set(review_claim_task_ids)
         | set(materialization_annotation_ids)
         | set(materialization_review_ids)
+        # Open-pool review states ride along so coverage evaluation can check
+        # frozen contributor evidence per remaining reviewer.
+        | set(unassigned_review_task_ids)
     )
     tasks = await _load_tasks_with_batch(db, task_ids=affected_task_ids)
     member_user = await db.get(User, user_id, populate_existing=True)
@@ -858,7 +864,13 @@ async def _review_receiver_conflicts(
         .outerjoin(TaskBatch, TaskBatch.id == Task.batch_id)
         .where(
             Task.project_id == project_id,
-            Task.status.in_(UNFINISHED_REVIEW_STATUSES),
+            # Reviewer responsibility covers every unfinished task that will
+            # inherit the (rewritten) batch reviewer default, not only tasks
+            # already in review: pending/in-progress/rejected rows with a NULL
+            # reviewer inherit it the moment they are submitted.
+            Task.status.in_(
+                (*UNFINISHED_ANNOTATION_STATUSES, *UNFINISHED_REVIEW_STATUSES)
+            ),
             effective_task_reviewer_expr() == member_user_id,
         )
         .order_by(Task.id)
@@ -902,6 +914,34 @@ async def _review_receiver_conflicts(
             "replacement_reviewer_contributor", task_ids=contributor_conflicts
         )
     return None
+
+
+def _reviewer_evidence_blocked(
+    task_state: dict[str, Any], reviewer_id: str
+) -> bool | None:
+    """Mirror ``assert_review_evidence_current`` without raising.
+
+    Returns ``True`` when the reviewer would be denied on claim
+    (``self_review_denied``), ``False`` when they are allowed, and ``None``
+    when the evidence is unknown/legacy and cannot be decided here — the
+    membership-based fallback then applies, as elsewhere in this module.
+    """
+
+    if task_state.get("review_round_id") is None:
+        return None
+    accumulated = task_state.get("annotation_contributors")
+    contributors = task_state.get("review_contributors")
+    submitter = task_state.get("review_submitter_id")
+    if accumulated is None or not contributors or not submitter:
+        return None
+    if submitter not in contributors or not set(accumulated).issubset(contributors):
+        return None
+    effective_annotator = task_state.get("effective_assignee_id")
+    return (
+        reviewer_id in contributors
+        or reviewer_id == submitter
+        or (effective_annotator is not None and reviewer_id == effective_annotator)
+    )
 
 
 async def evaluate_role_change(
@@ -1054,6 +1094,30 @@ async def evaluate_role_change(
         )
         if not replacement_ready and not snapshot["eligible_reviewer_ids"]:
             blockers.append(_blocker("reviewer_coverage_lost"))
+        elif not replacement_ready:
+            # A remaining reviewer membership alone does not prove coverage:
+            # that reviewer may be a frozen contributor or the effective
+            # annotator for an outstanding task, and their claim would be
+            # denied.  Coverage exists per task only when some eligible
+            # reviewer can actually claim it; unknown (legacy) evidence keeps
+            # the membership-based fallback.
+            uncovered_review_task_ids = [
+                task_id
+                for task_id in snapshot["unassigned_review_task_ids"]
+                if snapshot["tasks"].get(task_id, {}).get("status")
+                == TaskStatus.REVIEW.value
+                and all(
+                    _reviewer_evidence_blocked(snapshot["tasks"][task_id], reviewer_id)
+                    for reviewer_id in snapshot["eligible_reviewer_ids"]
+                )
+            ]
+            if uncovered_review_task_ids:
+                blockers.append(
+                    _blocker(
+                        "reviewer_coverage_lost",
+                        task_ids=uncovered_review_task_ids,
+                    )
+                )
 
     return snapshot, blockers
 

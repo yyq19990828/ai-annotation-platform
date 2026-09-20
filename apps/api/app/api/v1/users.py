@@ -876,6 +876,19 @@ async def change_user_role(
     if old_role == new_role:
         return user
 
+    # Serialize against ownership transfers: hold the target's owned project
+    # rows so a concurrent transfer cannot interleave between the ownership
+    # blocker count and the role write (accounts are already locked above, and
+    # the transfer endpoint takes account -> project in the same order).
+    from app.db.models.project import Project as ProjectModel
+
+    await db.execute(
+        select(ProjectModel.id)
+        .where(ProjectModel.owner_id == user.id)
+        .order_by(ProjectModel.id)
+        .with_for_update()
+    )
+
     blockers = await platform_role_change_blockers(db, target=user, new_role=new_role)
     if blockers:
         raise HTTPException(

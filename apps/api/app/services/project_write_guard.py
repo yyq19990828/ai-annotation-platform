@@ -89,6 +89,40 @@ async def lock_actor_scope(
         raise
 
 
+async def lock_actor_project_authority(
+    db: AsyncSession, actor_id, project_id, *, nowait: bool = True
+) -> None:
+    """Account-first bounded share locks covering owner-based authority.
+
+    Order is account -> project row, matching the lifecycle model.  The project
+    row share lock conflicts with ownership transfers that take the same row
+    ``FOR UPDATE``, so a concurrent transfer (or account disable) cannot commit
+    between the authority check and the caller's final write commit.
+    """
+
+    from sqlalchemy.exc import DBAPIError
+
+    from app.db.models.project import Project
+
+    try:
+        await db.execute(
+            select(User.id)
+            .where(User.id == actor_id)
+            .with_for_update(read=True, nowait=nowait)
+        )
+        await db.execute(
+            select(Project.id)
+            .where(Project.id == project_id)
+            .with_for_update(read=True, nowait=nowait)
+        )
+    except DBAPIError as exc:
+        if _busy_lock_error(exc):
+            raise HTTPException(
+                status_code=409, detail={"reason": "project_busy"}
+            ) from exc
+        raise
+
+
 async def assert_phase_write_allowed(
     db: AsyncSession,
     task: Task,

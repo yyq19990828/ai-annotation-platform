@@ -21,6 +21,11 @@ _ADMIN_SOCKET_ROLES = (
     PlatformRole.PROJECT_ADMIN.value,
 )
 
+# Pre-commit publishers (worker jobs) emit their Redis message before the
+# notification row is committed; the per-message gate retries this long for the
+# row to become visible before failing closed.
+_NOTIFICATION_GATE_RETRY_SECONDS = 0.15
+
 
 async def _load_active_user(user_id: str | None):
     """Resolve the current database account for a socket handshake.
@@ -124,12 +129,23 @@ async def _notification_message_allowed(token: str, data) -> bool:
     except (TypeError, ValueError):
         return False
     from app.db.base import async_session
+    from app.db.models.notification import Notification
     from app.services.notification import NotificationService
 
     async with async_session() as db:
-        return await NotificationService(db).notification_deliverable(
-            notification_id, user.id
-        )
+        service = NotificationService(db)
+        # A notification row published before its creating transaction commits is
+        # briefly invisible to this separate session (READ COMMITTED); that must
+        # not be mistaken for a revoked delivery or the one real-time push is
+        # dropped.  Retry briefly while the row is missing; once the row is
+        # visible the deliverability answer is authoritative and still fails
+        # closed on revocation or bogus ids.
+        for attempt in range(4):
+            if await db.get(Notification, notification_id) is not None:
+                return await service.notification_deliverable(notification_id, user.id)
+            if attempt < 3:
+                await asyncio.sleep(_NOTIFICATION_GATE_RETRY_SECONDS)
+        return False
 
 
 async def _revalidate_task_stream(token: str, task_id: uuid.UUID) -> bool:

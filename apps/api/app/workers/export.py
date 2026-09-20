@@ -46,6 +46,7 @@ from app.services.exporting.video_scope import VideoExportScope
 from app.services.mask_formats import registry as mask_format_registry
 from app.services.mask_formats.contracts import canonical_digest
 from app.schemas.export import LidarExportOptions
+from app.db.models.notification import Notification
 from app.services.notification import NotificationService
 from app.services.data_management.task_filters import visible_tasks_stmt
 from app.services.storage import storage_service
@@ -95,8 +96,9 @@ async def _complete_from_cache(
         "cache_hit": True,
     }
     await async_job_svc.mark_complete(db, job_uuid, result=result)
-    await _emit_export_notification(db, job_uuid, ok=True, result=result)
+    pending = await _emit_export_notification(db, job_uuid, ok=True, result=result)
     await db.commit()
+    await _publish_export_notification(db, pending)
     log.info("run_export cache hit job=%s key=%s", job_uuid, cache_key)
 
 
@@ -107,7 +109,7 @@ async def _emit_export_notification(
     ok: bool,
     result: dict | None = None,
     error: str | None = None,
-) -> None:
+) -> Notification | None:
     """导出完成/失败发通知（WS 推送 + 持久化）。job.payload 已含 project_display_id/format。
 
     失败不阻断主流程（与 notification 服务自身的 try/except 一致）。调用方负责后续 commit。
@@ -115,7 +117,7 @@ async def _emit_export_notification(
     try:
         job = await db.get(AsyncJob, job_uuid)
         if job is None or job.user_id is None:
-            return
+            return None
         payload_in = job.payload or {}
         notif_payload: dict = {
             "project_display_id": payload_in.get("project_display_id"),
@@ -128,7 +130,9 @@ async def _emit_export_notification(
             notif_payload["expires_at"] = result.get("expires_at")
         if not ok and error:
             notif_payload["error"] = error[:200]
-        await NotificationService(db).notify(
+        # Returned unpublished; the caller publishes after its commit so the WS
+        # delivery gate can see the committed notification row.
+        return await NotificationService(db).notify(
             user_id=job.user_id,
             type="export.ready" if ok else "export.failed",
             target_type="export",
@@ -137,6 +141,14 @@ async def _emit_export_notification(
         )
     except Exception as e:  # noqa: BLE001
         log.warning("export notification failed job=%s err=%s", job_uuid, e)
+        return None
+
+
+async def _publish_export_notification(db: AsyncSession, pending: Notification | None):
+    """Publish deferred export notifications after the enclosing commit."""
+
+    if pending is not None:
+        await NotificationService(db).publish_committed([pending])
 
 
 @celery_app.task(bind=True, name="app.workers.export.run_export")
@@ -829,7 +841,7 @@ async def _run_export(
                         "cache_hit": False,
                     },
                 )
-                await _emit_export_notification(
+                pending = await _emit_export_notification(
                     db,
                     job_uuid,
                     ok=True,
@@ -840,6 +852,7 @@ async def _run_export(
                     },
                 )
                 await db.commit()
+                await _publish_export_notification(db, pending)
                 log.info(
                     "run_export complete job=%s key=%s files=%d bytes=%d",
                     async_job_id,
@@ -865,8 +878,11 @@ async def _run_export(
                 try:
                     err = f"{type(exc).__name__}: {exc}"
                     await async_job_svc.mark_failed(db, job_uuid, error=err)
-                    await _emit_export_notification(db, job_uuid, ok=False, error=err)
+                    pending = await _emit_export_notification(
+                        db, job_uuid, ok=False, error=err
+                    )
                     await db.commit()
+                    await _publish_export_notification(db, pending)
                 except Exception:
                     await db.rollback()
                 raise

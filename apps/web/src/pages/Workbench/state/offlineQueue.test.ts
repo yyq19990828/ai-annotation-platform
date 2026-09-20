@@ -128,6 +128,18 @@ function deleteOp(id: string, annotationId = id): OfflineOp {
   return { kind: "delete", id, taskId: "task", annotationId, ts: 1 };
 }
 
+function updateOp(id: string, annotationId = id): OfflineOp {
+  return {
+    kind: "update",
+    id,
+    taskId: "task",
+    annotationId,
+    payload: { attributes: {} },
+    etag: 'W/"1"',
+    ts: 1,
+  };
+}
+
 function ownedDeleteOp(id: string, userId: string): OfflineOp {
   return { ...deleteOp(id), userId };
 }
@@ -593,14 +605,14 @@ describe("offlineQueue.drain · per-operation authorization", () => {
       undefined,
       { shouldProcess: async (op) => op.projectId !== "A" },
     );
-    expect(result).toEqual({ ok: 1, failed: 0, denied: 1 });
+    expect(result).toEqual({ ok: 1, failed: 0, denied: 1, deferred: 0 });
     expect(processed).toEqual(["b"]);
     const all = await getAll();
     expect(all.map((op) => op.id)).toEqual(["a"]);
     expect(all[0].retry_count).toBeUndefined();
   });
 
-  it("treats an authorizer error as denied without processing the op", async () => {
+  it("treats an authorizer error as indeterminate: deferred, retained, retry_count bumped", async () => {
     await enqueueDurably({ ...deleteOp("a"), projectId: "A" });
     const handler = vi.fn(async () => {});
     const result = await drain(handler, undefined, {
@@ -608,9 +620,11 @@ describe("offlineQueue.drain · per-operation authorization", () => {
         throw new Error("boom");
       },
     });
-    expect(result).toEqual({ ok: 0, failed: 0, denied: 1 });
+    expect(result).toEqual({ ok: 0, failed: 0, denied: 0, deferred: 1 });
     expect(handler).not.toHaveBeenCalled();
-    expect((await getAll()).map((op) => op.id)).toEqual(["a"]);
+    const all = await getAll();
+    expect(all.map((op) => op.id)).toEqual(["a"]);
+    expect(all[0].retry_count).toBe(1);
   });
 });
 
@@ -625,13 +639,51 @@ describe("offlineQueue.drain · permanent authority denial", () => {
         processed.push(op.id);
       },
       undefined,
-      { isAuthorityDenial: (error) => error instanceof ApiError && error.status === 403 },
+      {
+        classifyError: (error) =>
+          error instanceof ApiError && error.status === 403 ? "denied" : "retry",
+      },
     );
-    expect(result).toEqual({ ok: 1, failed: 0, denied: 1 });
+    expect(result).toEqual({ ok: 1, failed: 0, denied: 1, deferred: 0 });
     expect(processed).toEqual(["b"]);
     const all = await getAll();
     expect(all.map((op) => op.id)).toEqual(["a"]);
     expect(all[0].retry_count).toBeUndefined();
+  });
+
+  it("dequeues a delete whose 404 target is already gone and counts it synced", async () => {
+    await enqueueDurably({ ...deleteOp("a"), projectId: "A" });
+    await enqueueDurably({ ...deleteOp("b"), projectId: "B" });
+    const processed: string[] = [];
+    const result = await drain(
+      async (op) => {
+        if (op.id === "a") throw new ApiError(404, "Annotation not found");
+        processed.push(op.id);
+      },
+      undefined,
+      {
+        classifyError: (error) =>
+          error instanceof ApiError && error.status === 404 ? "missing" : "retry",
+      },
+    );
+    expect(result).toEqual({ ok: 2, failed: 0, denied: 0, deferred: 0 });
+    expect(processed).toEqual(["b"]);
+    // The satisfied delete left the queue and the second op synced cleanly.
+    expect(await getAll()).toEqual([]);
+  });
+
+  it("keeps a create/update whose 404 target is gone as a retryable failure", async () => {
+    await enqueueDurably({ ...updateOp("a") });
+    const handler = vi.fn(async () => {
+      throw new ApiError(404, "Annotation not found");
+    });
+    const result = await drain(handler, undefined, {
+      classifyError: () => "missing",
+    });
+    expect(result).toEqual({ ok: 0, failed: 1, denied: 0, deferred: 0 });
+    const all = await getAll();
+    expect(all.map((op) => op.id)).toEqual(["a"]);
+    expect(all[0].retry_count).toBe(1);
   });
 
   it("stops on a non-authority error as before", async () => {
@@ -644,7 +696,7 @@ describe("offlineQueue.drain · permanent authority denial", () => {
       undefined,
       { isAuthorityDenial: (error) => error instanceof ApiError && error.status === 403 },
     );
-    expect(result).toEqual({ ok: 0, failed: 1, denied: 0 });
+    expect(result).toEqual({ ok: 0, failed: 1, denied: 0, deferred: 0 });
     expect((await getAll()).map((op) => op.id)).toEqual(["a", "b"]);
   });
 });

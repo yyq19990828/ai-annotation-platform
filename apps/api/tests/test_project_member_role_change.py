@@ -521,6 +521,76 @@ async def test_last_reviewer_coverage_includes_unassigned_review_work(
     assert "invalid_replacement_reviewer" in covered["blockers"]
 
 
+async def test_reviewer_coverage_checks_frozen_evidence_of_remaining_reviewer(
+    db_session: AsyncSession,
+):
+    """A remaining reviewer membership is not coverage when that reviewer is
+    evidence-blocked (annotator submitted the task, then switched to reviewer)."""
+
+    owner = await create_user(
+        db_session, "project_admin", f"evc-owner-{uuid.uuid4()}@test.local", "Owner"
+    )
+    project = await create_project(db_session, owner_id=owner.id, name="Evidence QA")
+    reviewer_user = await create_user(
+        db_session, "employee", f"evc-qa-{uuid.uuid4()}@test.local", "QA"
+    )
+    other_reviewer = await create_user(
+        db_session, "employee", f"evc-qa2-{uuid.uuid4()}@test.local", "QA2"
+    )
+    member = await _add_member(
+        db_session,
+        project_id=project.id,
+        user=reviewer_user,
+        role="reviewer",
+        assigned_by=owner.id,
+    )
+    await _add_member(
+        db_session,
+        project_id=project.id,
+        user=other_reviewer,
+        role="reviewer",
+        assigned_by=owner.id,
+    )
+
+    # Open-pool review work submitted by the remaining reviewer: their claim
+    # would be denied with self_review_denied even though the membership exists.
+    unassigned = await create_task(db_session, project_id=project.id, status="review")
+    unassigned.review_round_id = uuid.uuid4()
+    unassigned.annotation_contributor_ids = [str(other_reviewer.id)]
+    unassigned.review_contributor_ids = [str(other_reviewer.id)]
+    unassigned.review_submitter_id = other_reviewer.id
+    await db_session.flush()
+
+    preview = await preview_role_change(
+        db_session,
+        project=project,
+        actor=owner,
+        member_id=member.id,
+        target_role="annotator",
+        replacement_annotator_id=None,
+        replacement_reviewer_id=None,
+    )
+    assert "reviewer_coverage_lost" in preview["blockers"]
+    details = [
+        entry
+        for entry in preview["blocker_details"]
+        if entry.get("code") == "reviewer_coverage_lost"
+    ]
+    assert details and str(unassigned.id) in details[0].get("task_ids", [])
+
+    # A replacement receiver restores coverage.
+    covered = await preview_role_change(
+        db_session,
+        project=project,
+        actor=owner,
+        member_id=member.id,
+        target_role="annotator",
+        replacement_annotator_id=None,
+        replacement_reviewer_id=other_reviewer.id,
+    )
+    assert "reviewer_coverage_lost" not in covered["blockers"]
+
+
 async def test_removal_ignores_target_role_pairing_and_allows_idle_admin(
     db_session: AsyncSession,
 ):

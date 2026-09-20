@@ -95,12 +95,57 @@ it("authorizes each queued op by its project and retains denied drafts", async (
   expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ projectId: "A" }));
   expect(authorize).toHaveBeenCalledWith(expect.objectContaining({ projectId: "B" }));
   const options = state.drain.mock.calls[0][2] as {
-    isAuthorityDenial: (error: unknown) => boolean;
+    classifyError: (error: unknown) => "denied" | "missing" | "retry";
   };
-  expect(options.isAuthorityDenial(new ApiError(403, "x"))).toBe(true);
-  expect(options.isAuthorityDenial(new ApiError(404, "x"))).toBe(true);
-  expect(options.isAuthorityDenial(new Error("network"))).toBe(false);
+  expect(options.classifyError(new ApiError(403, "x"))).toBe("denied");
+  // 404 after a successful access preflight means the target is gone, not that
+  // authority was revoked.
+  expect(options.classifyError(new ApiError(404, "x"))).toBe("missing");
+  expect(options.classifyError(new Error("network"))).toBe("retry");
   client.clear();
+});
+
+it("does not report a permission change when the access preflight fails transiently", async () => {
+  const client = new QueryClient();
+  state.online = true;
+  state.drain.mockReset();
+  const authorize = vi.fn(async () => ({ outcome: "indeterminate" as const }));
+  state.drain.mockImplementationOnce(
+    async (
+      _handler: unknown,
+      _scope: unknown,
+      options: { shouldProcess: (op: unknown) => Promise<boolean | "indeterminate"> },
+    ) => {
+      const result = await options.shouldProcess({
+        kind: "update",
+        id: "c",
+        taskId: "taskC",
+        projectId: "C",
+        annotationId: "z",
+        ts: 3,
+      });
+      expect(result).toBe("indeterminate");
+      return { ok: 0, failed: 0, denied: 0, deferred: 1 };
+    },
+  );
+  const { result, unmount } = renderHook(() =>
+    useWorkbenchOfflineQueue({
+      userId: "alice",
+      taskId: "task",
+      queryClient: client,
+      pushToast: vi.fn(),
+      history: { replaceAnnotationId: vi.fn() },
+      authorizeFlush: authorize,
+    }),
+  );
+  try {
+    await waitFor(() => expect(state.drain).toHaveBeenCalled());
+    await waitFor(() => expect(result.current.syncError).toContain("网络不稳定"));
+    expect(result.current.syncError).not.toContain("项目权限已变更");
+  } finally {
+    unmount();
+    client.clear();
+  }
 });
 
 it("replays a versioned offline update with its original precondition", async () => {

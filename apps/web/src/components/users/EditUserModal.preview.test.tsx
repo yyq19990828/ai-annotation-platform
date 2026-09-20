@@ -89,3 +89,21 @@ it("shows anonymous cross-project impact and waits for the selected role preview
   fireEvent.click(screen.getByRole("button", { name: "保存" }));
   await waitFor(() => expect(api.changeRole).toHaveBeenCalledWith("a", "viewer"));
 });
+
+it("hides platform-role editing from project administrators and points them to project member management", async () => {
+  useAuthStore.getState().setAuth("token", {
+    id: "pa",
+    name: "PA",
+    email: "pa@test.local",
+    role: "project_admin",
+    status: "active",
+    group_name: null,
+    created_at: "2026-09-09",
+  });
+  render(wrap(user));
+  // 平台角色预览/变更接口为 super_admin-only：项目管理员不应触发任何预览请求。
+  expect(api.previewRoleChange).not.toHaveBeenCalled();
+  expect(screen.queryByLabelText("角色")).not.toBeInTheDocument();
+  expect(screen.getByText(/平台角色由超级管理员管理/)).toBeVisible();
+  expect(screen.getByLabelText("数据组")).toBeEnabled();
+});

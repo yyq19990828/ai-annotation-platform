@@ -419,11 +419,13 @@ async def reopen_task(
     )
 
     # v0.7.6 · 通知中心 fan-out：原 reviewer 收到 task.reopened
+    # Deferred until after the commit below; see NotificationService.notify.
+    pending_notifications = []
     if original_reviewer_id is not None:
         from app.services.notification import NotificationService
 
         notif_svc = NotificationService(db)
-        await notif_svc.notify_many(
+        pending_notifications = await notif_svc.notify_many(
             user_ids=[original_reviewer_id],
             type="task.reopened",
             target_type="task",
@@ -438,6 +440,8 @@ async def reopen_task(
         )
 
     await db.commit()
+    if pending_notifications:
+        await NotificationService(db).publish_committed(pending_notifications)
     return {
         "status": "reopened",
         "task_id": str(task_id),

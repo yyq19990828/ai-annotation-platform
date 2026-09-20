@@ -1514,13 +1514,30 @@ async def transfer_owner(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(require_roles(UserRole.SUPER_ADMIN)),
 ):
-    project = await db.get(Project, project_id)
-    if project is None:
-        raise HTTPException(status_code=404, detail="项目不存在")
+    # Account-first, then the project row — the same order as the platform-role
+    # mutation, so a concurrent demotion of the target cannot interleave with
+    # the role check and the ownership write.
+    from app.services.user_lifecycle import UserLifecycleService
 
-    target = await db.get(User, body.new_owner_id)
+    accounts = await UserLifecycleService.lock_accounts(db, [body.new_owner_id])
+    target = accounts.get(body.new_owner_id)
     if target is None or not target.is_active:
         raise HTTPException(status_code=404, detail="目标用户不存在")
+
+    project = (
+        (
+            await db.execute(
+                select(Project)
+                .where(Project.id == project_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if project is None:
+        raise HTTPException(status_code=404, detail="项目不存在")
     if target.role != UserRole.PROJECT_ADMIN:
         raise HTTPException(status_code=400, detail="仅可转移给 project_admin")
 

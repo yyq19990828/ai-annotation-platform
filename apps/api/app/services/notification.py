@@ -213,14 +213,17 @@ class NotificationService:
         target_type: str,
         target_id: uuid.UUID,
         payload: dict | None = None,
-        defer_publish: bool = False,
+        defer_publish: bool = True,
     ) -> Notification | None:
-        """Write one notification and optionally publish it immediately.
+        """Write one notification; publication defaults to deferred.
 
-        ``defer_publish`` is intentionally opt-in.  Existing callers retain the
-        historical write+best-effort-publish behavior, while request handlers that
-        must not publish before their business transaction commits can collect the
-        returned rows and call :meth:`publish_committed` after ``db.commit()``.
+        Publishing before the enclosing transaction commits is unsafe: the WS
+        delivery gate re-reads the row through a separate session and cannot see
+        an uncommitted row, which permanently drops the one real-time delivery.
+        By default the row is returned unpublished; call :meth:`publish_committed`
+        after ``db.commit()``.  Passing ``defer_publish=False`` restores the
+        legacy immediate publish and is only correct when the row is already
+        committed or the caller never commits afterwards.
         """
         if await self._is_in_app_muted(user_id, type):
             return None
@@ -249,12 +252,15 @@ class NotificationService:
         target_type: str,
         target_id: uuid.UUID,
         payload: dict | None = None,
-        defer_publish: bool = False,
+        defer_publish: bool = True,
     ) -> list[Notification]:
         """Write a de-duplicated fan-out, publishing once for the whole batch.
 
         Rows are always written with ``defer_publish=True`` internally so the
         delivery re-authorization runs once per fan-out instead of once per row.
+        Publication defaults to deferred: collect the returned rows and call
+        :meth:`publish_committed` after ``db.commit()`` so the WS gate can see
+        the committed rows (see :meth:`notify`).
         """
 
         out: list[Notification] = []

@@ -172,13 +172,23 @@ async def _load_visible_job_task_row(
 
 
 async def _lock_visible_job_task_row(
-    db: AsyncSession, job_id: uuid.UUID, user: User
+    db: AsyncSession,
+    job_id: uuid.UUID,
+    user: User,
+    *,
+    require_annotation_write: bool = True,
 ) -> tuple[Task, VideoTrackerJob, ProjectAccess]:
     """Lock and refresh the job's task at the mutation boundary.
 
     Account-first, then the membership ``FOR SHARE``, then the refreshed task row
     ``NOWAIT``: a busy resource returns a retryable 409 instead of blocking, and
     the route preflight no longer relies on an unlocked ``db.get`` snapshot.
+
+    ``require_annotation_write=False`` (cancellation) skips the annotation-write
+    and review-evidence guards: cancelling obsolete compute only needs active
+    project visibility plus job ownership, which the caller checks separately.
+    A member whose project role changed can still cancel their own job even
+    when they can no longer apply annotation results.
     """
 
     from app.services.task_lock import assert_task_user_active
@@ -195,8 +205,9 @@ async def _lock_visible_job_task_row(
         raise HTTPException(status_code=404, detail="Video tracker job not found")
     access = await _resolve_task_access(db, task, user, lock_membership=True)
     task = await _lock_task_nowait(db, row.task_id)
-    assert_annotation_write_allowed(task, access)
-    await _assert_review_adjustment_evidence(db, task, user, access)
+    if require_annotation_write:
+        assert_annotation_write_allowed(task, access)
+        await _assert_review_adjustment_evidence(db, task, user, access)
     await _assert_task_visible(db, task, user, access=access)
     return task, row, access
 
@@ -407,7 +418,9 @@ async def cancel_video_tracker_job(
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    task, row, access = await _lock_visible_job_task_row(db, job_id, current_user)
+    task, row, access = await _lock_visible_job_task_row(
+        db, job_id, current_user, require_annotation_write=False
+    )
     await _assert_can_cancel(db, task, row, current_user, access)
     job_kind = row.job_kind
     status_before = row.status

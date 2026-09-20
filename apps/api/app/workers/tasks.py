@@ -13,6 +13,43 @@ logger = logging.getLogger(__name__)
 _MAX_FAILED_PREDICTION_CONTEXT_BYTES = 8 * 1024
 
 
+async def _preannotation_actor_revoked(db, actor, project_uuid) -> bool:
+    """Fresh-state authority check for the initiating preannotation actor."""
+
+    from app.db.models.project import Project
+    from app.services.scheduler import is_privileged_for_project
+
+    await db.refresh(actor)
+    fresh_project = await db.get(Project, project_uuid, populate_existing=True)
+    return (
+        not actor.is_active
+        or fresh_project is None
+        or not is_privileged_for_project(actor, fresh_project)
+    )
+
+
+async def _hold_preannotation_authority(db, actor, project_uuid) -> bool:
+    """Re-check actor/project authority under bounded locks and hold it.
+
+    Inference is long: the initiating account may be disabled or the project
+    ownership transferred while it runs, after the pre-inference check passed.
+    Account -> project share locks (matching the lifecycle lock order) make a
+    concurrent disable or ownership transfer conflict with this transaction,
+    so the authority verified here cannot be revoked between this check and
+    the caller's final-write ``commit()`` which releases the locks.
+    """
+
+    from fastapi import HTTPException
+
+    from app.services.project_write_guard import lock_actor_project_authority
+
+    try:
+        await lock_actor_project_authority(db, actor.id, project_uuid, nowait=False)
+    except HTTPException:
+        return False
+    return not await _preannotation_actor_revoked(db, actor, project_uuid)
+
+
 def _retryable_request_context(context: dict | None) -> dict | None:
     if context is None:
         return None
@@ -1103,31 +1140,24 @@ async def _run_batch(
             # final write: a long inference must not keep writing after the
             # actor's account or project authority was revoked.  A bounded
             # system job (actor is None) keeps its own explicit authority.
-            if actor is not None:
-                await db.refresh(actor)
-                fresh_project = await db.get(
-                    Project, project_uuid, populate_existing=True
+            if actor is not None and await _preannotation_actor_revoked(
+                db, actor, project_uuid
+            ):
+                await async_job_svc.mark_failed(
+                    db, async_job_id, error="preannotation_actor_revoked"
                 )
-                if (
-                    not actor.is_active
-                    or fresh_project is None
-                    or not is_privileged_for_project(actor, fresh_project)
-                ):
-                    await async_job_svc.mark_failed(
-                        db, async_job_id, error="preannotation_actor_revoked"
-                    )
-                    await notify_job_terminal(db, job_id=async_job_id)
-                    await db.commit()
-                    _publish_progress(
-                        project_id,
-                        i,
-                        total,
-                        status="failed",
-                        error="permission_revoked",
-                        job_meta=job_meta_base,
-                    )
-                    await engine.dispose()
-                    return
+                await notify_job_terminal(db, job_id=async_job_id)
+                await db.commit()
+                _publish_progress(
+                    project_id,
+                    i,
+                    total,
+                    status="failed",
+                    error="permission_revoked",
+                    job_meta=job_meta_base,
+                )
+                await engine.dispose()
+                return
 
             try:
                 results, pipeline_extra, stage_stats = await _run_task_pipeline(
@@ -1147,6 +1177,29 @@ async def _run_batch(
                 )
                 executed_backend_id = stage_clients[0].last_instance_id or backend.id
                 executed_pool_id = stage_clients[0].pool_id or source_pool_id
+                # Re-check under locks after inference: a revocation landing
+                # mid-run must not let this write commit.  The account/project
+                # share locks are held until the commit below, so a concurrent
+                # disable or ownership transfer cannot interleave.
+                if actor is not None and not await _hold_preannotation_authority(
+                    db, actor, project_uuid
+                ):
+                    await db.rollback()
+                    await async_job_svc.mark_failed(
+                        db, async_job_id, error="preannotation_actor_revoked"
+                    )
+                    await notify_job_terminal(db, job_id=async_job_id)
+                    await db.commit()
+                    _publish_progress(
+                        project_id,
+                        i,
+                        total,
+                        status="failed",
+                        error="permission_revoked",
+                        job_meta=job_meta_base,
+                    )
+                    await engine.dispose()
+                    return
                 for pred_result in results:
                     await pred_svc.create_from_ml_result(
                         task_id=task.id,

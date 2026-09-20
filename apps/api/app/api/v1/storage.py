@@ -13,7 +13,6 @@ from app.db.models.dataset import DatasetItem, VideoChunk, VideoFrameCache
 from app.db.models.project import Project
 from app.db.models.task import Task
 from app.db.models.user import User
-from app.services.scheduler import is_privileged_for_project
 from app.services.storage import storage_service
 from app.schemas.storage import BucketSummary, BucketsResponse
 
@@ -41,15 +40,32 @@ def _managed_project_scope(user: User) -> list:
 async def _assert_media_asset_manager(
     db: AsyncSession, item: DatasetItem, user: User
 ) -> None:
-    """Recheck project ownership for a project-scoped dataset asset."""
+    """Recheck project ownership for a project-scoped dataset asset.
 
-    task = (
-        await db.execute(select(Task).where(Task.dataset_item_id == item.id).limit(1))
-    ).scalar_one_or_none()
-    if task is None:
+    Mirrors the failures-list scope: a dataset item can be linked to tasks in
+    several projects, so the asset is manageable when ANY linked task belongs
+    to a project this manager legitimately owns.  Dataset-only media (no linked
+    task) keeps the platform-manager policy.
+    """
+
+    if user.role == PlatformRole.SUPER_ADMIN.value:
         return
-    project = await db.get(Project, task.project_id)
-    if project is None or not is_privileged_for_project(user, project):
+    linked = (
+        await db.execute(
+            select(Task.id).where(Task.dataset_item_id == item.id).limit(1)
+        )
+    ).scalar_one_or_none()
+    if linked is None:
+        return
+    managed = (
+        await db.execute(
+            select(Task.id)
+            .join(Project, Project.id == Task.project_id)
+            .where(Task.dataset_item_id == item.id, Project.owner_id == user.id)
+            .limit(1)
+        )
+    ).scalar_one_or_none()
+    if managed is None:
         raise HTTPException(
             status_code=403, detail="仅项目负责人或超级管理员可管理该项目的媒体资源"
         )

@@ -1090,7 +1090,27 @@ class BatchService:
             project_ids_stmt = project_ids_stmt.where(
                 TaskBatch.project_id == project_id
             )
-        project_ids = (await self.db.execute(project_ids_stmt)).scalars()
+        project_ids = sorted((await self.db.execute(project_ids_stmt)).scalars().all())
+        if project_ids:
+            # Lock the project authority rows before authorizing: an ownership
+            # transfer takes the same rows FOR UPDATE, so a transfer committing
+            # mid-decision cannot strand an unauthorized actor inside batch and
+            # task locks.  Lock order stays account -> project -> membership ->
+            # batches -> tasks, matching the lifecycle model.
+            try:
+                await self.db.execute(
+                    select(Project.id)
+                    .where(Project.id.in_(project_ids))
+                    .order_by(Project.id)
+                    .with_for_update(nowait=True)
+                )
+            except DBAPIError as exc:
+                if getattr(exc.orig, "sqlstate", None) in {"55P03", "40P01", "40001"}:
+                    await self.db.rollback()
+                    raise HTTPException(
+                        status_code=409, detail={"reason": "batch_decision_busy"}
+                    ) from exc
+                raise
         for scope_project_id in project_ids:
             project = await self.db.get(
                 Project, scope_project_id, populate_existing=True
@@ -1287,6 +1307,7 @@ class BatchService:
         Returns: cascade_counts (含 tasks_reset / predictions / failed_predictions /
                  prediction_jobs / ai_annotations_deactivated).
         """
+        from app.db.models.project_member import ProjectMember
         from app.db.models.task_lock import TaskLock
         from app.db.models.async_job import AsyncJob
 
@@ -1303,6 +1324,40 @@ class BatchService:
             )
         )
         tasks_reset = result.rowcount
+
+        # Role-change handoffs materialize the old batch default onto terminal
+        # history (non-override explicit columns) to freeze attribution.  This
+        # reset reactivates those rows as pending work, where a stale explicit
+        # assignment would keep overriding the batch default with a user who no
+        # longer holds the matching project role, leaving the task unworkable.
+        # Restore inheritance for exactly those rows; genuine manual overrides
+        # (override flags) and current members keep their assignment.
+        for role_value, column, override_column, extra_values in (
+            ("annotator", Task.assignee_id, Task.assignee_is_override, {}),
+            (
+                "reviewer",
+                Task.reviewer_id,
+                Task.reviewer_is_override,
+                {"reviewer_claimed_at": None},
+            ),
+        ):
+            await self.db.execute(
+                update(Task)
+                .where(
+                    Task.batch_id == batch_id,
+                    Task.status == "pending",
+                    column.is_not(None),
+                    override_column.is_(False),
+                    ~select(ProjectMember.id)
+                    .where(
+                        ProjectMember.project_id == Task.project_id,
+                        ProjectMember.user_id == column,
+                        ProjectMember.role == role_value,
+                    )
+                    .exists(),
+                )
+                .values({column.key: None, **extra_values})
+            )
 
         await self.db.execute(
             delete(TaskLock).where(
@@ -1802,13 +1857,21 @@ class BatchService:
                 failed.append({"batch_id": bid, "reason": reason})
                 continue
             # soft reset: review/completed tasks → pending
+            # The current round's frozen evidence is cleared with the reset,
+            # matching single-batch rejection, so stale evidence from a
+            # completed round is never mistaken for current review authority.
             await self.db.execute(
                 update(Task)
                 .where(
                     Task.batch_id == bid,
                     Task.status.in_(["review", "completed"]),
                 )
-                .values(status="pending", is_labeled=False)
+                .values(
+                    status="pending",
+                    is_labeled=False,
+                    review_contributor_ids=None,
+                    review_submitter_id=None,
+                )
             )
             batch.status = BatchStatus.REJECTED
             batch.review_feedback = feedback

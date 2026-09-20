@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.core.security import hash_password
 from app.db.enums import (
+    LEGACY_PLATFORM_STAFF_ROLES,
     MANAGER_PLATFORM_ROLES,
     PLATFORM_ROLES,
     PROJECT_ROLES,
@@ -474,6 +475,15 @@ class InvitationService:
             )
         if inv.accepted_at is not None:
             raise HTTPException(status_code=400, detail="该邀请已被接受，无法重发")
+        # Resending revives a historical row (expired/revoked invitations are
+        # excluded from migration 0174's conversion, and this call clears
+        # revoked_at and extends expires_at).  Normalize pre-cutover staff
+        # roles exactly the way 0174 normalizes pending invitations, so
+        # acceptance can never copy a rejected legacy value into users.role.
+        if inv.role in LEGACY_PLATFORM_STAFF_ROLES:
+            if inv.project_id is not None and inv.project_role is None:
+                inv.project_role = inv.role
+            inv.role = PlatformRole.EMPLOYEE.value
         inv.token = secrets.token_urlsafe(32)
         ttl_raw = await SystemSettingsService.get(db, "invitation_ttl_days")
         try:
@@ -525,6 +535,17 @@ class InvitationService:
             else None
         )
         inv.group_name = group.name if group else None
+
+        # Defense in depth: a legacy staff role must never reach account
+        # creation.  Rows are normalized on resend (and were converted by
+        # migration 0174), so an unconverted value here means an unmanaged
+        # historical row — fail closed instead of creating an account the
+        # authorization model rejects.
+        if inv.role not in PLATFORM_ROLES:
+            raise HTTPException(
+                status_code=status.HTTP_410_GONE,
+                detail="该邀请包含已失效的账号角色，请联系管理员重发",
+            )
 
         user = User(
             email=inv.email,

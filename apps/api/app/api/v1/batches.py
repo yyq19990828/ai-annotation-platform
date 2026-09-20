@@ -345,9 +345,10 @@ async def transition_batch(
         if batch.reviewer_id is not None and batch.reviewer_id != current_user.id:
             notif_recipients.append(batch.reviewer_id)
 
+    pending_notifications = []
     if notif_type and notif_recipients:
         notif_svc = NotificationService(db)
-        await notif_svc.notify_many(
+        pending_notifications = await notif_svc.notify_many(
             user_ids=notif_recipients,
             type=notif_type,
             target_type="batch",
@@ -362,6 +363,8 @@ async def transition_batch(
         )
 
     await db.commit()
+    if pending_notifications:
+        await NotificationService(db).publish_committed(pending_notifications)
     await db.refresh(batch)
     briefs = await _briefs_for_batches(db, project_id, [batch])
     return _batch_to_out(batch, briefs)
@@ -733,9 +736,10 @@ async def reject_batch(
     )
 
     # v0.7.2 · 单值语义：只通知该批次的标注员（reviewer 是 actor 本人无需通知）
+    pending_notifications = []
     if batch.annotator_id is not None:
         notif_svc = NotificationService(db)
-        await notif_svc.notify_many(
+        pending_notifications = await notif_svc.notify_many(
             user_ids=[batch.annotator_id],
             type="batch.rejected",
             target_type="batch",
@@ -750,6 +754,8 @@ async def reject_batch(
         )
 
     await db.commit()
+    if pending_notifications:
+        await NotificationService(db).publish_committed(pending_notifications)
     await db.refresh(batch)
     briefs = await _briefs_for_batches(db, project_id, [batch])
     return _batch_to_out(batch, briefs)
@@ -847,9 +853,10 @@ async def admin_lock_batch(
         notif_recipients.append(batch.reviewer_id)
     if project.owner_id != current_user.id:
         notif_recipients.append(project.owner_id)
+    pending_notifications = []
     if notif_recipients:
         notif_svc = NotificationService(db)
-        await notif_svc.notify_many(
+        pending_notifications = await notif_svc.notify_many(
             user_ids=notif_recipients,
             type="batch.admin_locked",
             target_type="batch",
@@ -863,6 +870,8 @@ async def admin_lock_batch(
         )
 
     await db.commit()
+    if pending_notifications:
+        await NotificationService(db).publish_committed(pending_notifications)
     await db.refresh(batch)
     briefs = await _briefs_for_batches(db, project_id, [batch])
     return _batch_to_out(batch, briefs)
@@ -900,9 +909,10 @@ async def admin_unlock_batch(
         notif_recipients.append(batch.annotator_id)
     if batch.reviewer_id and batch.reviewer_id != current_user.id:
         notif_recipients.append(batch.reviewer_id)
+    pending_notifications = []
     if notif_recipients:
         notif_svc = NotificationService(db)
-        await notif_svc.notify_many(
+        pending_notifications = await notif_svc.notify_many(
             user_ids=notif_recipients,
             type="batch.admin_unlocked",
             target_type="batch",
@@ -915,6 +925,8 @@ async def admin_unlock_batch(
         )
 
     await db.commit()
+    if pending_notifications:
+        await NotificationService(db).publish_committed(pending_notifications)
     await db.refresh(batch)
     briefs = await _briefs_for_batches(db, project_id, [batch])
     return _batch_to_out(batch, briefs)
@@ -1127,25 +1139,30 @@ async def bulk_reject_batches(
         detail=audit_detail,
     )
     # 通知各批次的标注员
+    pending_notifications = []
     if summary["succeeded"]:
         loaded = await svc._load_batches_for_bulk(project_id, summary["succeeded"])
         notif_svc = NotificationService(db)
         for batch in loaded.values():
             if batch.annotator_id and batch.annotator_id != current_user.id:
-                await notif_svc.notify_many(
-                    user_ids=[batch.annotator_id],
-                    type="batch.rejected",
-                    target_type="batch",
-                    target_id=batch.id,
-                    payload={
-                        "batch_display_id": batch.display_id,
-                        "batch_name": batch.name,
-                        "project_id": str(project_id),
-                        "feedback": data.feedback,
-                        "bulk": True,
-                    },
+                pending_notifications.extend(
+                    await notif_svc.notify_many(
+                        user_ids=[batch.annotator_id],
+                        type="batch.rejected",
+                        target_type="batch",
+                        target_id=batch.id,
+                        payload={
+                            "batch_display_id": batch.display_id,
+                            "batch_name": batch.name,
+                            "project_id": str(project_id),
+                            "feedback": data.feedback,
+                            "bulk": True,
+                        },
+                    )
                 )
     await db.commit()
+    if pending_notifications:
+        await NotificationService(db).publish_committed(pending_notifications)
     return summary
 
 

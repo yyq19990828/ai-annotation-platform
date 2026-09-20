@@ -316,15 +316,27 @@ export async function replaceAnnotationId(
 /**
  * 顺序消费队列。默认 handler 抛错时停止 drain（保留剩余项），返回成功条数。
  * 提供 `shouldProcess` 时，返回 false 的 op 会被跳过并保留（不计失败），
- * 让同一队列中其它已授权账号/项目的操作继续同步。
+ * 让同一队列中其它已授权账号/项目的操作继续同步；返回 "indeterminate" 表示
+ * 授权状态未知（网络/服务器故障），op 保留计入 deferred 并停止本次 pass。
  */
 export interface DrainOptions {
-  shouldProcess?: (op: OfflineOp) => boolean | Promise<boolean>;
+  shouldProcess?: (op: OfflineOp) => boolean | "indeterminate" | Promise<boolean | "indeterminate">;
   /**
-   * Classify a handler error as a permanent authority denial (e.g. 403/404 from
-   * a replay).  Such an op is retained and skipped without stopping the pass so
-   * unrelated authorized projects still sync; other errors keep the existing
-   * retry_count + stop behavior.
+   * Classify a handler error:
+   * - "denied":  affirmative authority revocation (403 from a replay).  The op
+   *   is retained and skipped without stopping the pass so unrelated authorized
+   *   projects still sync; no retry_count is incremented.
+   * - "missing": the operation's target no longer exists (task/annotation
+   *   deleted elsewhere).  For a delete the desired end state already exists
+   *   server-side, so the op is dequeued and counted as ok; create/update are
+   *   permanent local failures (retry_count++, stop).
+   * - "retry":   transport/server or unknown failures keep the existing
+   *   retry_count + stop behavior.
+   */
+  classifyError?: (error: unknown, op: OfflineOp) => "denied" | "missing" | "retry";
+  /**
+   * @deprecated Legacy boolean classifier kept for compatibility; prefer
+   * {@link classifyError}.  True is equivalent to "denied".
    */
   isAuthorityDenial?: (error: unknown) => boolean;
 }
@@ -333,7 +345,7 @@ export function drain(
   handler: (op: OfflineOp) => Promise<void>,
   scope?: QueueScopeInput,
   options?: DrainOptions,
-): Promise<{ ok: number; failed: number; denied?: number }> {
+): Promise<{ ok: number; failed: number; denied?: number; deferred?: number }> {
   const key = scopeKey(scope);
   const existing = activeDrains.get(key);
   if (existing) return existing;
@@ -352,6 +364,7 @@ async function runDrain(
   let ok = 0;
   let failed = 0;
   let denied = 0;
+  let deferred = 0;
   // Denied ops are retained and skipped for the rest of this drain pass so a
   // revoked project cannot block an unrelated authorized project's operations.
   const skipped = new Set<string>();
@@ -371,11 +384,27 @@ async function runDrain(
     // stored operation was being read. Check again before starting the request.
     if (normalizedScope?.isCurrent && !normalizedScope.isCurrent()) break;
     if (options?.shouldProcess) {
-      let allowed = false;
+      let allowed: boolean | "indeterminate" = false;
       try {
         allowed = await options.shouldProcess(structuredClone(op));
       } catch {
-        allowed = false;
+        // An authorizer that throws cannot answer; treat as indeterminate so
+        // the op is retried instead of permanently denied.
+        allowed = "indeterminate";
+      }
+      if (allowed === "indeterminate") {
+        deferred++;
+        const deferredId = op.id;
+        await mutateQueue((queue) =>
+          queue.some((item) => item.id === deferredId && isOwnedBy(item, scope))
+            ? queue.map((item) =>
+                item.id === deferredId && isOwnedBy(item, scope)
+                  ? { ...item, retry_count: (item.retry_count ?? 0) + 1 }
+                  : item,
+              )
+            : null,
+        ).catch(() => undefined);
+        break;
       }
       if (!allowed) {
         denied++;
@@ -388,11 +417,28 @@ async function runDrain(
       await handler(structuredClone(op));
     } catch (error) {
       if (normalizedScope?.isCurrent && !normalizedScope.isCurrent()) break;
-      if (options?.isAuthorityDenial?.(error)) {
+      const outcome = options?.classifyError
+        ? options.classifyError(error, op)
+        : options?.isAuthorityDenial?.(error)
+          ? ("denied" as const)
+          : ("retry" as const);
+      if (outcome === "denied") {
         // Permanent authority denial: retain the draft but skip it so a later
         // authorized op in the same account queue can still sync.
         denied++;
         skipped.add(op.id);
+        continue;
+      }
+      if (outcome === "missing" && op.kind === "delete") {
+        // The annotation is already gone server-side: the delete's desired end
+        // state exists, so the op leaves the queue and counts as synced.
+        try {
+          await removeDurablyById(op.id, scope);
+          ok++;
+        } catch {
+          failed++;
+          break;
+        }
         continue;
       }
       failed++;
@@ -418,7 +464,8 @@ async function runDrain(
       break;
     }
   }
-  return options ? { ok, failed, denied } : { ok, failed };
+  const result = options ? { ok, failed, denied, deferred } : { ok, failed };
+  return result;
 }
 
 /** 清空队列（仅用于测试 / 手动 reset）。 */

@@ -12,6 +12,7 @@ from app.deps import (
 )
 from app.db.models.user import User
 from app.db.models.project import Project
+from app.db.models.notification import Notification
 from app.db.models.task_batch import TaskBatch
 from app.schemas.task import (
     ReviewClaimResponse,
@@ -317,11 +318,14 @@ async def approve_task(
     )
 
     # 通知中心 fan-out：annotator 收到 task.approved（reviewer 自审场景跳过）
+    # Publication is deferred until after the commit below so the WS delivery
+    # gate can see the committed notification rows.
+    pending_notifications: list[Notification] = []
     if task.assignee_id is not None and task.assignee_id != current_user.id:
         from app.services.notification import NotificationService
 
         notif_svc = NotificationService(db)
-        await notif_svc.notify_many(
+        pending_notifications = await notif_svc.notify_many(
             user_ids=[task.assignee_id],
             type="task.approved",
             target_type="task",
@@ -335,6 +339,8 @@ async def approve_task(
         )
 
     await db.commit()
+    if pending_notifications:
+        await NotificationService(db).publish_committed(pending_notifications)
     return {"status": "approved", "task_id": str(task_id)}
 
 
@@ -431,11 +437,12 @@ async def reject_task(
         },
     )
 
+    pending_notifications = []
     if task.assignee_id is not None and task.assignee_id != current_user.id:
         from app.services.notification import NotificationService
 
         notif_svc = NotificationService(db)
-        await notif_svc.notify_many(
+        pending_notifications = await notif_svc.notify_many(
             user_ids=[task.assignee_id],
             type="task.rejected",
             target_type="task",
@@ -451,6 +458,8 @@ async def reject_task(
         )
 
     await db.commit()
+    if pending_notifications:
+        await NotificationService(db).publish_committed(pending_notifications)
     return {
         "status": "rejected",
         "task_id": str(task_id),

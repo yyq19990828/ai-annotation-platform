@@ -874,6 +874,40 @@ async def test_pending_only_inherited_reviewer_batch_handoff(test_engine):
         await _drop(maker, fixture)
 
 
+async def test_pending_inherited_reviewer_batch_conflicts_on_contributor(test_engine):
+    """A pending task inheriting the batch reviewer default disqualifies a
+    receiver who contributed to it — reviewer responsibility covers pre-review
+    work, not only tasks already in review."""
+
+    maker = _maker(test_engine)
+    fixture = await _seed(maker, annotator_role="reviewer", with_annotation_work=False)
+    try:
+        async with maker() as seeding:
+            batch = await seeding.get(TaskBatch, fixture["batch"])
+            batch.reviewer_id = fixture["member_user"]
+            pending = await create_task(
+                seeding, project_id=fixture["project"], status="pending"
+            )
+            pending.batch_id = fixture["batch"]
+            # The proposed receiver annotated this pending work earlier.
+            pending.annotation_contributor_ids = [str(fixture["reviewer_receiver"])]
+            await seeding.commit()
+
+        session = maker()
+        try:
+            preview = await _preview(
+                session,
+                fixture,
+                target_role="annotator",
+                replacement_reviewer_id=fixture["reviewer_receiver"],
+            )
+            assert "replacement_reviewer_contributor" in preview["blockers"]
+        finally:
+            await session.close()
+    finally:
+        await _drop(maker, fixture)
+
+
 async def test_lock_bounding_ignores_terminal_history_and_expired_locks(test_engine):
     """Only unfinished dependencies and live locks are locked/released."""
 

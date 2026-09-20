@@ -38,6 +38,7 @@ from app.services.avatar_image import (
 )
 from app.services.audit import AuditAction, AuditService
 from app.services.deactivation_service import DeactivationService
+from app.services.notification import NotificationService
 
 router = APIRouter()
 
@@ -238,10 +239,12 @@ async def request_self_deactivation(
     user: User = Depends(get_current_user),
 ):
     """v0.8.1 · 自助注销申请。7 天冷静期，期间可撤销。"""
-    await DeactivationService.request(
+    pending_notifications = await DeactivationService.request(
         db, user=user, reason=payload.reason, request=request
     )
     await db.commit()
+    if pending_notifications:
+        await NotificationService(db).publish_committed(pending_notifications)
     await db.refresh(user)
     return user
 

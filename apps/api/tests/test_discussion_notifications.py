@@ -537,7 +537,7 @@ async def test_feedback_status_route_honors_mute_and_noop_transition(
 
 
 @pytest.mark.asyncio
-async def test_deferred_notification_publish_and_legacy_immediate_default(
+async def test_deferred_notification_publish_is_default(
     db_session, annotator, monkeypatch
 ):
     user, _ = annotator
@@ -573,14 +573,29 @@ async def test_deferred_notification_publish_and_legacy_immediate_default(
     await service.publish_committed(deferred_many)
     assert len(messages) == 2
 
-    immediate = await service.notify(
+    # Publication is deferred by default: the row is written but nothing is
+    # pushed until the caller publishes after its commit.
+    default_deferred = await service.notify(
         user_id=user.id,
         type="legacy.type",
         target_type="task",
         target_id=uuid4(),
     )
-    assert immediate is not None
+    assert default_deferred is not None
+    assert len(messages) == 2
+    await service.publish_committed([default_deferred])
     assert len(messages) == 3
+
+    # Legacy explicit opt-in still publishes immediately.
+    immediate = await service.notify(
+        user_id=user.id,
+        type="legacy.type",
+        target_type="task",
+        target_id=uuid4(),
+        defer_publish=False,
+    )
+    assert immediate is not None
+    assert len(messages) == 4
 
     db_session.add(
         NotificationPreference(
@@ -598,7 +613,7 @@ async def test_deferred_notification_publish_and_legacy_immediate_default(
         defer_publish=True,
     )
     assert muted is None
-    assert len(messages) == 3
+    assert len(messages) == 4
 
 
 @pytest.mark.asyncio

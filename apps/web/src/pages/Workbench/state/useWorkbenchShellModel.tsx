@@ -252,7 +252,10 @@ import {
   type OfflineOp,
   type OfflineQueueScope,
 } from "./offlineQueue";
-import { useWorkbenchOfflineQueue } from "./useWorkbenchOfflineQueue";
+import {
+  useWorkbenchOfflineQueue,
+  type FlushAuthorizationOutcome,
+} from "./useWorkbenchOfflineQueue";
 import { projectAccessQueryKey } from "@/hooks/useProjectAccess";
 import { projectsApi } from "@/api/projects";
 import { useImageAnnotationActions } from "../stages/image/useImageAnnotationActions";
@@ -298,6 +301,7 @@ import {
   resolveVideoTimelineRangePurpose,
   resolveVideoSelectionCardCollapsed,
   resolveFloatingSelectionRect,
+  classifyAccessLookupError,
 } from "./useWorkbenchShellModel.helpers";
 import type {
   WorkbenchWorkspaceCommands,
@@ -3036,11 +3040,13 @@ export function useWorkbenchShellModel({
   // Authorize each queued op against its own project with fresh authority so a
   // stale cache cannot permit a revoked project; a revoked A retains its drafts
   // without blocking an unrelated authorized B in the same account queue.
+  // A network/server failure is "indeterminate": the drain defers the op and
+  // retries with backoff instead of recording a false permission change.
   const authorizeOfflineFlush = useCallback(
-    async (op: OfflineOp) => {
+    async (op: OfflineOp): Promise<FlushAuthorizationOutcome> => {
       const opProjectId = op.projectId ?? projectId;
       const owner = useAuthStore.getState().user?.id ?? null;
-      if (!opProjectId || !owner) return false;
+      if (!opProjectId || !owner) return { outcome: "denied" };
       try {
         // staleTime:0 forces a fresh access read for every op.
         const data = await queryClient.fetchQuery({
@@ -3050,12 +3056,17 @@ export function useWorkbenchShellModel({
         });
         // Bind the response to the exact op context and re-check the owner after
         // the await so a switched account cannot authorize with stale caps.
-        if (data.project_id !== opProjectId || data.user_id !== owner) return false;
-        if ((useAuthStore.getState().user?.id ?? null) !== owner) return false;
+        if (data.project_id !== opProjectId || data.user_id !== owner) {
+          return { outcome: "denied" };
+        }
+        if ((useAuthStore.getState().user?.id ?? null) !== owner) {
+          return { outcome: "denied" };
+        }
         const capabilities = new Set(data.capabilities ?? []);
-        return capabilities.has("annotation.write") || capabilities.has("review.write");
-      } catch {
-        return false;
+        const authorized = capabilities.has("annotation.write") || capabilities.has("review.write");
+        return { outcome: authorized ? "authorized" : "denied" };
+      } catch (error) {
+        return { outcome: classifyAccessLookupError(error) };
       }
     },
     [projectId, queryClient],
@@ -8586,6 +8597,7 @@ export function useWorkbenchShellModel({
       queueScope,
       onFlushOne: executeOp,
       onFlushAll: flushOffline,
+      classifyError: offlineQ.classifyError,
     },
     workbenchSettings: {
       open: workbenchSettingsOpen,

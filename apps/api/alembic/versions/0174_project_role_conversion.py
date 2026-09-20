@@ -5,7 +5,9 @@ of revision 0173.
 
 What it does (deterministically, without guessing):
 
-* ``users.role`` values ``annotator`` / ``reviewer`` become ``employee``.
+* ``users.role`` values ``annotator`` / ``reviewer`` become ``employee``, and
+  the column's server default becomes ``employee`` so inserts that omit the
+  role create usable new-model accounts.
   Account IDs, activation state, lifecycle metadata and every other column are
   preserved; inactive accounts are converted without being reactivated.
 * Pending project invitations gain an explicit ``project_role`` from the role
@@ -79,6 +81,11 @@ def upgrade() -> None:
             """
         )
     )
+    # 1b. Cut over the database default with the data: any insert that omits
+    #     role (Core SQL, maintenance script, external tooling) must create a
+    #     usable employee, not a legacy annotator the new authorization model
+    #     deliberately rejects.
+    op.alter_column("users", "role", server_default="employee")
 
     # 2. Pending project invitations: capture the project responsibility where
     #    it is not yet explicit, then normalise the platform role.  An already

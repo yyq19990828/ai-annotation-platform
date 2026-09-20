@@ -41,4 +41,32 @@ describe("EmployeeDashboard", () => {
     expect(screen.getByTestId("reviewer-dashboard")).toBeInTheDocument();
     expect(screen.queryByTestId("annotator-dashboard")).not.toBeInTheDocument();
   });
+
+  it("viewer-only 员工直接看到只读浏览项目列表", () => {
+    useProjects.mockReturnValue({
+      isSuccess: true,
+      data: [{ id: "p1", name: "只读项目", my_project_role: "viewer" }],
+    });
+    renderDashboard();
+    expect(screen.getByTestId("employee-tab-browse")).toBeInTheDocument();
+    expect(screen.getByTestId("viewer-project-card")).toBeInTheDocument();
+    expect(screen.getByText("只读项目")).toBeInTheDocument();
+    expect(screen.queryByTestId("annotator-dashboard")).not.toBeInTheDocument();
+  });
+
+  it("混合职责员工保留工作 tab，并可切换到浏览项目", () => {
+    useProjects.mockReturnValue({
+      isSuccess: true,
+      data: [
+        { id: "p1", name: "标注项目", my_project_role: "annotator" },
+        { id: "p2", name: "观察项目", my_project_role: "viewer" },
+      ],
+    });
+    renderDashboard();
+    expect(screen.getByTestId("annotator-dashboard")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("employee-tab-browse"));
+    expect(screen.getByTestId("viewer-project-card")).toBeInTheDocument();
+    expect(screen.getByText("观察项目")).toBeInTheDocument();
+  });
 });
