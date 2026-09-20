@@ -2,11 +2,12 @@
 
 > 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P9 工作包 + §6.7）
 > 首次对照候选（历史）：`dc972be08a42855c836023da178487469aae2fc9`（rebase 到已接受根 `e91ac8dfd`；app 输入与该根逐字节一致）
-> 最终验证候选：`8985054699ac203c1ed2b5ebe68e6d6897bda724`（共享分支 `feat/codebase_opt260920`）
+> 冻结 raw 候选：`8985054699ac203c1ed2b5ebe68e6d6897bda724`（共享分支 `feat/codebase_opt260920`）
+> 集成根（修正构建）：`13d274326ee4f8bb8b80b405c7dc2fd3d15d05fc`（产品修复 `13115f71f` + doc50 修正；`898..13d274326` 仅这些改动）
 > 最终验证 lane：A `worktree-agent-opt-p9-final-lane-a`（smoke/visual/default-one/default-two）、B（default-three/four）、C（pointcloud/video-pipeline/mask×3/layout-stress）
-> 阶段状态：**P9 进行中；`Frontend E2E` 最终门禁保持失败**——最终候选 `default-four` 未关闭（§6.2）
+> 阶段状态：**P9 完成**——最终 composed required-suite 审计在集成根 `13d274326` 上实际 **退出 0**（10 套件输入等价复用 + `layout-stress`/`default-four` 在修正构建上重跑替换）；冻结 `898` 失败 campaign 保持独立历史（§6.2）
 > 证据图例：**[V]** 本工作树实际执行/逐条核对；**[M]** 变异/负向探针；**[EXT]** 外部事实（只读核查）；**[GAP]** 未执行或留待 P10
-> 历史边界：旧候选 `dc972be08` 的失败保留在显式的历史小节（§5.0、§6.1、§7），未回溯修改；最终候选结果单独列出，不把历史绿灯搬到新候选。
+> 历史边界：`dc972be08` 与冻结 `898` 的 1 失败/53 not-run 保留在显式历史小节（§5.0、§6.1、§6.2），未回溯修改；最终 composed 结果单独列出，不把历史绿灯冒充新 SHA 全量 raw。
 
 ## 0. 结论
 
@@ -15,7 +16,7 @@
 3. **必需套件审计按“实际执行的门”生成 [V]**：manifest 与有效选集一致（计划模式=计划套件含策略；回退模式=旧 9 套件；docs-only 仅在计划模式产生带非空原因的显式跳过）。套件 ID 使用 planner 规范名（`smoke`、`visual`、`layout-stress`、`default-one`…`default-four`、`mask-readonly|native|ai-native`、`pointcloud`、`video-pipeline`）；逐套件状态产物按该 ID 采集。
 4. **缺陷注入证据 [M]**：移除“未映射回退 + 共享 owner 放大”的变异使共享 Workbench state owner 从全量 12 静默缩到 smoke，且提交的回归测试对变异体失败（`node --test` 非零）；缺失/取消/setup-failure/格式错误/核心 flaky/docs-only 缺原因等审计探针均按预期非零。
 5. **首次对照（历史）[V]**：旧候选 `dc972be08` 的 old9/new3 联合执行发现多处真实失败与清理残留，全部保留首次证据（§5.0），后续在集成根与最终候选上分别修复。
-6. **最终候选（`8985054`）三 lane、12 个 raw 套件 [V]**：11 绿、1 失败——`default-four`（`workbench-layout.spec.ts:185`，CI `maxFailures` 提前停止，13 passed / 1 failed / 53 not run）。**门禁保持失败，P9 不声明完成**（§5.1、§6.2）。
+6. **最终 composed 门禁（集成根 `13d274326`）[V]**：12 个必需套件全部记账，真实审计 **退出 0**。`layout-stress`（6/0/0/0）与 `default-four`（68/0/0/0，旧 53 not-run 全部执行）在修正构建（fingerprint `dabedc89`，`dist/index` `449aac28`）上重跑替换；其余 10 套件按输入等价复用冻结 `898` 证据。成员/执行覆盖证明见 §6.3；冻结 `898` 的 1 失败/53 not-run 保持为独立历史（§5.0、§6.2）。
 7. **外部事实 [EXT]**：`main` 当前**没有**经典分支保护也没有 ruleset，因此不存在需要在远端同步的必需检查配置；切换只影响仓库内工作流逻辑，未做任何远端改动（§6.0）。
 
 ## 1. 冻结候选与身份
@@ -32,7 +33,7 @@
 | 构建产物             | `/tmp/opencode/web-e2e-dist-253b54a03c4f0fc663b26cd9038913bce188e6b7f772de67dad1a5ec616015e1.tar.gz`，sha256 `754d61b997f69491520245dabe714b5f60102edd4d44bc770d80d54027ab913f`，`SHA256SUMS` 同名目录 [V] |
 | 完整性               | `grep -F <指纹 archive> SHA256SUMS \| sha256sum -c -` 通过；diff 断言 manifest 不含其他 archive（P8 已做篡改/多余 archive 拒绝探针）[V]                                                                    |
 
-### 1.2 最终验证候选（`8985054`）
+### 1.2 冻结 raw 候选（`8985054`）与修正构建
 
 | 项                   | 值                                                                                                                                                                                                                                          |
 | -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -167,20 +168,27 @@
 
 原生浏览器缩放助手（历史，已修复）：`workbench-tool-dock.spec.ts:63` 的 `launchPersistentContext` SIGTRAP（~200ms）根因是**完整 Chromium 的 POSIX singleton 套接字路径**：`<TMPDIR>/org.chromium.Chromium.*/SingletonSocket`，77 字节 TMPDIR → 122 字节路径，超过本机 Linux 的 `sockaddr_un.sun_path` 上限（108）；owned 39 字节 `/tmp` TMPDIR → 84 字节路径，同参数通过。已排除单一 Playwright 参数、headless 变体、sandbox/GPU/zygote 与非 ASCII 路径本身；`strace` 显示内核态 `SIGTRAP {si_code=SI_KERNEL}`。修复：为浏览器子进程创建自有短临时目录并在 `close()` 两条路径删除；复跑原单测 **1 passed**，无残留。
 
-### 6.2 未决：最终候选 `default-four` 失败（阻塞最终门禁）
+### 6.2 已解决：default-four 修复与 composed 门禁通过
 
-- 失败用例：`apps/web/e2e/tests/workbench-layout.spec.ts:185`“图片布局预设、面板隐藏和浮动保留画布及未发送讨论草稿，刷新恢复已保存树”，断言在 `:289`：`panelCommand(page, "讨论", "停靠到底部")` 后 `expect.poll` 5s 内未观察到 discussion 分组重新停靠到底部。
-- 运行事实：shard 4/4、67 tests、CI `maxFailures` 在首个失败后停止 → **13 passed / 1 failed / 53 not run**，`--retries=0`，240.8s；这是**失败**，53 个 not-run 不等同于 skipped 或 passed。
-- 只读诊断（B lane）：停靠拖拽后未出现 preferences PATCH，discussion 仍留在 inspector 分组；疑为渲染 overlay 遮挡分组 dropzone，但 DOM 祖先关系不构成事件证据；已授权 B 在自有分支做聚焦的真实拖拽/hit-test 捕获与诊断性 CSS 正/负对照。
-- 处置：**门禁保持失败**。仅在 B 的证据证明后，才由既有 owner 做最小 drag-lifecycle 修复；修复需自有新构建 + 聚焦 layout/真实对照/stress + **default-four 全量（含 53 not-run）** 复跑。不得新增 dock 菜单/超时/重试/弱化断言；不得用未执行用例冒充通过。
-- **fail-closed 审计实证 [V]**：对冻结 campaign 的 12 个规范状态产物运行真实必需套件审计（`node scripts/audit-e2e-requirements.mjs required-suites.json suite-status`，required manifest 由 `GITHUB_EVENT_NAME=push node scripts/plan-e2e-suites.mjs` 的实际输出生成）实测 **退出 1**，唯一阻塞为 `default-four | failed`（13 expected / 1 unexpected / 53 not run），其余 11 套件 `passed`，无 `missing`/`cancelled`/`setup-failure`/`suite-mismatch`/`unknown-outcome`/`malformed-success`/`core-flaky`；证据 `/tmp/opencode/p9-failed-campaign-audit/`（`required-suites.json`、`planner-push.out`、`suite-status/`、`audit-output.log`、`audit-exit.txt`、`README.md`）。这不是从计数推断门禁失败，而是稳定聚合的实际 fail-closed 结果；修复后的审计将是独立、带自身来源的产物。
+- **冻结 `898` 的失败（历史）**：shard 4/4、67 tests、CI `maxFailures` 在首个失败后停止 → **13 passed / 1 failed / 53 not run**（`--retries=0`，240.8s）；失败用例 `workbench-layout.spec.ts:185` 的 `expect.poll` 未在 5s 内观察到 discussion 分组重新停靠到底部。
+- **fail-closed 审计实证（历史）[V]**：对冻结 `898` 的 12 个规范状态运行真实审计，实测 **退出 1**，唯一阻塞 `default-four | failed`，其余 11 `passed`，无 `missing`/`cancelled`/`setup-failure`/`suite-mismatch`/`unknown-outcome`/`malformed-success`/`core-flaky`；证据 `/tmp/opencode/p9-failed-campaign-audit/`。这不是从计数推断，而是稳定聚合的实际 fail-closed 结果。
+- **根因与修复 [V]**：DIAG10 证实 root-edge 停靠会用 **100px 真实 DOM 范围**重建保留的 parking grid leaf（尽管 `group.api.isVisible=false`：期望 taskqueue 288 / canvas 1344 / inspector 288 over 1920，实际 taskqueue 256），严格 1px 校验抛错并触发标准 `failRestore`。修复（产品提交 `13115f71f`）：既有 owner 在 strict restore 前把保留分组的 native 停靠做**零空间再折叠**，并移除 rawSnapshot normalization；未新增 dock 菜单/超时/重试，未改容差或测试坐标。
+- **修正构建重跑 [V]**：`layout-stress` **6/0/0/0**（203.3s）、`default-four` **68/0/0/0**（603.1s），均在修正构建（fingerprint `dabedc89`，`dist/index` `449aac28`）上以 `CI=true`/`--retries=0` 运行；冻结 `898` 的旧 53 not-run 全部执行（§6.3）。
+- **composed 必需套件审计 [V]**：集成根 `13d274326` 上，`required-suites.json`（planner full 12 套件）+ 冻结 `898` 复用状态 + 上述两个替换状态，真实运行 `node scripts/audit-e2e-requirements.mjs required-suites.json suite-status` → **退出 0**（"all required suites accounted for"）；证据 `/tmp/opencode/p9-followup-provenance/final-gate/`（`suite-status/`、`audit-output.log`、`audit-exit.txt`、`PROVENANCE.json`，逐套件记录 `frozen898-reuse` / `followup-replaced`）。
+
+### 6.3 成员与执行覆盖证明 + post-68 supplement
+
+- **分片成员证明（只读）[V]**：B 新增 1 个 `workbench-layout.spec.ts` 测试后，用 `--list --shard=n/4` 对比修正工作树集合与冻结 `898`。`default-one/two/three` 身份集合**完全一致**（83/73/88，`only898=0`/`onlyCorrected=0`），故复用有效；修正 `default-four` = 冻结 shard4 的**全部 67** 身份 **+ 恰好 1 个新测试**（`workbench-layout.spec.ts › a root-edge queue dock keeps the reserved group collapsed and the saved tree`），无成员跨分片迁移。证明：`/tmp/opencode/p9-followup-provenance/shard-membership-proof.md`。
+- **执行覆盖回读 [V]**：修正 `default-four` 报告 68 expected / 0 unexpected / 0 flaky / 0 skipped；冻结 shard4 的 **1 failed + 53 not-run** 身份 **54/54** 均在新报告中以 **expected** 执行；新总数 68。custody `/tmp/opencode/p9-final-evidence/followup-affected/`。
+- **相关单测 [V]**：`/tmp/opencode/p9-followup-unit.log` = **2 files / 97 tests，UNIT_EXIT=0**（只触达两个既有文件，无新增全套测试）。
+- **post-68 supplement [V]**：`workbench-layout.spec.ts:366`（同一测试身份，body 扩展为真实鼠标拖拽 → passthrough active → Escape/up → class gone → stage click）→ **1 passed (23.8s)**，日志 `/tmp/opencode/p9-layout-regress6.log`；测试文件 sha256 `9a001fd3d97807bbd79c40458ba972f0be2c29d498561d082333e4c6ada31481`（root `13d274326`）。按规则未重跑整套 68，也未为 body-only 变更重复静态列表。
 
 ## 7. 保留与限制
 
 - workers 1、重试/超时/覆盖率预算未放宽；核心不依赖重试。
-- 门禁**未完成**：最终候选 `default-four` 未关闭，P9 保持进行中；最终报告不得把 53 not-run 写成 skip/pass。
-- 首次对照候选（`dc972be08`）的失败保留在历史小节，未回溯改写；最终候选结果为独立 raw 证据。
-- 不主张“字节一致复用”：相关输入变化的四个套件在最终候选上重跑；未变化行为的证据可在后续修复 follow-up 中以精确“变更触发点 + 验证范围”组合说明，而非整体重放 12 套件。
+- **门禁完成**：最终 composed 必需套件审计在集成根 `13d274326` 上退出 0；其中 `layout-stress`/`default-four` 为修正构建上重跑替换，其余 10 套件为输入等价复用（不主张“新 SHA 全量 12 raw”）。
+- 历史证据分离：`dc972be08` 与冻结 `898` 的 1 失败/53 not-run 保留在历史小节，未回溯改写；最终 composed 结果单独列出。
 - [GAP] 远端 CI 未运行（不推送）；首次真实 runner 观察（构建复用、审计、ml-cpu）留待集成后。
 - [GAP] 严格 WebGPU/WebCodecs 资格与渲染家族证据由 renderer 专项负责，本阶段不重复。
-- [GAP] 发布候选完整验证记录入口在 P10 台账中明确；不声称已存在 release gate。
+- [GAP] 候选发布验证入口与完整验收记录由 P10 台账承载；本报告不声称已存在 release gate。
+- 相关文档：产品修复记录 `docs/research/50-repository-optimization-workbench-root-edge-dock.md`（他人提交，本报告不复制其内容）。
