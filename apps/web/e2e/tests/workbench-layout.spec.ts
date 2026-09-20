@@ -1,5 +1,6 @@
 import { panelCommand } from "../fixtures/workbench-panel-actions";
 import { layoutCommand, openLayoutSettings } from "../helpers/workbench-layout";
+import { renderedGroups, workspace } from "../helpers/workbench-layout-matrix";
 import type { Page } from "@playwright/test";
 import type { NamedWorkspacePreset } from "../../src/api/auth";
 import type {
@@ -360,6 +361,188 @@ test("图片布局预设、面板隐藏和浮动保留画布及未发送讨论�
   expect(
     groupFor((await savedSnapshot(page, "annotate:image"))!.layout.grid.root, "discussion"),
   ).toBe(dockedDiscussionGroup);
+});
+
+test("a root-edge queue dock keeps the reserved group collapsed and the saved tree", async ({
+  page,
+  seed,
+}) => {
+  test.setTimeout(120_000);
+  const data = await seed.owned();
+  await seed.advanceTask({
+    taskId: data.task_ids[0],
+    toStatus: "pending",
+    annotatorEmail: data.annotator_email,
+  });
+  await seed.injectToken(page, data.annotator_email);
+  await page.goto(`/projects/${data.project_id}/annotate?task=${data.task_ids[0]}`);
+  await layoutCommand(page, "标准标注布局");
+  await expect(page.getByTestId("workbench-stage")).toHaveAttribute(
+    "data-image-ready",
+    "true",
+    FIRST_PAINT,
+  );
+
+  // Leave a merged tab group plus a floating group, then exercise the queue
+  // docks one at a time and assert each actually lands: right of the canvas,
+  // then below it (leaving the canvas at the workspace left edge), then the
+  // final left drop inside Dockview's root-edge band. On the pre-fix build all
+  // of these drags were no-ops because the queue already started on the left,
+  // so each geometry assertion below fails without the real dock.
+  const dockedGroups = async () => (await renderedGroups(page)).filter((group) => !group.floating);
+  const rectFor = (groups: Awaited<ReturnType<typeof dockedGroups>>, tab: string) =>
+    groups.find((group) => group.tabs.includes(tab))?.rect;
+
+  await panelCommand(page, "讨论", "与标注详情合并为标签");
+  await expect
+    .poll(async () => {
+      const root = (await savedSnapshot(page, "annotate:image"))?.layout.grid.root;
+      return !!root && groupFor(root, "discussion") === groupFor(root, "inspector");
+    })
+    .toBe(true);
+  await panelCommand(page, "类别面板", "浮动面板");
+  await expect
+    .poll(async () => {
+      const snapshot = await savedSnapshot(page, "annotate:image");
+      return (
+        snapshot?.layout.floatingGroups?.some((group) =>
+          group.data?.views.includes("class-palette"),
+        ) ?? false
+      );
+    })
+    .toBe(true);
+
+  await panelCommand(page, "任务队列", "停靠到右侧");
+  await expect
+    .poll(async () => {
+      const groups = await dockedGroups();
+      const queue = rectFor(groups, "task-queue");
+      const canvas = rectFor(groups, "canvas");
+      return !!queue && !!canvas && queue.x >= canvas.x + canvas.width - 2;
+    })
+    .toBe(true);
+
+  await panelCommand(page, "任务队列", "停靠到底部");
+  await expect
+    .poll(async () => {
+      const groups = await dockedGroups();
+      const queue = rectFor(groups, "task-queue");
+      const canvas = rectFor(groups, "canvas");
+      return !!queue && !!canvas && queue.y >= canvas.y + canvas.height - 2;
+    })
+    .toBe(true);
+
+  // Root-edge precondition: after the bottom dock the canvas starts at the
+  // workspace left, so the next 8px-from-left target is inside the root-edge band.
+  const workspaceBox = await workspace(page).boundingBox();
+  await expect
+    .poll(async () => {
+      const canvas = rectFor(await dockedGroups(), "canvas");
+      return !!canvas && !!workspaceBox && Math.abs(canvas.x - workspaceBox.x) <= 2;
+    })
+    .toBe(true);
+
+  await panelCommand(page, "任务队列", "停靠到左侧");
+  await expect
+    .poll(async () => {
+      const groups = await dockedGroups();
+      const queue = rectFor(groups, "task-queue");
+      const canvas = rectFor(groups, "canvas");
+      return !!queue && !!canvas && queue.x + queue.width <= canvas.x + 2;
+    })
+    .toBe(true);
+
+  await expect
+    .poll(async () => {
+      const snapshot = await savedSnapshot(page, "annotate:image");
+      const root = snapshot?.layout.grid.root;
+      return {
+        merged: !!root && groupFor(root, "discussion") === groupFor(root, "inspector"),
+        floating:
+          snapshot?.layout.floatingGroups?.some((group) =>
+            group.data?.views.includes("class-palette"),
+          ) ?? false,
+      };
+    })
+    .toEqual({ merged: true, floating: true });
+
+  // The reserved parking group must consume no docked grid space: the docked
+  // groups must still cover the workspace edges with no blank reserved column.
+  await expect
+    .poll(async () => {
+      const docked = (await renderedGroups(page)).filter((group) => !group.floating);
+      const rect = await workspace(page).boundingBox();
+      if (!docked.length || !rect) return Infinity;
+      const left = Math.min(...docked.map((group) => group.rect.x));
+      const right = Math.max(...docked.map((group) => group.rect.x + group.rect.width));
+      return Math.max(Math.abs(left - rect.x), Math.abs(right - (rect.x + rect.width)));
+    })
+    .toBeLessThanOrEqual(2);
+
+  // Cleanup acceptance: once the dock drags finish, the workspace must not keep
+  // the overlay passthrough class, so ordinary canvas pointer input is restored.
+  await expect
+    .poll(() =>
+      page.evaluate(() =>
+        (document.querySelector("[data-workbench-workspace]")?.className.split(/\s+/) ?? []).some(
+          (name) => name.includes("dragPassthrough"),
+        ),
+      ),
+    )
+    .toBe(false);
+
+  const saved = await savedSnapshot(page, "annotate:image");
+  const mergedDiscussionGroup = groupFor(saved!.layout.grid.root, "discussion");
+  expect(mergedDiscussionGroup).toBeDefined();
+  expect(mergedDiscussionGroup).toBe(groupFor(saved!.layout.grid.root, "inspector"));
+  expect(
+    saved!.layout.floatingGroups?.some((group) => group.data?.views.includes("class-palette")),
+  ).toBe(true);
+  await expect(
+    page.getByText("保存的布局无法恢复，请从布局菜单重置。", { exact: true }),
+  ).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByTestId("workbench-stage")).toBeVisible({ timeout: 20_000 });
+  await expect(
+    page.getByText("保存的布局无法恢复，请从布局菜单重置。", { exact: true }),
+  ).toHaveCount(0);
+  await expect
+    .poll(async () => {
+      const groups = await renderedGroups(page);
+      return {
+        merged: groups.some((group) => group.tabs.join(",") === "inspector,discussion"),
+        floating: groups.some((group) => group.floating && group.tabs.includes("class-palette")),
+      };
+    })
+    .toEqual({ merged: true, floating: true });
+  const restored = await savedSnapshot(page, "annotate:image");
+  expect(groupFor(restored!.layout.grid.root, "discussion")).toBe(mergedDiscussionGroup);
+
+  // Bounded native-cancel acceptance: start a real native tab drag, prove the
+  // overlay passthrough is active, cancel with Escape, then verify the class is
+  // reset and the canvas still answers a real pointer hit-test.
+  const passthroughActive = () =>
+    page.evaluate(() =>
+      (document.querySelector("[data-workbench-workspace]")?.className.split(/\s+/) ?? []).some(
+        (name) => name.includes("dragPassthrough"),
+      ),
+    );
+  const discussionTab = page.getByRole("tab", { name: "讨论", exact: true });
+  const tabBox = await discussionTab.boundingBox();
+  expect(tabBox).not.toBeNull();
+  await page.mouse.move(tabBox!.x + tabBox!.width / 2, tabBox!.y + tabBox!.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(tabBox!.x + tabBox!.width / 2 + 60, tabBox!.y + 90, { steps: 10 });
+  await expect.poll(passthroughActive).toBe(true);
+  await page.keyboard.press("Escape");
+  await page.mouse.up();
+  await expect.poll(passthroughActive).toBe(false);
+
+  const stage = page.getByTestId("workbench-stage");
+  await expect(stage).toHaveAttribute("data-image-ready", "true");
+  await stage.click({ position: { x: 80, y: 80 } });
+  await expect(stage).toBeVisible();
 });
 
 test("标准和浮动布局使用日间与夜间语义主题", { tag: "@visual" }, async ({ page, seed }) => {
