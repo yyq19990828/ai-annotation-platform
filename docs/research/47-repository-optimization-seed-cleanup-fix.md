@@ -61,3 +61,19 @@
   - 配置：`apps/web/playwright.preview.e2e.config.ts`（仅覆盖 webServer：owned API + `vite preview`），自有 e2e 模式，`--retries=0`，JSON + 完整日志。
   - 结果：修正后的 pointcloud 双击用例 **1 passed (20.4s)**（JSON `expected=1 / unexpected=0 / flaky=0`）；`video-issue-context` G2-5 **3 passed (55.8s)**（JSON `expected=3 / unexpected=0 / flaky=0`，0 global errors）。运行后自有 e2e 库 `users=0 / projects=0 / takeover=0`；无 deadlock、无 residual、无 `owned-cleanup failed`。
   - 未重跑整套 campaign，未重建未改动的 app 源码。
+
+## 6. 追加诊断：discussion 外来项目 FK、视频瞬时超时与 default-4 deadlock 分诊（2026-09-20）
+
+- **workbench-discussion:312 第二个 `seed.owned()` 500（已修复）[V][PG]**：
+  - 根因：该用例创建一个名为 `E2E Demo Project` 的“外来项目”，但其 `owner_id` 是**本命名空间的 admin**；owned 预清理按命名空间名称/display_id 选择项目，不会删掉这个外来项目，于是 `DELETE users` 撞 `projects_owner_id_fkey`（PG 原证：`Key (id)=<admin> is still referenced from table projects`），strict residual 守卫报 `users:3, projects:0`。
+  - 复现：自有 disposable 环境经 API 直接复现（`POST /seed/owned` → 用该 admin 建 `E2E Demo Project` → 再 `POST /seed/owned` 返回 500）。
+  - 修复（仅用例）：在 `finally` 中先删除该外来项目并断言 `204`，再 `seed.owned()`，且保证 `page.close()` 无条件执行。共享产物预览 `-g 失效讨论地址` → **1 passed (22.6s)**，运行后 `users=0 / projects=0`。提交 `8e50b35c3`。
+- **video-issue-context G2-1/G2-2：未决的瞬时超时（不修，如实记录）[V][PG]**：
+  - 现象：P9 default-3 中 `POST /seed/video-webcodecs`（`h264-issue-context`）客户端 10s 超时，随后 teardown residual `users:3, projects:1`。
+  - 证据：该路由在隔离下很快（实测 `generate_fixture` **0.27s**；`put_object` 已在 `asyncio.to_thread`，`_test_seed.py:2388/2443`）；自有共享产物预览 `G2-1` 单跑与 `G2-1|G2-2` 合跑均通过（1 passed / 2 passed），运行后 residual 0；P9 运行窗口（13:31–13:50）PostgreSQL 日志**无任何 ERROR/deadlock/lock 记录**，API 进程也未重启。
+  - 结论：**精确不确定性**——未能确定是编码、存储还是进程/主机层面的瞬时停顿；没有证据支持“放弃写入的竞态”或某处同步阻塞，因此**不做**超时/重试或后端改动，留给最终受影响套件复跑判定。
+- **default-4 deadlock 只读分诊 [PG]**：
+  - 配对语句（PG 原证 13:48:16）：进程 964615 `SELECT annotations ... FOR UPDATE`（`update_annotation`）↔ 进程 964513 `DELETE FROM tasks WHERE project_id = ANY($1)`（**owned 清理**）。
+  - 判定：这是与 pointcloud 同类的「teardown 清理 vs 仍在飞行的写入」竞态，不是 `update_annotation` 自身锁序的独立缺陷；candidate-decisions 两个用例在最终 JSON 中**通过**（deadlock 受害者是那个未被断言的飞行中写入请求）。
+  - default-4 的 3 个 unexpected 为：`workbench-tool-dock`（浏览器被关闭）、`workbench-topbar`（P9-owned 布局）、`workbench-pointcloud-tools`（已由 `90c80922b`/`8024717c8` 修复的 pointcloud 清理残差）。
+  - 处置：只读报告；若需清零 deadlock，属“保证 teardown 前无飞行写入”的用例侧修复（同 pointcloud 模式），不在本任务 ownership，未改动。
