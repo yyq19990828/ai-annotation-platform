@@ -173,6 +173,7 @@
 - 运行事实：shard 4/4、67 tests、CI `maxFailures` 在首个失败后停止 → **13 passed / 1 failed / 53 not run**，`--retries=0`，240.8s；这是**失败**，53 个 not-run 不等同于 skipped 或 passed。
 - 只读诊断（B lane）：停靠拖拽后未出现 preferences PATCH，discussion 仍留在 inspector 分组；疑为渲染 overlay 遮挡分组 dropzone，但 DOM 祖先关系不构成事件证据；已授权 B 在自有分支做聚焦的真实拖拽/hit-test 捕获与诊断性 CSS 正/负对照。
 - 处置：**门禁保持失败**。仅在 B 的证据证明后，才由既有 owner 做最小 drag-lifecycle 修复；修复需自有新构建 + 聚焦 layout/真实对照/stress + **default-four 全量（含 53 not-run）** 复跑。不得新增 dock 菜单/超时/重试/弱化断言；不得用未执行用例冒充通过。
+- **fail-closed 审计实证 [V]**：对冻结 campaign 的 12 个规范状态产物运行真实必需套件审计（`node scripts/audit-e2e-requirements.mjs required-suites.json suite-status`，required manifest 由 `GITHUB_EVENT_NAME=push node scripts/plan-e2e-suites.mjs` 的实际输出生成）实测 **退出 1**，唯一阻塞为 `default-four | failed`（13 expected / 1 unexpected / 53 not run），其余 11 套件 `passed`，无 `missing`/`cancelled`/`setup-failure`/`suite-mismatch`/`unknown-outcome`/`malformed-success`/`core-flaky`；证据 `/tmp/opencode/p9-failed-campaign-audit/`（`required-suites.json`、`planner-push.out`、`suite-status/`、`audit-output.log`、`audit-exit.txt`、`README.md`）。这不是从计数推断门禁失败，而是稳定聚合的实际 fail-closed 结果；修复后的审计将是独立、带自身来源的产物。
 
 ## 7. 保留与限制
 
