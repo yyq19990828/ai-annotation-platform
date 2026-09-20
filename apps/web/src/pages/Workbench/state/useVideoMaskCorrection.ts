@@ -227,7 +227,7 @@ export function useVideoMaskCorrection({
       pushToast({ msg: "Mask 为空，未提交", kind: "warning" });
       return Promise.resolve({ ok: false, retryable: false, savedKeyframe: null });
     }
-    // v0.23.5 · WS-B/A7 · 经 session 单飞 save: 重复 Enter / 双击只产生一次 mutation;
+    // 经 session 单飞 save: 重复 Enter / 双击只产生一次 mutation;
     // 失败保留 buffer/history 进入 error 相位, 可 retry (A2)。
     let savedKeyframe: Awaited<ReturnType<typeof handleVideoMaskCommit>> | null = null;
     let classSelectionCancelled = false;

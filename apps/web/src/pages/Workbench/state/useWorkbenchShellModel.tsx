@@ -424,10 +424,10 @@ export function useWorkbenchShellModel({
   const projectName = currentProject?.name ?? "标注工作台";
   const projectDisplayId = currentProject?.display_id ?? "—";
 
-  // v0.14.18 · 多 backend 两条线分流 (见 docs/plans/2026-06-09-v0.14.18-...):
-  //   批量线 batchBackendId — 文本/几何/OCR/版面预标, 默认 = 项目默认后端 (ml_backend_id) 回落第一个,
-  //     驱动 preCfg / handleRunAi / AI 面板 backend 选择器, 沿用批量页 ProjectDetailPanel 切换语义。
-  //   交互线 — point/bbox/exemplar 工具各自按能力路由到交互后端 (见下方 routing / interactiveBackendId)。
+  // 多 backend 两条线分流 (见 docs/plans/2026-06-09-...):
+  // 批量线 batchBackendId — 文本/几何/OCR/版面预标, 默认 = 项目默认后端 (ml_backend_id) 回落第一个,
+  // 驱动 preCfg / handleRunAi / AI 面板 backend 选择器, 沿用批量页 ProjectDetailPanel 切换语义。
+  // 交互线 — point/bbox/exemplar 工具各自按能力路由到交互后端 (见下方 routing / interactiveBackendId)。
   const backendsQ = useMLBackends(projectId);
   const backends = useMemo(() => (backendsQ.data ?? []) as MLBackendResponse[], [backendsQ.data]);
   const { batchBackendId, selectBatchBackend, selectedBackend } = useBatchBackendSelection({
@@ -499,7 +499,7 @@ export function useWorkbenchShellModel({
   const directTaskQuery = useTask(shouldLoadDirectTask ? requestedTaskId! : "");
 
   const discussionDraftStore = useDiscussionDraftStore();
-  // v0.13.x · 点云 3D 项目无对应 2D 工具,按当前 3D 工具显式选择工具单位。
+  // .x · 点云 3D 项目无对应 2D 工具,按当前 3D 工具显式选择工具单位。
   const is3DProject = currentProject?.type_key === "lidar";
   const setExemplarOutputMode = s.setExemplarOutputMode;
   useEffect(() => {
@@ -580,7 +580,7 @@ export function useWorkbenchShellModel({
   const [fitTick, setFitTick] = useState(0);
   const [cursor, setCursor] = useState<{ x: number; y: number } | null>(null);
   const [showHotkeys, setShowHotkeys] = useState(false);
-  // v0.15.3 · 工作台设置窗口(齿轮菜单入口)。
+  // 工作台设置窗口(齿轮菜单入口)。
   const [workbenchSettingsOpen, setWorkbenchSettingsOpen] = useState(false);
   const workspaceCommands = useRef<WorkbenchWorkspaceCommands>(null);
   const [stageGeom, setStageGeom] = useState<{
@@ -832,23 +832,23 @@ export function useWorkbenchShellModel({
       })),
     [videoChaptersData],
   );
-  // v0.21.13 · 章节 × 时间轴刷选联动。chapterDraftArmed: 侧栏「时间轴圈选」臂选态; 臂选时
+  // 章节 × 时间轴刷选联动。chapterDraftArmed: 侧栏「时间轴圈选」臂选态; 臂选时
   // 时间轴普通拖即圈选 chapter-draft。chapterDraft: 刷选产物 (松手后一次性喂给侧栏预填表单)。
   const [chapterDraftArmed, setChapterDraftArmed] = useState(false);
   const [chapterDraft, setChapterDraft] = useState<{ startFrame: number; endFrame: number } | null>(
     null,
   );
-  // v0.21.13 WS4 · 时间轴章节条 ↔ 侧栏行双向 hover 联动的共享态。
+  // · 时间轴章节条 ↔ 侧栏行双向 hover 联动的共享态。
   const [hoveredChapterId, setHoveredChapterId] = useState<string | null>(null);
-  // v0.21.16 WS3 · 轨迹多选态镜像 (由 roster 的 VideoTrackSidebar 经 onSelectionChange 上报),
+  // · 轨迹多选态镜像 (由 roster 的 VideoTrackSidebar 经 onSelectionChange 上报),
   // 供浮卡在多选 ≥2 轨迹时渲染批量卡。roster 仍是唯一 owner, 此处只读镜像, 不双写。
   const [videoBatchTracks, setVideoBatchTracks] = useState<VideoTrackAnnotation[]>([]);
-  // v0.21.14 WS3 · AI 传播对话框打开时上报的影响范围 (时间轴高亮「将影响哪段帧」)。
+  // · AI 传播对话框打开时上报的影响范围 (时间轴高亮「将影响哪段帧」)。
   const [propagateHighlight, setPropagateHighlight] = useState<{
     startFrame: number;
     endFrame: number;
   } | null>(null);
-  // v0.21.14 · 传播对话框打开时时间轴 Shift+拖刷选回填的范围 (每次刷选替换新对象喂给对话框)。
+  // 传播对话框打开时时间轴 Shift+拖刷选回填的范围 (每次刷选替换新对象喂给对话框)。
   const [propagateBrush, setPropagateBrush] = useState<{
     startFrame: number;
     endFrame: number;
@@ -865,7 +865,7 @@ export function useWorkbenchShellModel({
     },
     [],
   );
-  // v0.21.13 WS3 · 章节条 resize: 松手才落库, 短 debounce 合并快速连续调整, PATCH 只带起止帧。
+  // · 章节条 resize: 松手才落库, 短 debounce 合并快速连续调整, PATCH 只带起止帧。
   const updateChapterMutation = useUpdateVideoChapter(isVideoTask ? videoDatasetItemId : null);
   // 按 chapterId 分槽维护 debounce timer: 单槽会让「200ms 内连续 resize 不同章节」时,
   // 前一章节的 PATCH 被后一次 clearTimeout 无声取消 → 落库前被 refetch 回滚、调整丢失。
@@ -895,11 +895,11 @@ export function useWorkbenchShellModel({
       timers.clear();
     };
   }, []);
-  // v0.21.27 · U-pvs-1 · PVS 点种子采集态 (完整接线见传播对话框处)。此处先声明, 因下方
+  // U-pvs-1 · PVS 点种子采集态 (完整接线见传播对话框处)。此处先声明, 因下方
   // 「工具未启用即回收」守卫需读它: 采集态借 smart-point 落点, 不受回收。
   // 多目标: 每点带 obj (目标序号, 1-based; obj=1 为主实例, 回填选中轨迹, obj≥2 各成新轨迹);
   // seedObj = 当前正在落点的目标, 「新目标」递增。可视化仍复用 overlay ({pt,polarity})。
-  // v0.21.27 · U-pvs-2 纠偏: 每点还带 frame (落点时的帧), 提交按 obj+frame 分组成多帧
+  // U-pvs-2 纠偏: 每点还带 frame (落点时的帧), 提交按 obj+frame 分组成多帧
   // prompts; seedAnchorFrame = 首个落点帧, 传播范围锚定于此 (导航到别帧加修正点不移动范围)。
   const trackerJobs = useVideoTrackerJobs(taskId, isVideoTask);
   const requestVideoSeedToolRef = useRef<
@@ -1307,11 +1307,11 @@ export function useWorkbenchShellModel({
   );
   const annotationsRef = useRef<AnnotationResponse[]>([]);
   annotationsRef.current = annotationsData ?? [];
-  // v0.20.22 · 「提交在途」几何 override 桥, 防松手时因 onMutate 微任务回填缓存
+  // 「提交在途」几何 override 桥, 防松手时因 onMutate 微任务回填缓存
   // 晚一帧于 setDrag(null) 而出现的原尺寸闪回。详见 usePendingGeom 注释。
   const { pendingGeomMap, markPendingGeom, clearPendingGeom } = usePendingGeom(annotationsData);
   const [hideOrphanAnnotations, setHideOrphanAnnotations] = useState(false);
-  // v0.20.19 · 二次推理面板显隐 (服务端偏好, 跨设备); gate SecondaryInferenceBar 渲染。
+  // 二次推理面板显隐 (服务端偏好, 跨设备); gate SecondaryInferenceBar 渲染。
   const { hidden: secondaryBarHidden, setHidden: setSecondaryBarHidden } =
     useSecondaryBarHiddenPref();
   const projectClassNames = useMemo(
@@ -1365,7 +1365,7 @@ export function useWorkbenchShellModel({
     publishTaskBoxCount(annotationsRef.current.length);
   }, [annotationsData]);
 
-  // v0.14.1 · 跨帧 propagate 跳转后, 目标 task 标注加载完成时补选新建的框。
+  // 跨帧 propagate 跳转后, 目标 task 标注加载完成时补选新建的框。
   useEffect(() => {
     const pend = pendingCrossFrameSelectRef.current;
     if (!pend || currentTaskId !== pend.taskId) return;
@@ -1441,7 +1441,7 @@ export function useWorkbenchShellModel({
     [predictionsInfinite.data?.pages],
   );
 
-  // v0.11.27 · 遮挡样式 key 的跨工具单位并集。userBoxes 含全部单位的标注，而
+  // 遮挡样式 key 的跨工具单位并集。userBoxes 含全部单位的标注，而
   // toolView.attributeSchema 仅当前工具单位；故遍历全 tool_bindings 取 style_occluded
   // boolean key 并集，避免切换工具后其他单位的框遮挡视觉丢失。
   const occludedKeys = useMemo(() => {
@@ -1769,7 +1769,7 @@ export function useWorkbenchShellModel({
     lastPreannotateStatusRef.current = status;
   }, [preannotationProgress?.status, taskId, queryClient]);
 
-  // v0.14.1+ · 跨帧目标延续 (Shift+→ / Shift+←): 把选中框 propagate 到同 scene
+  // · 跨帧目标延续 (Shift+→ / Shift+←): 把选中框 propagate 到同 scene
   // 邻帧 task。导航胶水 navigateToCrossFrameTask 留此处(绑 tasks/selectTask/updateUrl),
   // 竞态簇(3 ref + 4 回调)抽到 usePredictionPropagation,见本文件下方 hook 调用。
   // 跳到目标帧 task: 已加载队列内直接选中,否则按 taskId 直开。
@@ -1783,7 +1783,7 @@ export function useWorkbenchShellModel({
     },
     [tasks, selectTask],
   );
-  // v0.16.x 第 3 批 · 跨帧传播竞态簇(3 ref + 4 回调)抽到 usePredictionPropagation;
+  // .x 第 3 批 · 跨帧传播竞态簇(3 ref + 4 回调)抽到 usePredictionPropagation;
   // pendingCrossFrameSelectRef 返回供上方两处 effect(切 task 清理 522 / 导航后补选 651)读写。
   const {
     pendingCrossFrameSelectRef,
@@ -1834,8 +1834,8 @@ export function useWorkbenchShellModel({
     [interpolateScene, runSceneWrite],
   );
 
-  // v0.14.18 · 交互线能力路由: 对每个注册后端拉 /setup 建 capIndex, 按当前工具 prompt 解析交互后端。
-  // v0.18.31 · 交互后端选择的服务端持久化偏好 (按 project, 跨设备; 替代旧 localStorage)。
+  // 交互线能力路由: 对每个注册后端拉 /setup 建 capIndex, 按当前工具 prompt 解析交互后端。
+  // 交互后端选择的服务端持久化偏好 (按 project, 跨设备; 替代旧 localStorage)。
   const interactiveBackendPref = useInteractiveBackendPref(projectId);
   const routing = useBackendRouting({
     projectId,
@@ -1909,7 +1909,7 @@ export function useWorkbenchShellModel({
     if (trackerModelProviders.sam3_video_combo) set.add("sam3_video_combo");
     return [...set];
   }, [backends, routing.capIndex, trackerModelProviders]);
-  // v0.21.23 · 当前激活的 AI 工具。视频侧按 videoTool 解析 —— smart-point / smart-box 与图片
+  // 当前激活的 AI 工具。视频侧按 videoTool 解析 —— smart-point / smart-box 与图片
   // 工具同名, 共用 TOOL_REGISTRY, 故交互 prompt 解析与工具上下文浮块可直接复用图片侧那套。
   const activeAiTool = (isVideoTask ? s.videoTool : s.tool) as ToolId;
   const maskToolActive = isVideoTask
@@ -2089,7 +2089,7 @@ export function useWorkbenchShellModel({
   });
   const maskCompareInteractionBlocked = maskQcReview.store !== null;
 
-  // v0.21.23 · 视频交互式 SAM 的投递方式: 视频 task 的 file_path 是整段 mp4, 服务端取不到帧,
+  // 视频交互式 SAM 的投递方式: 视频 task 的 file_path 是整段 mp4, 服务端取不到帧,
   // 故把当前帧解成 JPEG 走 multipart。图片 task 传 undefined → hook 用默认 transport。
   const samTransport = useMemo<InteractiveTransport | undefined>(() => {
     if (!isVideoTask) return undefined;
@@ -2196,13 +2196,13 @@ export function useWorkbenchShellModel({
     [sam.candidates, selectSamCandidateByIndex],
   );
 
-  // v0.14.9 · active model 输出几何 / 文本属性 与项目配置的兼容性警告 (非阻断)。
+  // active model 输出几何 / 文本属性 与项目配置的兼容性警告 (非阻断)。
   const capabilityWarnings = useCapabilityValidation({
     activeModel: mlCapabilities.activeModel,
     enabledToolUnits,
     toolBindings: currentProject?.tool_bindings,
   });
-  // v0.18.26 · 交互工具档位(模型权重)选择: 源自交互后端 activeModel 的 variant 轴, 选择写回
+  // 交互工具档位(模型权重)选择: 源自交互后端 activeModel 的 variant 轴, 选择写回
   // 项目级 default_variants (与批量预标注同源; 一项目一后端一份偏好, 交互/批量共用同一档位)。
   const updateProjectMu = useUpdateProject(projectId ?? "");
   const interactiveVariantGroups = mlCapabilities.activeModel?.supported_variants;
@@ -2220,10 +2220,10 @@ export function useWorkbenchShellModel({
     }),
     [mlCapabilities.activeModel, interactiveProjectVariantSlice],
   );
-  // v0.21.23 · 画布 samProbe 松手 → 请求候选 (坐标已归一化 [0,1])。
+  // 画布 samProbe 松手 → 请求候选 (坐标已归一化 [0,1])。
   const onVideoSamPrompt = useCallback(
     (prompt: VideoSamPrompt) => {
-      // v0.21.27 · U-pvs-1 · PVS 种子采集态: point 收进种子列表 (不跑帧级 SAM)。仅由传播
+      // U-pvs-1 · PVS 种子采集态: point 收进种子列表 (不跑帧级 SAM)。仅由传播
       // 对话框「落点选目标」显式开启; 正点 polarity=1 / Alt 负点 polarity=0 (精修召回)。
       // 点归属当前目标 seedObj (「新目标」递增 → 多目标各成一条轨迹) + 当前帧 (纠偏: 导航到
       // 别帧落修正点, 提交按 frame 分组成多帧 prompts)。首个落点帧设为范围锚点。
@@ -2231,7 +2231,7 @@ export function useWorkbenchShellModel({
         collectPoint(prompt.pt, prompt.alt ? 0 : 1, s.videoFrameIndex);
         return;
       }
-      // v0.21.27 · 框修正 · 采集态画框 (smart-box) → 收进框种子列表, 不跑帧级 SAM。
+      // 框修正 · 采集态画框 (smart-box) → 收进框种子列表, 不跑帧级 SAM。
       if (seedCollecting && prompt.mode === "bbox") {
         collectBox(prompt.bbox, s.videoFrameIndex);
         return;
@@ -2279,11 +2279,11 @@ export function useWorkbenchShellModel({
       updateProjectMu,
     ],
   );
-  // v0.20.2 · 「采纳后该属性将丢失」警告的一键补全: 把 active model 自报的属性字段 (warning.fillable)
+  // 「采纳后该属性将丢失」警告的一键补全: 把 active model 自报的属性字段 (warning.fillable)
   // 补进项目「所有启用工具单位」的 attribute_schema.fields (同 key 覆盖、新 key 追加), 立即落库。
   // 写项目配置是有副作用操作, 故先经应用内 confirmDialog 确认 (plan 风险项)。补完后 enabledToolUnits
   // 派生收敛, useCapabilityValidation 重算, 该条警告自动消失。
-  // v0.20.12 · 抽出批量核心, 供单框二次推理 (SecondaryInferenceBar) 一次补多字段复用。
+  // 抽出批量核心, 供单框二次推理 (SecondaryInferenceBar) 一次补多字段复用。
   const applyAttributeFields = useCallback(
     async (fields: AttributeField[], confirmMsg: string) => {
       if (fields.length === 0) return;
@@ -2340,7 +2340,7 @@ export function useWorkbenchShellModel({
       ),
     [applyAttributeFields],
   );
-  // v0.20.12 · 二次推理: 一次把多个缺失属性字段补进项目 (SecondaryInferenceBar 用)。
+  // 二次推理: 一次把多个缺失属性字段补进项目 (SecondaryInferenceBar 用)。
   const handleEnsureAttributeFields = useCallback(
     (fields: AttributeField[]) =>
       applyAttributeFields(
@@ -2351,7 +2351,7 @@ export function useWorkbenchShellModel({
       ),
     [applyAttributeFields],
   );
-  // v0.20.12 · 项目所有启用单位已有的属性键集合 (二次推理判定 backend 输出键是否有承接位)。
+  // 项目所有启用单位已有的属性键集合 (二次推理判定 backend 输出键是否有承接位)。
   const projectAttributeKeys = useMemo(() => {
     const tb = currentProject?.tool_bindings;
     const keys = new Set<string>();
@@ -2372,10 +2372,10 @@ export function useWorkbenchShellModel({
   const preCfg = usePreannotateConfig({
     projectId: projectId ?? "",
     backendId: batchBackendId,
-    // v0.21.10 · 工作台「当前题 AI」面板恒做**单帧检测**(方案 a): 传 executionUnit="frame" 放开
-    //   图像检测模型 (GEOMETRIC_TASKS), 而非整段 tracker——单帧发 detection → /predict-frame →
-    //   to_video_bbox_result 落 video_bbox。整段追踪走 Ctrl+B 种子追踪 / 批量页 (execution_unit=video)。
-    //   (图像项目 isVideoProject=false, 此参数无副作用。)
+    // 工作台「当前题 AI」面板恒做**单帧检测**(方案 a): 传 executionUnit="frame" 放开
+    // 图像检测模型 (GEOMETRIC_TASKS), 而非整段 tracker——单帧发 detection → /predict-frame →
+    // to_video_bbox_result 落 video_bbox。整段追踪走 Ctrl+B 种子追踪 / 批量页 (execution_unit=video)。
+    // (图像项目 isVideoProject=false, 此参数无副作用。)
     executionUnit: "frame",
   });
   useEffect(() => {
@@ -2389,7 +2389,7 @@ export function useWorkbenchShellModel({
     sam.warmup();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stageKind, taskId, warmupPointBackendId]);
-  // v0.18.x · 工具切换按 prompt 种类变化取消交互会话: AI↔AI (如 point→exemplar) 与 AI↔非AI
+  // .x · 工具切换按 prompt 种类变化取消交互会话: AI↔AI (如 point→exemplar) 与 AI↔非AI
   // 切换都会改变 prompt 种类, 一并清掉上一个工具残留的 ghost 点位 overlay / stale mask_input
   // (见 issue 0004; promptOfTool 对非 AI / text 工具返回 null)。同 prompt 种类切换不清 (会话兼容)。
   const prevToolPromptRef = useRef(promptOfTool(s.tool));
@@ -2408,7 +2408,7 @@ export function useWorkbenchShellModel({
     if (changed && !continuesMaskRefinement) sam.cancel();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s.tool]);
-  // v0.14.18 · 门控走 routing 并集: 某交互 prompt 只要任一交互后端支持, 工具就亮。
+  // 门控走 routing 并集: 某交互 prompt 只要任一交互后端支持, 工具就亮。
   const routingSig = INTERACTIVE_PROMPTS.map((p) =>
     routing.isPromptSupported(p) ? "1" : "0",
   ).join("");
@@ -2647,7 +2647,7 @@ export function useWorkbenchShellModel({
         const target = all.find((op) => op.kind === "create" && op.tmpId === id);
         if (target) await offlineQueueRemoveById(target.id, scope);
       },
-      // v0.20.22 · accept undo 防御过滤依赖 (改动 1.5): annotationsRef 已含全量当前标注,
+      // accept undo 防御过滤依赖 (改动 1.5): annotationsRef 已含全量当前标注,
       // undo 时按 id 查 parent_prediction_id, 只删本 predictionId 派生的那批。
       getAnnotation: (id) => annotationsRef.current.find((a) => a.id === id) ?? null,
     },
@@ -2776,7 +2776,7 @@ export function useWorkbenchShellModel({
     stageGeom,
     videoManifest.data?.metadata,
   );
-  // v0.23.5 · WS-B · mask 编辑会话键: task + frame + selection + annotation version。
+  // mask 编辑会话键: task + frame + selection + annotation version。
   // sessionKey 变化 → useMaskEditorSession 自增 generation, 隔离迟到 GET 回包 (A1)。
   const maskSessionSelection = s.selectedId ?? "blank";
   const maskSessionAnnotationVersion = useMemo(() => {
@@ -3381,7 +3381,7 @@ export function useWorkbenchShellModel({
     aiRequest,
   ]);
 
-  // v0.21.0 · 项目默认命名编排成为 popover「按项目编排」来源; 旧 preannotate_pipeline 仅作读兼容兜底。
+  // 项目默认命名编排成为 popover「按项目编排」来源; 旧 preannotate_pipeline 仅作读兼容兜底。
   // popover 仍是执行器、不是编排编辑器: 编排在 /ai-pre 定义保存, 这里只把那条编排跑当前一图。
   const projectPipeline = useMemo(
     () => selectProjectPipelineStages(projectPipelinesQ.data, currentProject?.preannotate_pipeline),
@@ -3559,7 +3559,7 @@ export function useWorkbenchShellModel({
       maskLoadBlank(maskGeneration);
       return;
     }
-    // v0.23.5 · WS-B/A1 · 捕获本次加载的 generation, 交给 loadRle/loadBlank 隔离迟到回包。
+    // 捕获本次加载的 generation, 交给 loadRle/loadBlank 隔离迟到回包。
     // sessionKey 变化时 useMaskEditorSession 已自增 generation, 旧 gen 的回包被静默丢弃,
     // 不会覆盖用户在新帧上落笔后的 Buffer。
     const gen = maskGeneration;
@@ -3885,7 +3885,7 @@ export function useWorkbenchShellModel({
   });
   commitCurrentMaskRef.current = maskPrimary.saveBeforeLeave;
 
-  // v0.21.23 · 视频交互式 SAM 候选键位: Enter 采纳 / Esc 取消 / Tab 切候选 (与图片侧同键位)。
+  // 视频交互式 SAM 候选键位: Enter 采纳 / Esc 取消 / Tab 切候选 (与图片侧同键位)。
   // Enter 不直接落库, 而是弹类选择器 —— 与图片侧 samPendingAccept 一致。视频侧的 popover 走
   // fixed anchor (图片侧走 geom + vp 换算), 故需画布把候选外接框底边换算成屏幕坐标。
   const [videoSamPendingAccept, setVideoSamPendingAccept] = useState<{
@@ -4110,7 +4110,7 @@ export function useWorkbenchShellModel({
     return visibleAnnotationsData.find((a) => a.id === s.selectedId) ?? null;
   }, [s.selectedId, s.selectedIds.length, visibleAnnotationsData]);
 
-  // v0.11.5+ · 评论的视频帧锚点 (恢复 B1 去 flag 时随 AIInspectorPanel 内嵌一起删掉的逻辑)。
+  // · 评论的视频帧锚点 (恢复 B1 去 flag 时随 AIInspectorPanel 内嵌一起删掉的逻辑)。
   const videoCommentAnchor = useMemo<AnnotationCommentAnchor | null>(() => {
     const ann = selectedAnnotationForPanel;
     if (!isVideoTask || !ann) return null;
@@ -4275,7 +4275,7 @@ export function useWorkbenchShellModel({
     submitTask();
   }, [sceneWriteBlocked, submitTask]);
 
-  // v0.21.4 · 视频单题 AI: 抓当前帧 JPEG → 图像 backend(client 供图路径)→ 落单帧 video_bbox 候选。
+  // 视频单题 AI: 抓当前帧 JPEG → 图像 backend(client 供图路径)→ 落单帧 video_bbox 候选。
   // 与图像的 handleRunAi 走不同路(那条投 task_id 让后端从 task URL 取图, 视频 task URL 是整段 mp4)。
   const handleRunVideoFrameAi = useCallback(() => {
     if (!projectId || !taskId) return;
@@ -4369,7 +4369,7 @@ export function useWorkbenchShellModel({
   const modeState = mode === "review" ? reviewModeState : annotateModeState;
   const { topbarActions, bannerActions } = modeState;
   const isLocked = modeState.isLocked || sceneWriteBlocked;
-  // v0.21.13 · 章节 × 时间轴联动控制器 (状态/handler 声明在前, 此处 isLocked 就绪后组装并 gate 编辑)。
+  // 章节 × 时间轴联动控制器 (状态/handler 声明在前, 此处 isLocked 就绪后组装并 gate 编辑)。
   const canEditChapters = !isLocked && isOwner;
   const videoTimelineChapterControls = useMemo<VideoTimelineChapterControls | undefined>(() => {
     if (!isVideoTask) return undefined;
@@ -4410,7 +4410,7 @@ export function useWorkbenchShellModel({
         ? ("local" as const)
         : ("saved" as const);
 
-  // v0.16.14 · 选中 AI 预测框反查:预测与普通框共用 s.selectedId,但预测 id 带 pred- 前缀且
+  // 选中 AI 预测框反查:预测与普通框共用 s.selectedId,但预测 id 带 pred- 前缀且
   // 只在 aiBoxes(非 visibleAnnotationsData)里,故 selectedAnnotationForPanel 必为 null。
   // diff 模式 final 时无预测可选(aiBoxes 已被上游置空逻辑覆盖)→ 不命中 AI 分支。
   const selectedAiBox = useMemo(() => {
@@ -4432,7 +4432,7 @@ export function useWorkbenchShellModel({
     return "manual";
   }, [isVideoTask, s.videoFrameIndex, selectedAiBox, selectedAnnotationForPanel]);
 
-  // v0.11.28：改类悬浮框内联属性编辑——按当前正在改类的标注派生 schema/attributes/提交回调。
+  // ：改类悬浮框内联属性编辑——按当前正在改类的标注派生 schema/attributes/提交回调。
   const editingClassAnnotation = useMemo(
     () =>
       s.editingClass
@@ -4550,10 +4550,10 @@ export function useWorkbenchShellModel({
     return out;
   }, [shortcutPrefs.effective]);
 
-  // v0.13.4 · 3D 工作台自管这些字母键(V/B 选/放、W/E/R gizmo 模式),交给它的本地
+  // 3D 工作台自管这些字母键(V/B 选/放、W/E/R gizmo 模式),交给它的本地
   // keydown 处理;否则全局 2D 热键会抢 —— 尤其 E=「提交质检」(dispatchKey → submit)会被
   // 误触发:用户按 E 想转 gizmo,却把任务直接提交了。Ctrl+方向(切题)/?/Esc 等全局键仍保留。
-  // v0.13.8 · Delete/Backspace 也归 3D 本地处理:全局 dispatchKey 通路在 3D 台实测不触发删除,
+  // Delete/Backspace 也归 3D 本地处理:全局 dispatchKey 通路在 3D 台实测不触发删除,
   // 改由 3D 工作台显式监听删选中框,口径与 W/E/R / B/V 一致。
   const threeDOwnedKeys = useMemo(
     () =>
@@ -4711,7 +4711,7 @@ export function useWorkbenchShellModel({
   const trackSectionCollapsed = s.trackSectionCollapsed;
   const setTrackSectionCollapsed = s.setTrackSectionCollapsed;
 
-  // v0.16.8 Phase 3 · 视频轨迹面板的共享构建器:右栏(VideoTrackSidebar + 章节)与选中浮动卡
+  // Phase 3 · 视频轨迹面板的共享构建器:右栏(VideoTrackSidebar + 章节)与选中浮动卡
   // 复用同一份 props/回调,杜绝两套逻辑漂移。frameFilter 控制「全部 / 当前帧」轨迹过滤。
   const renderVideoTrackSidebar = useCallback(
     (frameFilter: TrackFilter, view: "roster" | "card" = "roster") => (
@@ -5274,10 +5274,10 @@ export function useWorkbenchShellModel({
   }
 
   const propagateDialogTrack = propagateDialog?.annotation ?? null;
-  // v0.22.2 · M2 · 多选批量源列表 (≥2 时对话框转多源叙事; 非无源)。
+  // M2 · 多选批量源列表 (≥2 时对话框转多源叙事; 非无源)。
   const propagateSources = propagateDialog?.sources ?? null;
   const propagateMultiSource = (propagateSources?.length ?? 0) >= 2;
-  // v0.21.27 · 框修正 · 是否多目标 (跨点种子与框种子统计 distinct obj); 决定 overlay 是否逐目标配色。
+  // 框修正 · 是否多目标 (跨点种子与框种子统计 distinct obj); 决定 overlay 是否逐目标配色。
   const seedMultiObj =
     new Set([...trackerSeeds.map((sd) => sd.obj), ...trackerSeedBoxes.map((sb) => sb.obj)]).size >
     1;
@@ -5387,9 +5387,9 @@ export function useWorkbenchShellModel({
         .sort((a, b) => b - a)[0] ?? null)
     : null;
 
-  // v0.21.10 · 「当前题 AI」header 待审数: 视频按**当前帧**过滤 (与下方候选列表口径一致), 图像取全部。
-  //   aiBoxes 已在源头按 id 去重 (见 useImageAnnotationActions), 故此处只做帧作用域, 消除跨帧+分页
-  //   漂移导致的 100→500→100 抖动。
+  // 「当前题 AI」header 待审数: 视频按**当前帧**过滤 (与下方候选列表口径一致), 图像取全部。
+  // aiBoxes 已在源头按 id 去重 (见 useImageAnnotationActions), 故此处只做帧作用域, 消除跨帧+分页
+  // 漂移导致的 100→500→100 抖动。
   const aiPopoverBoxCount =
     modeState.diffMode === "final"
       ? 0
@@ -5468,7 +5468,7 @@ export function useWorkbenchShellModel({
       widthMin: sidebarMinPx,
       widthMax: sidebarMaxPx,
       widthResetTo: sidebarResetPx,
-      // v0.13.3-5 · 3D 点云台:左栏色板可点选 = 放置新框的类别(2D 仍只读图例)。
+      // · 3D 点云台:左栏色板可点选 = 放置新框的类别(2D 仍只读图例)。
       classPickable: stageKind === "3d" && !isLocked,
       onPickClass: s.setActiveClass,
       bboxCreation:
@@ -5557,7 +5557,7 @@ export function useWorkbenchShellModel({
       onToggleSide: toggleWorkspaceSide,
       onRunAi: stageKind === "3d" ? undefined : toggleAiPopover,
       aiOpen: workspaceState.aiTaskVisible,
-      // v0.21.4 · 视频项目也开放当前题 AI(单帧 → 图像 backend), 不再禁用工具栏 AI 按钮。
+      // 视频项目也开放当前题 AI(单帧 → 图像 backend), 不再禁用工具栏 AI 按钮。
       aiDisabled: false,
       onToggleTracker: isVideoTask ? togglePropagateDialog : undefined,
       trackerOpen: workspaceState.videoTrackerVisible,
@@ -5744,9 +5744,9 @@ export function useWorkbenchShellModel({
                 confirm: confirmDestructiveMaskInstanceOperation,
               }}
             />
-            {/* v0.18.25 · 交互工具上下文浮块 (前 AIToolDrawer): 选中 AI 工具时浮在画布顶部居中,
+            {/* 交互工具上下文浮块 (前 AIToolDrawer): 选中 AI 工具时浮在画布顶部居中,
                 与 MaskToolbar 互斥 (mask 非 AI 工具)。引擎选择经 modelPref 服务端持久化。
-                v0.21.27 · U-pvs-1 · PVS 种子采集态借用 smart-point 工具落点, 此时抑制本工具条
+                · U-pvs-1 · PVS 种子采集态借用 smart-point 工具落点, 此时抑制本工具条
                 (否则与顶部居中的传播对话框撞位); 采集是「落 PVS 种子」而非帧级 SAM 分割。 */}
             {(isAIToolId(activeAiTool) || (stageKind !== "3d" && capabilityError)) && (
               <InteractiveToolBar
@@ -5842,7 +5842,7 @@ export function useWorkbenchShellModel({
                 onVariantChange={handleInteractiveVariantChange}
               />
             )}
-            {/* v0.20.11 · 选中单框二次推理入口: 非 AI 工具 (与 InteractiveToolBar 互斥) 且单选一个
+            {/* 选中单框二次推理入口: 非 AI 工具 (与 InteractiveToolBar 互斥) 且单选一个
                 已落库框时浮顶部, 列该框可跑能力。图片任务 only (视频/3D 走各自轨迹面板)。 */}
             {selectedAnnotationForPanel && canUseSecondaryInference && (
               <SecondaryInferenceBar
@@ -5945,7 +5945,7 @@ export function useWorkbenchShellModel({
         videoTool: s.videoTool,
         keypointSchema: toolView.keypointSchema,
         isVideoToolEnabled,
-        // v0.21.23 · 交互式 SAM: 提示派发 + 瞬态候选/点会话渲染 (仅视频 task 有值)。
+        // 交互式 SAM: 提示派发 + 瞬态候选/点会话渲染 (仅视频 task 有值)。
         onVideoSamPrompt,
         // 工具条上的正/负切换 (= / - 键) 与 Alt 等价, 与图片侧 SmartPointTool 同语义。
         samPolarity: s.samPolarity,
@@ -5953,7 +5953,7 @@ export function useWorkbenchShellModel({
         samMaskRecords: isVideoTask ? samMaskCandidates.records : undefined,
         onSelectSamMaskCandidate: isVideoTask ? selectSamMaskCandidate : undefined,
         samActiveIdx: isVideoTask ? sam.activeIdx : undefined,
-        // v0.21.27 · U-pvs-1/2/3 + 框修正 · 传播对话框开启时, 用同一 overlay 通道画已落的 PVS
+        // U-pvs-1/2/3 + 框修正 · 传播对话框开启时, 用同一 overlay 通道画已落的 PVS
         // 种子点/框 (归一化); 纠偏多帧下只画**当前帧**的点/框 (别帧坐标属其帧, 画到当前帧会错位)。
         // 多目标 (≥2 obj, 跨点与框统计) 时带 obj 供 overlay 逐目标配色 + 标号, 单目标剥去 obj
         // (白边、无标号, 与原视觉一致)。否则仍画帧级 SAM 会话点。
@@ -6011,7 +6011,7 @@ export function useWorkbenchShellModel({
         onToggleHiddenVideoTrack: s.toggleHiddenVideoTrack,
         onToggleLockedVideoTrack: s.toggleLockedVideoTrack,
         onPropagateVideoTrack: openPropagateDialog,
-        // v0.21.4 · 视频单题 AI 候选(画布渲染 + 采纳/驳回); 复用图片的 accept/reject handler(几何无关)。
+        // 视频单题 AI 候选(画布渲染 + 采纳/驳回); 复用图片的 accept/reject handler(几何无关)。
         aiBoxes: modeState.diffMode === "final" ? [] : aiBoxes,
         onAcceptPrediction: handleAcceptPrediction,
         onRejectPrediction: handleRejectPrediction,
@@ -6055,7 +6055,7 @@ export function useWorkbenchShellModel({
         onCommitRotatedBbox: createRotatedBbox,
         onCommitRotateBbox: handleCommitRotateBbox,
         onSamPrompt: (prompt) => {
-          // v0.18.26 · 档位(model_variants)走交互后端自己的偏好 (interactiveVariantSlice =
+          // 档位(model_variants)走交互后端自己的偏好 (interactiveVariantSlice =
           // 项目 default_variants[交互后端] 合并 backend 默认), 不再受"交互后端是否==批量后端"约束,
           // 由工具栏「档位」选择器驱动。params (阈值等) 仍仅在同后端时复用批量 preCfg.paramsValue。
           const extra = buildPredictParams(
@@ -6066,7 +6066,7 @@ export function useWorkbenchShellModel({
           if (prompt.kind === "scribble")
             return sam.runScribble(prompt.points, prompt.alt ? 0 : 1, prompt.width, extra);
           if (prompt.kind === "exemplar")
-            // v0.18.19 · alt=负框 (排误检) / 否则正框 (扩召回); refine 会话每次重发全量。
+            // alt=负框 (排误检) / 否则正框 (扩召回); refine 会话每次重发全量。
             return sam.runExemplar(prompt.bbox, prompt.alt ? 0 : 1, s.exemplarOutputMode, extra);
           return sam.runBbox(prompt.bbox, extra);
         },
@@ -6132,7 +6132,7 @@ export function useWorkbenchShellModel({
         maskEditor: stageMaskEditor,
         projectRenderingConfig: currentProject?.rendering_config ?? null,
         issuePixelFeedbacks,
-        // v0.11.5 · 图钉高亮跟 DiscussionPanel issues tab 共享 store (旧浮层路径已删)。
+        // 图钉高亮跟 DiscussionPanel issues tab 共享 store (旧浮层路径已删)。
         highlightIssueId: activeIssueHighlightId,
         // 单击图钉 → 高亮 + 请求 DiscussionPanel 切到 issues tab + 高亮对应列表行。
         onIssuePinClick: (id) => {
@@ -6178,10 +6178,10 @@ export function useWorkbenchShellModel({
       width: rightPx,
       onResize: onResizeRight,
       readOnly: isLocked,
-      // v0.20.19 · 属性区折叠态走 workbench.layout 服务端偏好, 选框/刷新/换设备保留。
+      // 属性区折叠态走 workbench.layout 服务端偏好, 选框/刷新/换设备保留。
       attrCollapsed: s.attrPanelCollapsed,
       onToggleAttrCollapsed: () => s.setAttrPanelCollapsed(!s.attrPanelCollapsed),
-      // v0.20.22 · AI 待审 / 人工两大分组头折叠 (同一 workbench.layout 管道跨设备持久)。
+      // AI 待审 / 人工两大分组头折叠 (同一 workbench.layout 管道跨设备持久)。
       aiSectionCollapsed: s.aiSectionCollapsed,
       onToggleAiSection: () => s.setAiSectionCollapsed(!s.aiSectionCollapsed),
       manualSectionCollapsed: s.manualSectionCollapsed,
@@ -6271,14 +6271,14 @@ export function useWorkbenchShellModel({
         : undefined,
     },
     floatingSelection: selectionCard,
-    // v0.20.x · 工作台桌宠;情绪全由 props 派生(标注数增长/里程碑/久坐),不挂 mutation。
+    // .x · 工作台桌宠;情绪全由 props 派生(标注数增长/里程碑/久坐),不挂 mutation。
     pet: {
       enabled: s.workbenchConfig.common.petEnabled,
       context: petContext,
       onExpand: expandSelectionCard,
     },
     aiPopover: {
-      // v0.21.4 · 视频项目也开放当前题 AI(单帧 → 图像 backend), onRunAi 走帧路径。
+      // 视频项目也开放当前题 AI(单帧 → 图像 backend), onRunAi 走帧路径。
       aiModel,
       aiRunning,
       aiBoxCount: aiPopoverBoxCount,
@@ -6292,9 +6292,9 @@ export function useWorkbenchShellModel({
       onClose: () => {
         workspaceCommands.current?.hide("ai-task");
       },
-      // v0.21.4 · 视频走单帧路径(client 供图), 图像走既有 task 级 triggerPreannotation。
+      // 视频走单帧路径(client 供图), 图像走既有 task 级 triggerPreannotation。
       onRunAi: isVideoTask ? handleRunVideoFrameAi : handleRunAi,
-      // v0.18.28 · 项目存了编排时多给一个「按项目编排跑当前题」入口。
+      // 项目存了编排时多给一个「按项目编排跑当前题」入口。
       hasProjectPipeline,
       projectPipelineStageCount,
       // claude[bot] P1 #5 · 编排可执行 (引用的 backend 都还在); false 时 popover 入口禁用并提示。
@@ -6372,7 +6372,7 @@ export function useWorkbenchShellModel({
                 ?.annotation_guide ?? null,
           }
         : undefined,
-    // v0.11.5 · B 组 · DiscussionPanel 转正 → 右栏固定两段布局 (上 AIInspectorPanel + 下 DiscussionPanel)。
+    // B 组 · DiscussionPanel 转正 → 右栏固定两段布局 (上 AIInspectorPanel + 下 DiscussionPanel)。
     discussionPanel: {
       navigation: discussionNavigation,
       onCreateTaskIssue: openTaskIssue,
@@ -6444,7 +6444,7 @@ export function useWorkbenchShellModel({
         if (annotationsRef.current.some((ann) => ann.id === annotationId))
           handleSelectBox(annotationId);
       },
-      // v0.11.5+ · 评论内画布批注 (live 绘图) + 视频帧锚点 + 点评论跳帧的桥接，
+      // · 评论内画布批注 (live 绘图) + 视频帧锚点 + 点评论跳帧的桥接，
       // 恢复 B1 去 flag 时随 AIInspectorPanel 内嵌一起删掉的接线。
       backgroundUrl: workbenchImagePreview,
       imageWidth,
@@ -6486,7 +6486,7 @@ export function useWorkbenchShellModel({
           : undefined,
       commentAnchor: videoCommentAnchor,
       onSeekFrame: isVideoTask ? s.setVideoFrameIndex : undefined,
-      // v0.20.22 · 讨论区完全收起 (同一 workbench.layout 管道跨设备持久)。
+      // 讨论区完全收起 (同一 workbench.layout 管道跨设备持久)。
       collapsed: s.discussionCollapsed,
       onToggleCollapsed: () => s.setDiscussionCollapsed(!s.discussionCollapsed),
     },
@@ -6495,7 +6495,7 @@ export function useWorkbenchShellModel({
   const propagateDialogProps: ComponentProps<typeof VideoTrackerPropagateDialog> = {
     open: Boolean(propagateDialog),
     visible: workspaceState.videoTrackerContentVisible,
-    // v0.21.27 · U-pvs-2 · 有落点后范围锚定首个落点帧 (seedAnchorFrame), 导航到别帧加修正点
+    // U-pvs-2 · 有落点后范围锚定首个落点帧 (seedAnchorFrame), 导航到别帧加修正点
     // 不移动传播范围; 无落点时跟随当前帧 (与现状一致)。
     frameIndex: seedAnchorFrame ?? s.videoFrameIndex,
     minFrame: currentVideoSegment?.work_start_frame ?? 0,
@@ -6512,19 +6512,19 @@ export function useWorkbenchShellModel({
     trackerModelProviders,
     // polyline 轨迹传播暂不支持 (后端会静默改写成空 bbox 轨迹), 灰置传播动作。
     isPolylineTrack: propagateDialogTrack ? isVideoPolylineTrack(propagateDialogTrack) : false,
-    // v0.22.1 · A2/A3 · 源轨迹类别: 摘要「延展 / 新建」+ 文本检测类别继承警示。
+    // A2/A3 · 源轨迹类别: 摘要「延展 / 新建」+ 文本检测类别继承警示。
     sourceTrackClassName: propagateDialogTrack?.class_name ?? null,
-    // v0.22.1 · B · 无源检测模式 (画布级入口无选中轨迹) + 可选目标类别 (项目 classes)。
-    // v0.22.2 · M2 · 多源批量不是无源 (各源自带几何与类别), 故排除。
+    // B · 无源检测模式 (画布级入口无选中轨迹) + 可选目标类别 (项目 classes)。
+    // M2 · 多源批量不是无源 (各源自带几何与类别), 故排除。
     sourceless: !propagateDialogTrack && !propagateMultiSource,
     availableClasses: currentProject?.classes ?? [],
-    // v0.22.2 · M2 · 多选批量: 源条数 + 去重类别 (混类叙事「N 类」/ 单类「XX」)。
+    // M2 · 多选批量: 源条数 + 去重类别 (混类叙事「N 类」/ 单类「XX」)。
     sourceCount: propagateMultiSource ? propagateSources!.length : undefined,
     sourceClassNames: propagateMultiSource
       ? [...new Set(propagateSources!.map((sd) => sd.class_name))]
       : undefined,
     submitting: Boolean(propagateDialog?.submitting),
-    // v0.22.2 · U8 · 提交成功后挂上 job id → 对话框就地转「追踪中…」进行态, 进度读该 job 的
+    // U8 · 提交成功后挂上 job id → 对话框就地转「追踪中…」进行态, 进度读该 job 的
     // 分窗回报; 结果就绪 / 失败时 effect 关闭对话框复位。
     tracking: Boolean(trackingJobId),
     trackingWindow: trackingJobId
@@ -6534,7 +6534,7 @@ export function useWorkbenchShellModel({
     onSubmit: handlePropagateSubmit,
     onRangeChange: setPropagateHighlight,
     brushedRange: propagateBrush,
-    // v0.21.27 · U-pvs-1/2 + 框修正 · PVS 点/框种子采集 (仅 sam3_video_interactive, 门控在对话框内)。
+    // U-pvs-1/2 + 框修正 · PVS 点/框种子采集 (仅 sam3_video_interactive, 门控在对话框内)。
     seedCollecting,
     seedPointCount: trackerSeeds.length,
     // 框修正: 已落框数 + 点/框模式切换。
@@ -6549,7 +6549,7 @@ export function useWorkbenchShellModel({
     onClearSeeds: clearSeeds,
   };
 
-  // v0.21.28 · 候选/接受审阅条 props。
+  // 候选/接受审阅条 props。
   const trackerReviewProps: ComponentProps<typeof VideoTrackerReviewBar> = {
     taskId,
     presentationHidden: contextToolbar !== "tracker",
@@ -6614,8 +6614,8 @@ export function useWorkbenchShellModel({
           onRetryIssuePins: retryIssuePins,
           stageKind,
           issuePinDropArmed,
-          // v0.11.5 · issue FAB → 切到 DiscussionPanel issues tab (旧浮层 IssueListPanel 已删)。
-          // v0.13.10+ · 不再把已分离的标注详情合并回去；讨论面板仍嵌入时才展开右栏。
+          // issue FAB → 切到 DiscussionPanel issues tab (旧浮层 IssueListPanel 已删)。
+          // · 不再把已分离的标注详情合并回去；讨论面板仍嵌入时才展开右栏。
           onOpenList: () => {
             workspaceCommands.current?.show("discussion");
             requestIssuesTab();
