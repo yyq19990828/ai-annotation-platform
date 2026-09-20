@@ -287,11 +287,8 @@ import {
   subtractMaskAlpha,
 } from "../stage/shared/geometry/maskMutationDraft";
 import {
-  LatestTaskNavigationScheduler,
   buildPipelineRunPayload,
   annotationsForTask,
-  commitAfterNavigationGuard,
-  runWorkbenchLeaveGuards,
   missingBackendIdsForStages,
   selectProjectPipelineStages,
   buildPredictParams,
@@ -302,6 +299,13 @@ import {
   resolveFloatingSelectionRect,
   classifyAccessLookupError,
 } from "./useWorkbenchShellModel.helpers";
+import {
+  commitAfterNavigationGuard,
+  LatestTaskNavigationScheduler,
+  resolveLocalTaskUrlSync,
+  runWorkbenchLeaveGuards,
+  TASK_NAVIGATION_SETTLE_MS,
+} from "./taskNavigation";
 import type {
   WorkbenchWorkspaceCommands,
   WorkbenchWorkspaceState,
@@ -315,8 +319,6 @@ import {
 } from "./maskMutationPolicy";
 
 type WorkbenchShellMode = "annotate" | "review";
-
-const TASK_NAVIGATION_SETTLE_MS = 160;
 
 export interface UseWorkbenchShellModelParams {
   mode?: WorkbenchShellMode;
@@ -351,27 +353,6 @@ interface WorkbenchShellEmptyState {
     message: string;
     onBack: () => void;
   };
-}
-
-export interface LocalTaskUrlSyncDecision {
-  holdRequestedTask: boolean;
-  clearPendingTarget: boolean;
-}
-
-/**
- * 判定 URL 中的 task 是外部导航意图，还是本地切题后尚未追上的旧值。
- */
-export function resolveLocalTaskUrlSync(
-  requestedTaskId: string | null,
-  pendingLocalTaskId: string | null,
-): LocalTaskUrlSyncDecision {
-  if (!pendingLocalTaskId) {
-    return { holdRequestedTask: false, clearPendingTarget: false };
-  }
-  if (requestedTaskId === pendingLocalTaskId) {
-    return { holdRequestedTask: false, clearPendingTarget: true };
-  }
-  return { holdRequestedTask: true, clearPendingTarget: false };
 }
 
 interface WorkbenchShellReadyModel {
