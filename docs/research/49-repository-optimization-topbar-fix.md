@@ -5,6 +5,8 @@
 > 冻结候选：`dc972be08a42855c836023da178487469aae2fc9`（`Topbar.tsx` 与 `workbench-topbar.spec.ts` 同基线根逐字节一致）
 > 自有一次性环境：`aap_wt_c2820af87ec94679_e2e`（checkout `c2820af87ec94679`）
 > 证据图例：**[V]** 本工作树/自有一次性环境实测；**[M]** 变异或负向探针；**[EXT]** 外部只读事实；**[GAP]** 未执行
+>
+> **P10 收尾（2026-09-21）**：视频分段选择器探针只覆盖了 `collaboration_enabled`（其余为真实 video/claim API），不能称为完全未 mock；最终门禁见 [43](./43-repository-optimization-p9-shadow-comparison.md)。
 
 ## 0. 结论
 

@@ -5,7 +5,7 @@
 > 冻结 raw 候选：`8985054699ac203c1ed2b5ebe68e6d6897bda724`（共享分支 `feat/codebase_opt260920`）
 > 集成根（修正构建）：`13d274326ee4f8bb8b80b405c7dc2fd3d15d05fc`（产品修复 `13115f71f` + doc50 修正；`898..13d274326` 仅这些改动）
 > 最终验证 lane：A `worktree-agent-opt-p9-final-lane-a`（smoke/visual/default-one/default-two）、B（default-three/four）、C（pointcloud/video-pipeline/mask×3/layout-stress）
-> 阶段状态：**P9 完成**——最终 composed required-suite 审计在集成根 `13d274326` 上实际 **退出 0**（10 套件输入等价复用 + `layout-stress`/`default-four` 在修正构建上重跑替换）；冻结 `898` 失败 campaign 保持独立历史（§6.2）
+> 阶段状态：**P9 完成**——最终 composed required-suite 审计在集成根 `13d274326` 上实际 **退出 0**（10 套件按**变更影响范围**复用 + `layout-stress`/`default-four` 在修正构建上重跑替换）；冻结 `898` 失败 campaign 保持独立历史（§6.2）。**复用口径（P10 更正）**：不是“全应用输入逐字节等价”；共享 Workbench 源码在修正构建中确有变化，仅当某套件的相关输入/配置/依赖未变时才复用其 `898` 证据。
 > 证据图例：**[V]** 本工作树实际执行/逐条核对；**[M]** 变异/负向探针；**[EXT]** 外部事实（只读核查）；**[GAP]** 未执行或留待 P10
 > 历史边界：`dc972be08` 与冻结 `898` 的 1 失败/53 not-run 保留在显式历史小节（§5.0、§6.1、§6.2），未回溯修改；最终 composed 结果单独列出，不把历史绿灯冒充新 SHA 全量 raw。
 
@@ -16,7 +16,7 @@
 3. **必需套件审计按“实际执行的门”生成 [V]**：manifest 与有效选集一致（计划模式=计划套件含策略；回退模式=旧 9 套件；docs-only 仅在计划模式产生带非空原因的显式跳过）。套件 ID 使用 planner 规范名（`smoke`、`visual`、`layout-stress`、`default-one`…`default-four`、`mask-readonly|native|ai-native`、`pointcloud`、`video-pipeline`）；逐套件状态产物按该 ID 采集。
 4. **缺陷注入证据 [M]**：移除“未映射回退 + 共享 owner 放大”的变异使共享 Workbench state owner 从全量 12 静默缩到 smoke，且提交的回归测试对变异体失败（`node --test` 非零）；缺失/取消/setup-failure/格式错误/核心 flaky/docs-only 缺原因等审计探针均按预期非零。
 5. **首次对照（历史）[V]**：旧候选 `dc972be08` 的 old9/new3 联合执行发现多处真实失败与清理残留，全部保留首次证据（§5.0），后续在集成根与最终候选上分别修复。
-6. **最终 composed 门禁（集成根 `13d274326`）[V]**：12 个必需套件全部记账，真实审计 **退出 0**。`layout-stress`（6/0/0/0）与 `default-four`（68/0/0/0，旧 53 not-run 全部执行）在修正构建（fingerprint `dabedc89`，`dist/index` `449aac28`）上重跑替换；其余 10 套件按输入等价复用冻结 `898` 证据。成员/执行覆盖证明见 §6.3；冻结 `898` 的 1 失败/53 not-run 保持为独立历史（§5.0、§6.2）。
+6. **最终 composed 门禁（集成根 `13d274326`）[V]**：12 个必需套件全部记账，真实审计 **退出 0**。`layout-stress`（6/0/0/0）与 `default-four`（68/0/0/0，旧 53 not-run 全部执行）在修正构建（fingerprint `dabedc89`，`dist/index` `449aac28`）上重跑替换；其余 10 套件按**变更影响范围**复用冻结 `898` 证据（共享 Workbench 源码已变，仅未受影响的套件复用其状态，而不是“全文逐字节等价”）。成员/执行覆盖证明见 §6.3；冻结 `898` 的 1 失败/53 not-run 保持为独立历史（§5.0、§6.2）。
 7. **外部事实 [EXT]**：`main` 当前**没有**经典分支保护也没有 ruleset，因此不存在需要在远端同步的必需检查配置；切换只影响仓库内工作流逻辑，未做任何远端改动（§6.0）。
 
 ## 1. 冻结候选与身份
@@ -44,7 +44,7 @@
 | 字节一致性           | B/C 与 A 均解压同一 archive 并校验：archive sha256、`dist/index.html`、270 个逐文件 sha256 与 `diff -rq` 全部一致（未重建）[V]                                                                                                              |
 | 证据目录（自有副本） | `/tmp/opencode/p9-final-evidence/`（35 文件 + `EVIDENCE-SHA256SUMS`），含两候选 archive 之外的最终 manifest、12 套件 raw JSON/log/status 与 lane handoff [V]                                                                                |
 
-**构建产物观测方式**：worktree 模式下 `playwright.config.ts` 判定 `useIsolatedServers=true`，即使 `CI=1` 也会启动 `pnpm dev`，因此普通本地 E2E **不消费**指纹构建产物。P9 使用临时配置 `apps/web/playwright.preview.e2e.config.ts`（只覆盖 webServer：同一自有 API 命令 + `vite preview` 指定的 `--mode e2e` dist；projects/testDir/testMatch/grepInvert/retries/reporter 全部沿用真实配置），并派生 `playwright.preview-visual.config.ts` / `playwright.preview-stress.config.ts` 复用同一 webServer。这些临时配置在最终证据采集完成后从最终树移除。
+**构建产物观测方式**：worktree 模式下 `playwright.config.ts` 判定 `useIsolatedServers=true`，即使 `CI=1` 也会启动 `pnpm dev`，因此普通本地 E2E **不消费**指纹构建产物。P9 使用临时配置 `apps/web/playwright.preview.e2e.config.ts`（只覆盖 webServer：同一自有 API 命令 + `vite preview` 指定的 `--mode e2e` dist；projects/testDir/testMatch/grepInvert/retries/reporter 全部沿用真实配置），并派生 `playwright.preview-visual.config.ts` / `playwright.preview-stress.config.ts` 复用同一 webServer。**历史装置**：这三个临时配置已在 P10 收尾时从最终树移除，本节仅记录当时的采集方式，不代表当前树仍提供这些文件。
 
 ## 2. 旧/新选择对照（同一候选、实际 CLI 输出）
 
@@ -186,9 +186,9 @@
 ## 7. 保留与限制
 
 - workers 1、重试/超时/覆盖率预算未放宽；核心不依赖重试。
-- **门禁完成**：最终 composed 必需套件审计在集成根 `13d274326` 上退出 0；其中 `layout-stress`/`default-four` 为修正构建上重跑替换，其余 10 套件为输入等价复用（不主张“新 SHA 全量 12 raw”）。
+- **门禁完成**：最终 composed 必需套件审计在集成根 `13d274326` 上退出 0；其中 `layout-stress`/`default-four` 为修正构建上重跑替换，其余 10 套件按**变更影响范围**复用（不主张“新 SHA 全量 12 raw”，也不是“全应用逐字节等价”）。
 - 历史证据分离：`dc972be08` 与冻结 `898` 的 1 失败/53 not-run 保留在历史小节，未回溯改写；最终 composed 结果单独列出。
-- [GAP] 远端 CI 未运行（不推送）；首次真实 runner 观察（构建复用、审计、ml-cpu）留待集成后。
-- [GAP] 严格 WebGPU/WebCodecs 资格与渲染家族证据由 renderer 专项负责，本阶段不重复。
-- [GAP] 候选发布验证入口与完整验收记录由 P10 台账承载；本报告不声称已存在 release gate。
+- [LIMIT] 远端 CI 未运行（不推送）；首次真实 runner 观察（构建复用、审计、ml-cpu）未获得，需远程 CI 才能关闭。
+- [ACCEPTED-SEPARATE] 严格 WebGPU/WebCodecs 资格与渲染家族证据由渲染器通道 [42] 单独承担并已接受（adapter nvidia/ampere、Chromium 147；未建立硬件解码/硬件资格主张），不是本门禁的未完成 GAP。
+- [RECORDED] 候选发布验证记录由 P10 台账 [45] 承载（候选 SHA + 产物指纹 + composed 门禁）；本报告不声称远程 CI 已验证 release gate。
 - 相关文档：产品修复记录 `docs/research/50-repository-optimization-workbench-root-edge-dock.md`（他人提交，本报告不复制其内容）。

@@ -3,6 +3,8 @@
 > 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P9 owned 夹具清理 / P10 验证通道）
 > 候选与分支：候选 `dc972be08a42855c836023da178487469aae2fc9`（P9 冻结候选）→ 本修复分支 `worktree-agent-opt-p9-cleanup-fix`
 > 证据图例：**[V]** 本工作树/自有一次性环境实测；**[PG]** PostgreSQL 服务端日志原证；**[REUSE]** 对字节一致输入复用既有证据
+>
+> **P10 收尾（2026-09-21）**：本修复已并入集成根；最终 composed 必需套件审计见 [43](./43-repository-optimization-p9-shadow-comparison.md)，台账关闭见 [45](./45-repository-optimization-final-acceptance.md)。
 
 ## 0. 结论
 

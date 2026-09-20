@@ -205,6 +205,8 @@ PR 运行有界核心 smoke + 按路径触发的领域专项（Mask×3、video-p
 
 **回退**：设置仓库变量 `E2E_SELECTION_MODE=legacy`（未设置或为空即计划模式）即可恢复 P8 前冻结的旧全量矩阵与对应必需清单，无需改代码；回退模式仍执行审计，但只要求它实际执行的 9 个旧套件。
 
+**最终验收证据**：门禁切换与影子对照的逐项证据见 `docs/research/43-repository-optimization-p9-shadow-comparison.md`，P10 最终验收记录见 `docs/research/45-repository-optimization-final-acceptance.md`。冻结 `898505469` 的 full-12 campaign 是**失败历史**（default-four 13P/1F/53 not-run，实跑审计 exit 1）；集成根 `13d274326` 的 composed 审计才退出 0（`layout-stress`/`default-four` 在修正构建重跑替换，其余 10 套件按**变更影响范围**复用，不是全应用逐字节等价）。
+
 功能用例最多重试一次；扩展用例中视觉基线（`playwright.extended.config.ts`）不重试，压力用例（`playwright.stress.config.ts`）最多重试一次——压力重载在高负载 runner 上可能把渲染主线程冻结数十秒，重试用于区分确定性损坏（两次都失败仍红）与资源饥饿，重试后通过仍标记 flaky，不掩盖问题。CI 首个最终失败终止当前分片，每个进程/测试步骤/job 分别限时 15/20/30 分钟。每次失败保留 trace 与截图，Actions 摘要区分通过、失败、flaky 与跳过，避免把重试后通过误认为已消除不稳定性。HTML、原始测试产物及 `e2e-results.json` 随套件上传。
 
 核心绘制流程必须验证实际提交请求、落库内容与刷新恢复。测试接口只能造前置状态，不能在 UI 保存失败后补写状态来使测试通过。Canvas 坐标按实际媒体尺寸计算并验证命中；组件细节、纯状态组合优先使用 Vitest。

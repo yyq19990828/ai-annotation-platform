@@ -4,6 +4,8 @@
 > 分支：`worktree-agent-opt-p9-markdown-fix`（自冻结候选 `dc972be08` 建立；原 doc46 分支 `worktree-agent-opt-p9-domains` 保留）
 > 状态：**根因已证实；产品修复提交 `69960028d` 已通过生产预览产物验收**。本文件按最终结论重写，早期尝试与失败完整保留在 §5 历史表。
 > 证据图例：**[V]** 已核对；**[HYP]** 代码一致的假设（凡已被后续证据取代者均标注）
+>
+> **P10 收尾（2026-09-21）**：目标用例 `:889` 的删除测试最终由 `default-one` 覆盖（旧 `19 passed` 属**修正前**测试修订）；最终门禁见 [43](./43-repository-optimization-p9-shadow-comparison.md)。
 
 ## 1. 失败事实 **[V]**
 

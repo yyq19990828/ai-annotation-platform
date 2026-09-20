@@ -438,5 +438,16 @@ repo-scripts 4 / screenshots-tooling 12 / worktree-runtime 8；
 ### 14.5 未收口边界
 
 - 计划 §10「保留项有理由」现以**区域级**证据满足并明示其保守性质；不构成逐文件语义审计，也不做唯一性结论。
-- 实际 UI/最终 E2E 验收仍开放（P9 未收口；最终候选失败 suite 关闭与他处 UI/Markdown 修复合并后进行）。
+- 实际 UI/最终 E2E 验收仍开放（P9 未收口；最终候选失败 suite 关闭与他处 UI/Markdown 修复合并后进行）。**（更新：P9/P10 已收尾，见 §15。）**
 - `ci-wired` 仍为静态接线判定；本节未运行测试；“无重复规则”的结论只来自各阶段报告**明确的合并/删除动作**。
+
+## 15. P9/P10 收尾状态（2026-09-21）
+
+> 本节只追加，不改写 §0–§14 的历史快照与计数；它把“P9 进行中 / P10 pending”的旧状态收敛为最终事实。
+
+- **P9 完成**：最终 composed required-suite 审计在集成根 `13d274326` 上实际**退出 0**（10 套件按**变更影响范围**复用 + `layout-stress`/`default-four` 在修正构建 `dabedc89`/`449aac28` 上重跑替换）；冻结 `898505469` 的 12 套件 campaign 保持**失败历史**（default-four 13P/1F/53 not-run，实跑审计 exit 1）。详见 [43]。
+- **P10 完成（台账关闭）**：最终验收记录 [45]；计划 §10 的 22 项按实际证据勾选。唯一跨项限制为**远端 CI 未运行**（无 push）；渲染器通道 [42] 已接受严格 WebGPU 21 / 严格 WebCodecs 9（浏览器自报 adapter nvidia/ampere、Chromium 147），硬件视频解码未测量，不是本清单缺口。台账见 [27 §8]。
+- **复用口径更正**：证据复用按**变更影响范围**判定，不是全应用逐字节等价——共享 Workbench 源码在修正构建中确有变化，只有未受影响的套件复用其冻结状态（[43] 已更正）。
+- **清单**：TSV 最终 **1139 行 = 1135 可执行 + 4 测试支撑**，采用保守 KEEP 语义（区域级保留理由），不代表逐文件唯一性/等价性审计。
+- **P10 收尾清理**：三个临时 preview 配置（`apps/web/playwright.preview*.config.ts`）已从最终树移除；集中式 E2E 错误分类器落点为 `apps/web/e2e/helpers/request-errors.ts`（原 `video-request-errors.ts` 已并入），计划附录引用已同步。
+- **仍未运行**：远端 CI；渲染器通道 [42] 已接受严格 WebGPU 21 / 严格 WebCodecs 9（浏览器自报 adapter nvidia/ampere、Chromium 147），硬件视频解码未测量，不主张硬件资格。

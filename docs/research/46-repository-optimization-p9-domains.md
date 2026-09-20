@@ -4,6 +4,8 @@
 > 候选：`dc972be08a42855c836023da178487469aae2fc9`（分支 `worktree-agent-opt-p9-domains`，自候选建立，未 reset）
 > 本线程范围：仅 `pointcloud` 与 `video-pipeline` 两个软件域；其余 10 个 suite 由 P9 另一 worker 执行
 > 证据图例：**[V]** 实际执行；**[FAIL]** 实际失败（已保留证据）；**[GAP]** 未执行/边界
+>
+> **P10 收尾（2026-09-21）**：本文件记录的是 `dc972be08` 候选上的**历史失败**（pointcloud 37P/1F、video-pipeline 43P/20skip + teardown exit 1）；冻结 `898` 与集成根的最终状态见 [43](./43-repository-optimization-p9-shadow-comparison.md)，本文件不再更新。
 
 ## 1. 构建产物实际复用（未重建）**[V]**
 

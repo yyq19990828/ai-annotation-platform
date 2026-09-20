@@ -102,16 +102,16 @@
 
 提取辅助函数前，回答三个问题：多个调用点是否共享**相同业务含义**？参数和错误语义是否相同？能否用清楚的领域名称描述？仅仅代码长得相似，不足以合并。
 
-| 当前候选                 | 建议归属与做法                                                                                                                                 | 明确不做                                                            |
-| ------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| 项目权限判断             | 复用 `apps/api/app/services/project_access.py` 和 `apps/web/src/hooks/useProjectAccess.ts`                                                     | 前端复制完整角色矩阵；把成员职责写回 `user.role`                    |
-| 导航、离开守卫和编辑会话 | 优先复用现有 `useWorkbenchTaskFlow`、`useMaskEditorSession`、`LatestTaskNavigationScheduler` 所在模块；必要时把 scheduler 独立成同目录领域模块 | 再建一个“通用 workflow engine”                                      |
-| Mask 错误恢复与提示      | 从 model 中提取到同目录明确命名的纯策略模块，例如拟新增 `maskMutationPolicy.ts`                                                                | 用 `utils/error.ts` 混合登录、推理、Mask 与存储的所有错误           |
-| 工作台 Issue 显示        | `WorkbenchShell.tsx` 内的状态文案和局部视图按 Issue 职责提取                                                                                   | 为几个合理 guard 建抽象渲染框架                                     |
-| 异步作业终态更新         | `apps/api/app/workers/signals.py` 保留薄适配器；已有 service 承担领域更新，缺失时新增同域终态 handler 模块                                     | 所有作业共用一个会抹平 `partial` / `rollback_failed` 的万能更新函数 |
-| E2E 请求异常分类         | 从 `apps/web/e2e/helpers/video-request-errors.ts` 演进为图片/视频可共享的有类型策略；迁移调用点后去掉重复逻辑                                  | 直接忽略所有 `ERR_ABORTED`、全部 4xx 或全部 console error           |
-| 后端测试数据构造         | 扩展 `apps/api/tests/factory.py`，明确创建用户、项目、成员、工具绑定                                                                           | 在 ORM 构造器上悄悄兼容历史 fixture                                 |
-| 脚本参数解析、文件遍历   | 对 `scripts/` 中确认重复且语义相同的少数纯逻辑就近复用                                                                                         | 为若干短脚本建立大型 CLI 框架                                       |
+| 当前候选                 | 建议归属与做法                                                                                                                                                 | 明确不做                                                            |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| 项目权限判断             | 复用 `apps/api/app/services/project_access.py` 和 `apps/web/src/hooks/useProjectAccess.ts`                                                                     | 前端复制完整角色矩阵；把成员职责写回 `user.role`                    |
+| 导航、离开守卫和编辑会话 | 优先复用现有 `useWorkbenchTaskFlow`、`useMaskEditorSession`、`LatestTaskNavigationScheduler` 所在模块；必要时把 scheduler 独立成同目录领域模块                 | 再建一个“通用 workflow engine”                                      |
+| Mask 错误恢复与提示      | 从 model 中提取到同目录明确命名的纯策略模块，例如拟新增 `maskMutationPolicy.ts`                                                                                | 用 `utils/error.ts` 混合登录、推理、Mask 与存储的所有错误           |
+| 工作台 Issue 显示        | `WorkbenchShell.tsx` 内的状态文案和局部视图按 Issue 职责提取                                                                                                   | 为几个合理 guard 建抽象渲染框架                                     |
+| 异步作业终态更新         | `apps/api/app/workers/signals.py` 保留薄适配器；已有 service 承担领域更新，缺失时新增同域终态 handler 模块                                                     | 所有作业共用一个会抹平 `partial` / `rollback_failed` 的万能更新函数 |
+| E2E 请求异常分类         | 从 `apps/web/e2e/helpers/video-request-errors.ts` 演进为图片/视频可共享的有类型策略（落点 `apps/web/e2e/helpers/request-errors.ts`）；迁移调用点后去掉重复逻辑 | 直接忽略所有 `ERR_ABORTED`、全部 4xx 或全部 console error           |
+| 后端测试数据构造         | 扩展 `apps/api/tests/factory.py`，明确创建用户、项目、成员、工具绑定                                                                                           | 在 ORM 构造器上悄悄兼容历史 fixture                                 |
+| 脚本参数解析、文件遍历   | 对 `scripts/` 中确认重复且语义相同的少数纯逻辑就近复用                                                                                                         | 为若干短脚本建立大型 CLI 框架                                       |
 
 ### 4.3 如何减少分支而不降低可读性
 
@@ -199,7 +199,7 @@ P0 生成一个精简测试清单，字段为：
 | ---------------------------------------------------------------------------------------------------- | ------------------------- | ------------------------------------------------------------------------ |
 | `apps/web/src/pages/Projects/ProjectDataManagerPage.flow.test.tsx`                                   | REWRITE / MOVE_DOWN       | 保留导航与 URL 恢复行为；减少内部 hook 协议模拟                          |
 | `apps/web/e2e/tests/video-issue-context.spec.ts`                                                     | KEEP + 简化准备           | 保留真实的项目职责与任务交接约束；非目标用户创建使用统一 fixture         |
-| `apps/web/e2e/helpers/video-request-errors.ts` 与图片 spec 内联分类                                  | MERGE                     | 一处定义可接受取消；HTTP 错误和写入失败仍明确失败                        |
+| `apps/web/e2e/helpers/video-request-errors.ts` 与图片 spec 内联分类（落点 `request-errors.ts`）      | MERGE                     | 一处定义可接受取消；HTTP 错误和写入失败仍明确失败                        |
 | `apps/web/scripts/video-request-errors.test.ts`                                                      | KEEP / 扩展               | 为共享错误分类保留允许与禁止两侧的边界测试                               |
 | `apps/web/e2e/tests/raster-mask-native.spec.ts`                                                      | KEEP / 重分层             | readonly 与 native 是不同配置契约；不能仅因同文件多次执行就删一份        |
 | `apps/web/e2e/tests/mask-advanced-operations.spec.ts`                                                | MOVE_DOWN + KEEP 核心链路 | 算法/组合下沉；真实编辑→提交→刷新链路保留                                |
@@ -518,39 +518,41 @@ pnpm dev:worktree -- exec --mode e2e -- \
 
 ### 代码结构
 
-- [ ] 全仓台账覆盖所有受管理源码目录；非热点目录也有明确处理结论。
-- [ ] 同一业务规则只有一个权威实现；确需跨语言实现的规则由共享合同/数据样例校验，而不是假装能直接共用函数。
-- [ ] 工作台装配、领域状态、命令、副作用与视图边界清楚；主要调用链有文件/符号级说明。
-- [ ] `signals.py` 等封闭分派已去除确认的重复骨架，特殊终态语义保留。
-- [ ] 无新万能 helper、平行权限系统、无必要包装层或循环依赖。
-- [ ] 无用途的旧 shim、别名、导出、fixture 和历史兼容已实际删除；保留兼容入口有受支持消费者证据。
+- [x] 全仓台账覆盖所有受管理源码目录；非热点目录也有明确处理结论。— [26] §2/§12：TSV **1139 行 = 1135 可执行 + 4 测试支撑**，`git ls-files` 双向比对 0 缺口；`reason` 为具名/区域级保守保留理由。
+- [x] 同一业务规则只有一个权威实现；确需跨语言实现的规则由共享合同/数据样例校验，而不是假装能直接共用函数。— [32]：`project_access.py` 单一授权源 + OpenAPI 快照合同；`export_openapi.py --check` 通过。
+- [x] 工作台装配、领域状态、命令、副作用与视图边界清楚；主要调用链有文件/符号级说明。— [33]：model 8919→6646，六条规则下沉；`docs-site/dev/concepts/repository-map.md`。
+- [x] `signals.py` 等封闭分派已去除确认的重复骨架，特殊终态语义保留。— [32]/[28]：`signals.py` 121 行 + `async_job_terminal.py`；`partial`/`rollback_failed`/`cancelled` 保留。
+- [x] 无新万能 helper、平行权限系统、无必要包装层或循环依赖。— [33]：P5 逐行等价核对 + 有据 KEEP。
+- [x] 无用途的旧 shim、别名、导出、fixture 和历史兼容已实际删除；保留兼容入口有受支持消费者证据。— [29]：ORM shim 与 `httpx_client_bound` 删除；`coalesce_legacy_into_tool_bindings` 因生产路由仍在用而保留在兼容边界。
 
 ### 测试
 
-- [ ] 每项关键业务约束均有对应测试；删测试有替代或失效依据。
-- [ ] 前端测试不再靠旧角色数据或大规模无关 hook mock 维持通过。
-- [ ] 后端测试直接使用现行模型，不全局替换生产 ORM 构造器。
-- [ ] 安全、并发、事务、幂等、离线及渲染保护没有因精简丢失。
-- [ ] 覆盖率口径、排除项和阈值可信；没有为绿灯自动调低门槛。
+- [x] 每项关键业务约束均有对应测试；删测试有替代或失效依据。— [28]：C1–C8 无未映射项，P0 两处 GAP 已补。
+- [x] 前端测试不再靠旧角色数据或大规模无关 hook mock 维持通过。— [30]/[41]：27 个旧角色文件修正，data-manager 改 MSW 边界；562 文件/5626 用例通过。
+- [x] 后端测试直接使用现行模型，不全局替换生产 ORM 构造器。— [29]/[40]：43 处旧 kwargs 迁 `tool_bindings`，shim 删除；4428 collected / 0 failed / 0 errors / 15 skipped。
+- [x] 安全、并发、事务、幂等、离线及渲染保护没有因精简丢失。— [29]/[31]/[32]/[42]：独立事务/锁序/撤权/离线测试保留；渲染资格 [42]。
+- [x] 覆盖率口径、排除项和阈值可信；没有为绿灯自动调低门槛。— [30]：阈值 45/45/45/70 未变，删除逐版本流水账并记录排除口径。
 
 ### CI E2E
 
-- [ ] PR 核心、受影响专项、全量扩展职责明确；当前 7/9 条目默认策略已按验收结果替换。
-- [ ] fixture 清理不误删其他测试资源；未完成隔离的部分仍保持安全串行。
-- [ ] 请求取消判定集中且有负向测试；写入失败、意外 HTTP 错误不被宽泛忽略。
-- [ ] 首次失败、flaky、超时、环境失败、取消和未执行分别统计。
-- [ ] 同构建条件复用产物；不同 mode/环境不误用缓存。
-- [ ] 汇总检查稳定；必需 suite 缺失不能通过；纯文档跳过有明确理由。
-- [ ] 定时全量与候选发布验证入口明确，存在保守回退方案。
+- [x] PR 核心、受影响专项、全量扩展职责明确；当前 7/9 条目默认策略已按验收结果替换。— [43] 最终：planned 选择 + 必需 suite 审计 + `core-flaky` 门禁；`E2E_SELECTION_MODE=legacy` 回退。
+- [x] fixture 清理不误删其他测试资源；未完成隔离的部分仍保持安全串行。— [31]：seed owned 命名空间 + 邻居探针；`workers:1` 保留。
+- [x] 请求取消判定集中且有负向测试；写入失败、意外 HTTP 错误不被宽泛忽略。— [31]：`apps/web/e2e/helpers/request-errors.ts` + `apps/web/scripts/video-request-errors.test.ts`（16 例允许/禁止双侧）。
+- [x] 首次失败、flaky、超时、环境失败、取消和未执行分别统计。— `scripts/summarize-e2e-results.mjs` + 单测；**限制**：真实远程 CI 未运行，分类器仅在本地探针与单测上验证。
+- [x] 同构建条件复用产物；不同 mode/环境不误用缓存。— `e2e-run.yml` 指纹 + `SHA256SUMS`；本地建/验/篡改拒绝探针；**限制**：远程 CI 未运行。
+- [x] 汇总检查稳定；必需 suite 缺失不能通过；纯文档跳过有明确理由。— [36]/[43]：`audit-e2e-requirements.mjs` fail-closed（冻结 898 实跑审计 exit 1，composed 修正门 exit 0）。
+- [x] 定时全量与候选发布验证入口明确，存在保守回退方案。— [43]：`E2E_SCHEDULE_SCOPE=full`、dispatch `scope`、`E2E_SELECTION_MODE=legacy`；候选发布记录见 [45]。**限制**：无远程 runner 观察。
 
 ### 注释与文档
 
-- [ ] 活动源码/测试/CI 中的无用版本叙事已清理；没有把它们从文档转移回注释。
-- [ ] session 绑定、覆盖率、渲染限制、迁移回退和信号兜底等说明与实现一致。
-- [ ] API/协议版本、迁移元数据、锁文件、许可证和真实历史被保留。
-- [ ] 代码引用、运行命令、架构文档和共享仓库指引同步，文档构建通过。
+- [x] 活动源码/测试/CI 中的无用版本叙事已清理；没有把它们从文档转移回注释。— [34]/[35]：§7.1 指定文件命中 36→0；`CLAUDE.md` provenance 指导收敛（历史放 Git/CHANGELOG/ADR，不放源码注释）。
+- [x] session 绑定、覆盖率、渲染限制、迁移回退和信号兜底等说明与实现一致。— [29]/[30]/[39]/[42]/[28]。
+- [x] API/协议版本、迁移元数据、锁文件、许可证和真实历史被保留。— [26]/[29]/[39]：迁移 `revision/down_revision` 与锁文件未改写。
+- [x] 代码引用、运行命令、架构文档和共享仓库指引同步，文档构建通过。— P10：`pnpm docs:build` 实际通过；本计划附录的 `request-errors.ts` 路径已更正；三个临时 preview 配置已移除。
 
 **只有上述结果落地、验证完成、台账关闭，才能称为本次优化完成。不能把减少文件行数、删掉一批测试或 CI 偶然变绿当作完成。**
+
+> **P10 收尾（2026-09-21）**：上述 22 项按实际证据勾选；唯一跨项限制是**远端 CI 未运行**（无 push），`scripts/summarize-e2e-results.mjs` 的分类与同构建复用仅在本地探针/单测上验证；严格 WebGPU/WebCodecs 资格由渲染器通道 [42] 单独承担并已接受，不是本清单的缺口。台账与逐项证据见 `docs/research/45-repository-optimization-final-acceptance.md`。
 
 ## 附录：本计划的主要核对入口
 
@@ -567,6 +569,6 @@ pnpm dev:worktree -- exec --mode e2e -- \
 | 工作台状态边界               | `apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx`；`apps/web/src/pages/Workbench/state/useWorkbenchShellModel.helpers.ts`；`apps/web/src/pages/Workbench/shell/WorkbenchShell.tsx` |
 | 后端测试兼容与事务说明       | `apps/api/tests/conftest.py`                                                                                                                                                                     |
 | 作业终态重复分派             | `apps/api/app/workers/signals.py`                                                                                                                                                                |
-| E2E 请求错误分类             | `apps/web/e2e/helpers/video-request-errors.ts`；`apps/web/scripts/video-request-errors.test.ts`                                                                                                  |
+| E2E 请求错误分类             | `apps/web/e2e/helpers/request-errors.ts`（集中分类器；原 `video-request-errors.ts` 已并入）；`apps/web/scripts/video-request-errors.test.ts`                                                     |
 
 外部方法依据为 Playwright 官方的用户可见行为、测试隔离、locator 与 flaky 配置说明。具体选项以仓库 lockfile 对应版本为准；本文不引入任何外部链接作为仓库导航。

@@ -4,6 +4,8 @@
 > 分支：`worktree-agent-opt-p9-layout-diag`（自冻结 SHA 建立；产品源码仅改工作台布局所有者）
 > 状态：**两个耦合问题均已复现、定位并修复；目标用例、完整 workbench-layout、layout-stress、default-four 全绿**。原始冻结 campaign 的失败保持不变。
 > 证据图例：**[V]** 已核对；**[HYP]** 假设已被后续证据取代
+>
+> **P10 收尾（2026-09-21）**：本修复即集成根产品提交 `13115f71f`；最终 composed 门禁见 [43](./43-repository-optimization-p9-shadow-comparison.md)，台账关闭见 [45](./45-repository-optimization-final-acceptance.md)。
 
 ## 1. 两个耦合的问题
 
