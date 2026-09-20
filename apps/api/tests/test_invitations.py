@@ -535,7 +535,7 @@ async def test_invitation_rejects_group_name_over_100_characters(
         "/api/v1/users/invite",
         json={
             "email": "long-group@invite.test",
-            "role": "annotator",
+            "role": "employee",
             "group_name": "x" * 101,
         },
         headers=_headers(super_admin),

@@ -103,7 +103,7 @@ vi.mock("@/hooks/useTasks", () => ({
 }));
 
 vi.mock("@/hooks/usePermissions", () => ({
-  usePermissions: () => ({ role: "annotator" }),
+  usePermissions: () => ({ role: "employee" }),
 }));
 
 vi.mock("@/stores/authStore", () => ({

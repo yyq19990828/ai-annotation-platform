@@ -56,7 +56,7 @@ const NOTES = {
 function signIn(preferences?: MeResponse["preferences"]) {
   useAuthStore
     .getState()
-    .setAuth("whats-new-token", { id: "u1", role: "annotator", preferences } as MeResponse);
+    .setAuth("whats-new-token", { id: "u1", role: "employee", preferences } as MeResponse);
 }
 
 const savedPreferences = {
@@ -123,7 +123,7 @@ describe("WhatsNewDialog", () => {
     act(() =>
       useAuthStore.getState().setUser({
         id: "u1",
-        role: "annotator",
+        role: "employee",
         preferences: { ui: { changelog_seen_version: "" } },
       } as MeResponse),
     );
@@ -281,7 +281,7 @@ describe("WhatsNewDialog", () => {
     act(() =>
       useAuthStore.getState().setAuth("other-token", {
         id: "u2",
-        role: "annotator",
+        role: "employee",
         preferences: { ui: { changelog_seen_version: "" } },
       } as MeResponse),
     );

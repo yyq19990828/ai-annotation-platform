@@ -51,7 +51,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   api.updatePreference.mockReset().mockResolvedValue({ ok: true });
   api.getPreferences.mockResolvedValue({ items });
-  useAuthStore.getState().setAuth("t", { id: "u1", role: "annotator" } as MeResponse);
+  useAuthStore.getState().setAuth("t", { id: "u1", role: "employee" } as MeResponse);
 });
 
 describe("NotificationPreferencesPanel", () => {
@@ -223,7 +223,7 @@ describe("NotificationPreferencesPanel", () => {
     await screen.findByText("保存中…");
 
     act(() => {
-      useAuthStore.getState().setAuth("t2", { id: "u2", role: "annotator" } as MeResponse);
+      useAuthStore.getState().setAuth("t2", { id: "u2", role: "employee" } as MeResponse);
     });
     await waitFor(() => expect(screen.queryByText("保存中…")).toBeNull());
   });
@@ -236,7 +236,7 @@ describe("NotificationPreferencesPanel", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "任务被退回 接收通知" }));
     await screen.findByText("保存中…");
     act(() => {
-      useAuthStore.getState().setAuth("t2", { id: "u2", role: "annotator" } as MeResponse);
+      useAuthStore.getState().setAuth("t2", { id: "u2", role: "employee" } as MeResponse);
     });
     await waitFor(() => expect(screen.queryByText("保存中…")).toBeNull());
     // 等新账号偏好加载完成后再放行旧账号的迟到失败:账号切换会重拉偏好,
@@ -259,7 +259,7 @@ describe("NotificationPreferencesPanel", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "任务被退回 接收通知" }));
     await screen.findByText("保存中…");
     act(() => {
-      useAuthStore.getState().setAuth("t2", { id: "u2", role: "annotator" } as MeResponse);
+      useAuthStore.getState().setAuth("t2", { id: "u2", role: "employee" } as MeResponse);
     });
     const popup = await screen.findByRole("checkbox", { name: "任务被退回 弹出提示" });
     await waitFor(() => expect(popup).toBeEnabled());

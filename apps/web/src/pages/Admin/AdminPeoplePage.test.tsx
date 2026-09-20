@@ -60,7 +60,7 @@ const basePerson = {
   user_id: "u1",
   name: "Alice",
   email: "alice@test.com",
-  role: "annotator",
+  role: "employee",
   status: "online",
   project_count: 3,
   main_metric: 120,
@@ -78,7 +78,7 @@ const baseDetail = {
   user_id: "u1",
   name: "Alice",
   email: "alice@test.com",
-  role: "annotator",
+  role: "employee",
   project_count: 3,
   throughput: 120,
   quality_score: 90,
@@ -196,7 +196,7 @@ describe("AdminPeoplePage", () => {
     });
     renderUI();
     expect(screen.getByText("Alice")).toBeInTheDocument();
-    expect(screen.getByText(/annotator/)).toBeInTheDocument();
+    expect(screen.getByText(/employee/)).toBeInTheDocument();
     // main_metric 渲染
     expect(screen.getByText("120")).toBeInTheDocument();
     // project_count

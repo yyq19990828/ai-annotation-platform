@@ -234,11 +234,11 @@ async def test_management_csv_treats_user_and_invitation_fields_as_literal_text(
 
     admin, token = super_admin
     headers = {"Authorization": f"Bearer {token}"}
-    await create_user(db_session, "annotator", "csv-injection@e.test", "=1+1")
+    await create_user(db_session, "employee", "csv-injection@e.test", "=1+1")
     db_session.add(
         UserInvitation(
             email="csv-invite@e.test",
-            role="annotator",
+            role="employee",
             group_name="@SUM(1,2)",
             token="csv-test-token",
             invited_by=admin.id,

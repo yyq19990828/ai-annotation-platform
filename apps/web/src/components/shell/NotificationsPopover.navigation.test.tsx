@@ -155,7 +155,7 @@ describe("通知直达当前目标", () => {
     vi.clearAllMocks();
     mocks.notifications = [notification];
     mocks.unread = 1;
-    useAuthStore.getState().setAuth("test-token", { id: "u1", role: "annotator" } as MeResponse);
+    useAuthStore.getState().setAuth("test-token", { id: "u1", role: "employee" } as MeResponse);
     mocks.task.mockResolvedValue({
       id: "t1",
       project_id: "p1",
@@ -228,7 +228,7 @@ describe("通知直达当前目标", () => {
     renderUI();
     await clickTaskNotification();
     act(() =>
-      useAuthStore.getState().setAuth("other-token", { id: "u2", role: "reviewer" } as MeResponse),
+      useAuthStore.getState().setAuth("other-token", { id: "u2", role: "employee" } as MeResponse),
     );
     await act(async () => resolve({ id: "t1", project_id: "p1", batch_id: "b1" }));
     expect(screen.getByTestId("location").textContent).toBe("/dashboard");
@@ -378,7 +378,7 @@ describe("通知入口角标与工作台导航回调", () => {
     vi.clearAllMocks();
     mocks.notifications = [notification];
     mocks.unread = 1;
-    useAuthStore.getState().setAuth("test-token", { id: "u1", role: "annotator" } as MeResponse);
+    useAuthStore.getState().setAuth("test-token", { id: "u1", role: "employee" } as MeResponse);
     mocks.task.mockResolvedValue({
       id: "t1",
       project_id: "p1",

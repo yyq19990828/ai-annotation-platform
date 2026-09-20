@@ -245,7 +245,7 @@ async def test_bulk_group_assignment_scope_and_role_impact_preview(
 ):
     manager, _ = project_admin
     project = await create_project(db_session, owner_id=manager.id, name="Group Scope")
-    managed = await create_user(db_session, "annotator", "group@e.test", "Group User")
+    managed = await create_user(db_session, "employee", "group@e.test", "Group User")
     db_session.add(
         ProjectMember(
             project_id=project.id,
