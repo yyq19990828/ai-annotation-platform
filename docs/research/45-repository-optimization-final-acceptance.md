@@ -109,14 +109,14 @@
 
 （实际执行结果见下表；文档-only 收尾，未重跑 [39]–[42] 测试/浏览器套件，也未初始化 test/e2e 模式。）
 
-| 检查             | 命令                                             | 结果                                                                         |
-| ---------------- | ------------------------------------------------ | ---------------------------------------------------------------------------- |
-| 文档构建         | `pnpm docs:build`                                | **exit 0**，`build complete in 35.29s`（VitePress dead-link 检查随构建通过） |
-| 仓库格式         | `pnpm format:check`                              | **exit 0**，`1278 files already formatted`，Prettier 全通过                  |
-| 工作流命名       | `node scripts/check-workflow-names.mjs --strict` | **exit 0**，“全部合规”                                                       |
-| 空白/冲突标记    | `git diff --check`                               | **exit 0**，无输出                                                           |
-| 计划附录引用     | 手工核对                                         | `apps/web/e2e/helpers/request-errors.ts` 为集中分类器实际路径                |
-| 临时预览配置移除 | `git status`                                     | 三个 `apps/web/playwright.preview*.config.ts` 已删除，无残留引用             |
+| 检查             | 命令                                             | 结果                                                                                                                                   |
+| ---------------- | ------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------- |
+| 文档构建         | `pnpm docs:build`                                | **exit 0**，`build complete in 35.29s`（VitePress dead-link 检查随构建通过）                                                           |
+| 仓库格式         | `pnpm format:check`                              | **exit 0**，`1278 files already formatted`，Prettier 全通过                                                                            |
+| 工作流命名       | `node scripts/check-workflow-names.mjs --strict` | **exit 0**，“全部合规”                                                                                                                 |
+| 空白/冲突标记    | `git diff --check`                               | **exit 0**，无输出                                                                                                                     |
+| 计划附录引用     | 手工核对                                         | `apps/web/e2e/helpers/request-errors.ts` 为集中分类器实际路径                                                                          |
+| 临时预览配置移除 | `git status`                                     | 三个 `apps/web/playwright.preview*.config.ts` 已删除；无活动配置消费者（历史引用已在 [43]/[46]/[47]/[48]/[49] 标注为已移除的历史装置） |
 
 ## 6. 限制
 
@@ -127,4 +127,28 @@
 
 ## 7. 关闭声明
 
-P0–P10 全部工作包完成；计划 §10 的 22 项按实际证据勾选（§2）；`docs/research/27` 台账关闭（§8）。唯一未验证边界为远端 CI 未运行与硬件资格（后者由 [42] 独立承担）。本文件取代其早先的“draft 证据矩阵（仅准备）”性质。
+P0–P10 全部工作包完成；计划 §10 的 22 项按实际证据勾选（§2）；`docs/research/27` 台账关闭（§8）。唯一未验证边界为**远端 CI 未运行**（无 push）；渲染器通道 [42] 已接受严格 WebGPU 21 / 严格 WebCodecs 9（浏览器自报 adapter），**硬件视频解码未测量**。本文件取代其早先的“draft 证据矩阵（仅准备）”性质。
+
+## 8. P10 收尾清理回执（2026-09-21）
+
+> 在执行本节前，P9/P10 的结论、命令、指纹与计数已持久化到本文件、[43] 与 [27]。清理只删除本 campaign 的**原始中间产物**；授权的 custody 与简洁 handoff 保留。
+
+**删除（原始中间产物）**
+
+- 顶层 `p9-*` 原始文件（套件 JSON/log、探针、campaign 驱动脚本等）除 `p9-followup-unit.log` 外全部删除（约 165 个文件）。
+- 临时目录：`p9-dist-check`、`p9-injection`、`p9-status`、`p9-visual-failure`、`p9-final-dist-extract`、`p9-failed-campaign-audit`（其内容已镜像在 custody 的对应路径）。
+- 构建产物归档与顶层校验和：全部 `web-e2e-dist-*.tar.gz` 与顶层 `SHA256SUMS*`。
+- 本任务 scratch：`p10-docs-build.log`、`p10-docs-build-final.log`、`p10-format-check.log`。
+
+**保留（授权 custody 与简洁 handoff）**
+
+- `/tmp/opencode/p9-final-evidence/`（`EVIDENCE-SHA256SUMS`，`sha256sum -c --quiet` → 通过；含 failed-campaign 审计与 final-summary）。
+- `/tmp/opencode/p9-followup-provenance/`（final-gate、`PROVENANCE.json`、成员证明、compose 脚本）。
+- `/tmp/opencode/p9-followup-status/`（canonical 状态）。
+- `/tmp/opencode/p9-followup-unit.log`（相关单测 2 files / 97 tests）。
+- `/tmp/opencode/p9-final-status/`（共享 gate-audit 状态输入，按 P9 约定保留）。
+- `/tmp/aap-opt-*.md` 简洁 English handoff。
+
+**产物字节custody**：将修正后的最终构建 `web-e2e-dist-dabedc89….tar.gz`（sha256 `371cc6a7aa727989b8ee257ace6ffe1e98775c736cdfce54cd97d56a2b39f4ea`）复制进 `/tmp/opencode/p9-final-evidence/artifact/`，连同记录其校验和的 `SHA256SUMS-dabedc89`。
+
+**结果**：本任务拥有的原始中间产物已归零；剩余节点仅为上述 custody 目录/日志与简洁 handoff。未删除无关 `/tmp` 文件或其他活动运行时。
