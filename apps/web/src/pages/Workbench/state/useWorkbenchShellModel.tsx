@@ -499,7 +499,7 @@ export function useWorkbenchShellModel({
   const directTaskQuery = useTask(shouldLoadDirectTask ? requestedTaskId! : "");
 
   const discussionDraftStore = useDiscussionDraftStore();
-  // .x · 点云 3D 项目无对应 2D 工具,按当前 3D 工具显式选择工具单位。
+  // 点云 3D 项目无对应 2D 工具,按当前 3D 工具显式选择工具单位。
   const is3DProject = currentProject?.type_key === "lidar";
   const setExemplarOutputMode = s.setExemplarOutputMode;
   useEffect(() => {
@@ -1771,7 +1771,6 @@ export function useWorkbenchShellModel({
 
   // · 跨帧目标延续 (Shift+→ / Shift+←): 把选中框 propagate 到同 scene
   // 邻帧 task。导航胶水 navigateToCrossFrameTask 留此处(绑 tasks/selectTask/updateUrl),
-  // 竞态簇(3 ref + 4 回调)抽到 usePredictionPropagation,见本文件下方 hook 调用。
   // 跳到目标帧 task: 已加载队列内直接选中,否则按 taskId 直开。
   const navigateToCrossFrameTask = useCallback(
     (targetTaskId: string): Promise<boolean> => {
@@ -1783,8 +1782,8 @@ export function useWorkbenchShellModel({
     },
     [tasks, selectTask],
   );
-  // .x 第 3 批 · 跨帧传播竞态簇(3 ref + 4 回调)抽到 usePredictionPropagation;
-  // pendingCrossFrameSelectRef 返回供上方两处 effect(切 task 清理 522 / 导航后补选 651)读写。
+  // 跨帧传播竞态簇(3 ref + 4 回调)由 usePredictionPropagation 持有;
+  // pendingCrossFrameSelectRef 返回供上方两处 effect(切 task 清理 / 导航后补选)读写。
   const {
     pendingCrossFrameSelectRef,
     crossFramePropagate: propagateSceneFrame,
@@ -2283,7 +2282,7 @@ export function useWorkbenchShellModel({
   // 补进项目「所有启用工具单位」的 attribute_schema.fields (同 key 覆盖、新 key 追加), 立即落库。
   // 写项目配置是有副作用操作, 故先经应用内 confirmDialog 确认 (plan 风险项)。补完后 enabledToolUnits
   // 派生收敛, useCapabilityValidation 重算, 该条警告自动消失。
-  // 抽出批量核心, 供单框二次推理 (SecondaryInferenceBar) 一次补多字段复用。
+  // 批量线载荷构造, 供单框二次推理 (SecondaryInferenceBar) 一次补多字段复用。
   const applyAttributeFields = useCallback(
     async (fields: AttributeField[], confirmMsg: string) => {
       if (fields.length === 0) return;
@@ -2389,7 +2388,7 @@ export function useWorkbenchShellModel({
     sam.warmup();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stageKind, taskId, warmupPointBackendId]);
-  // .x · 工具切换按 prompt 种类变化取消交互会话: AI↔AI (如 point→exemplar) 与 AI↔非AI
+  // 工具切换按 prompt 种类变化取消交互会话: AI↔AI (如 point→exemplar) 与 AI↔非AI
   // 切换都会改变 prompt 种类, 一并清掉上一个工具残留的 ghost 点位 overlay / stale mask_input
   // (见 issue 0004; promptOfTool 对非 AI / text 工具返回 null)。同 prompt 种类切换不清 (会话兼容)。
   const prevToolPromptRef = useRef(promptOfTool(s.tool));
@@ -6271,7 +6270,7 @@ export function useWorkbenchShellModel({
         : undefined,
     },
     floatingSelection: selectionCard,
-    // .x · 工作台桌宠;情绪全由 props 派生(标注数增长/里程碑/久坐),不挂 mutation。
+    // 工作台桌宠;情绪全由 props 派生(标注数增长/里程碑/久坐),不挂 mutation。
     pet: {
       enabled: s.workbenchConfig.common.petEnabled,
       context: petContext,
