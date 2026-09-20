@@ -17,16 +17,6 @@ import { useIsMutating, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useToastStore } from "@/components/ui/Toast";
 import { annotationSlicesApi, type PolygonSliceCommitRequest } from "@/api/annotationSlices";
 import { randomId } from "@/utils/id";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/shadcn/ui/alert-dialog";
 import { useProject, useUpdateProject } from "@/hooks/useProjects";
 import { useProjectAccess } from "@/hooks/useProjectAccess";
 import { useProjectPipelines } from "@/hooks/useProjectPipelines";
@@ -251,6 +241,7 @@ import type { UseMaskEditorReturn } from "./useMaskEditor";
 import { maskEditBlockReason } from "./canEditMask";
 import { MaskToolbar } from "../shell/MaskToolbar";
 import { useMaskPrimaryActionOwner } from "./useMaskPrimaryActionOwner";
+import { MaskConfirmDialogs } from "../shell/MaskConfirmDialogs";
 import { useVideoAnnotationActions } from "../stages/video/useVideoAnnotationActions";
 import { maskSliceUnavailableReason } from "../stage/shared/geometry/maskMutationDraft";
 import {
@@ -5954,89 +5945,23 @@ export function useWorkbenchShellModel({
                 }
               />
             )}
-            <AlertDialog
-              open={videoToolConfirmationOpen}
-              onOpenChange={(open) => {
-                if (!open) settleVideoToolConfirmation(false);
+            <MaskConfirmDialogs
+              videoToolConfirmation={{
+                open: videoToolConfirmationOpen,
+                settle: settleVideoToolConfirmation,
               }}
-            >
-              <AlertDialogContent
-                size="sm"
-                className="z-app-drawer"
-                overlayProps={{ className: "z-app-drawer-backdrop" }}
-                data-workbench-video-tool-confirm
-              >
-                <AlertDialogHeader>
-                  <AlertDialogTitle>切换视频工具</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    当前源帧还有未完成的绘制。继续绘制会保留原工具、范围和草稿；丢弃后再切换。
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>继续绘制</AlertDialogCancel>
-                  <AlertDialogAction
-                    variant="destructive"
-                    onClick={() => settleVideoToolConfirmation(true)}
-                  >
-                    丢弃并切换
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-            <AlertDialog
-              open={maskPrimary.emptyConfirmationOpen}
-              onOpenChange={(open) => {
-                if (!open) maskPrimary.closeEmptyConfirmation();
+              emptyRegion={{
+                open: maskPrimary.emptyConfirmationOpen,
+                close: maskPrimary.closeEmptyConfirmation,
+                confirm: maskPrimary.confirmEmptyRegion,
               }}
-            >
-              <AlertDialogContent
-                size="sm"
-                className="z-app-drawer"
-                overlayProps={{ className: "z-app-drawer-backdrop" }}
-              >
-                <AlertDialogHeader>
-                  <AlertDialogTitle>确认清空当前 Mask？</AlertDialogTitle>
-                  <AlertDialogDescription>
-                    该操作会把当前对象变为空
-                    Mask。应用后仍可用撤销恢复，但保存时需要选择删除对象或继续编辑。
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>返回预览</AlertDialogCancel>
-                  <AlertDialogAction variant="destructive" onClick={maskPrimary.confirmEmptyRegion}>
-                    确认清空
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
-            <AlertDialog
-              open={maskInstanceDeleteConfirmOpen}
-              onOpenChange={setMaskInstanceDeleteConfirmOpen}
-            >
-              <AlertDialogContent
-                size="sm"
-                className="z-app-drawer"
-                overlayProps={{ className: "z-app-drawer-backdrop" }}
-              >
-                <AlertDialogHeader>
-                  <AlertDialogTitle>
-                    确认删除 {maskInstanceDeleteCount} 个 Mask 实例？
-                  </AlertDialogTitle>
-                  <AlertDialogDescription>
-                    本次原子操作会删除面积为零或被替换的图片 Mask。提交后需通过审计记录追溯。
-                  </AlertDialogDescription>
-                </AlertDialogHeader>
-                <AlertDialogFooter>
-                  <AlertDialogCancel>返回预览</AlertDialogCancel>
-                  <AlertDialogAction
-                    variant="destructive"
-                    onClick={confirmDestructiveMaskInstanceOperation}
-                  >
-                    确认删除并提交
-                  </AlertDialogAction>
-                </AlertDialogFooter>
-              </AlertDialogContent>
-            </AlertDialog>
+              instanceDelete={{
+                open: maskInstanceDeleteConfirmOpen,
+                setOpen: setMaskInstanceDeleteConfirmOpen,
+                count: maskInstanceDeleteCount,
+                confirm: confirmDestructiveMaskInstanceOperation,
+              }}
+            />
             {/* v0.18.25 · 交互工具上下文浮块 (前 AIToolDrawer): 选中 AI 工具时浮在画布顶部居中,
                 与 MaskToolbar 互斥 (mask 非 AI 工具)。引擎选择经 modelPref 服务端持久化。
                 v0.21.27 · U-pvs-1 · PVS 种子采集态借用 smart-point 工具落点, 此时抑制本工具条
