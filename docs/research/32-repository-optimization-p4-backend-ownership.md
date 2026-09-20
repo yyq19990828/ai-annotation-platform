@@ -12,7 +12,7 @@
 2. `workers/signals.py` 收敛为薄适配器：只保留“连接 → 查作业 → 落通用终态 → 调用领域回填 → 通知 → 提交 → 释放”的骨架；四类领域账本（`MaskQCRun` / `PointCloudQualityRun` / `MaskRepairBatch` / `MaskFormatImport`）的终态差异进入 `services/async_job_terminal.py` 的封闭分派。`partial` / `rollback_failed` / `cancelled` 语义与“终态不被迟到信号覆盖”原样保留 [V]。
 3. `async_jobs` 硬取消端点中 mask_qc / point_cloud_quality 的重复领域更新改为复用同一 `cancelled` 回填；mask_repair / mask_format_import 的“仅 pending 硬取消、running 转 `cancel_requested`”语义与回填规则不同，明确保留独立实现 [V]。
 4. 通知的发布时序没有改动：`notify_job_terminal` 仍按调用方契约在 `mark_*` 之后、调用方 `commit()` 之前发布，WS 投递闸门短暂重试读取未提交行。P4 只做规则归属，不机械替换通知发布方式 [V]。
-5. 新增 `tests/factory.py::create_membership`，收敛 10 个重复的本地 `_add_member` helper 与 87 处内联 `db.add(ProjectMember(...))`；批量 `add_all`、独立会话并发 seed、故意非法角色、显式 `id`/`version` 等 64 处按语义保留（§5）[V]。
+5. 新增 `tests/factory.py::create_membership`，收敛 10 个重复的本地 `_add_member` helper 与 87 处内联 `db.add(ProjectMember(...))`（合计 97 处）；其余 63 处测试内联构造按语义差异保留，另有工厂自身构造器 1 处不计入调用点（§5）[V]。
 6. 纯规则测试与真实事务测试分层不变：fixture 惰性求值，纯规则测试无需测试库即可运行；`test_worker_signals.py`、`test_discussion_notifications_commit.py`、`test_project_member_concurrency.py`、`test_export_final_guard.py` 的独立连接/提交保护原样保留（§6）[V]。
 7. 本阶段未发现需要独立修复提交的真实产品缺陷；产品行为零变化。观察到一处“取消回滚作业不落领域终态”的非对称行为，判断依据不足，记录为 P6 复核候选（§7.4）[GAP]。
 
@@ -97,20 +97,26 @@
 
 ### 5.2 实际迁移
 
-AST 统计：`tests/` 共有 160 处 `ProjectMember(...)` 调用点（P2 报告的“75 个文件”是文件数，实际调用点 160）。本次：
+AST 统计：迁移前 `tests/`（不含 `tests/factory.py` 自身定义）共有 160 处 `ProjectMember(...)` 调用点（P2 报告的“75 个文件”是文件数，实际调用点 160）。本次：
 
 - 迁移 10 个本地 `_add_member` / `_add_member_row` helper；
 - 迁移 87 处异步函数内的 `db.add(ProjectMember(...))`（54 个文件）；
-- 合计约 96 处收口到 `create_membership`。
+- 合计 **97 处**测试调用点收口到 `create_membership`（10 + 87，等于迁移前 160 − 迁移后保留 63）。
 
-### 5.3 KEEP（语义差异，保留内联）
+### 5.3 保留内联的 63 处（语义差异，非未完成）
 
-| 保留形态                              | 数量 | 理由                                                              |
-| ------------------------------------- | ---- | ----------------------------------------------------------------- |
-| `db.add_all([...])` 批量成员          | 42   | 一次 flush 建多条成员，逐条 `create_membership` 会改变 flush 顺序 |
-| `x = ProjectMember(...)` 后 add/flush | 15   | 需要持有对象引用 / 独立会话并发 seed / 故意非法角色 / 带注释构造  |
-| 显式 `id=` / `version=`               | 4    | CAS 与固定主键场景，工厂不建模                                    |
-| 列表推导 / return / 生成器表达式      | 4    | 作为集合/表达式的一部分，非单条显式 seed                          |
+迁移后 `tests/` 仍有 64 处 `ProjectMember(...)` 文本：其中 63 处是测试调用点，另 1 处是 `tests/factory.py` 自身的 `ProjectMember(**kwargs)` 构造器（不属于测试调用点）。这 63 处按外层构造方式**互斥**归类，合计 63：
+
+| 保留形态                                        | 数量 | KEEP 理由（语义差异）                                                                 |
+| ----------------------------------------------- | ---- | ------------------------------------------------------------------------------------- |
+| `db.add_all([...])` 批量成员                    | 42   | 多条成员在一个工作单元里一起 flush；逐条 `create_membership` 会改变 flush 次数与顺序  |
+| `x = ProjectMember(...)` 后 add/flush（Assign） | 14   | 需要持有对象引用 / 独立 seeding 会话 + commit 的并发 seed / 故意非法角色 / 带注释构造 |
+| `db.add(ProjectMember(...))` 且显式 `id=`       | 3    | 调用方自行提供主键；工厂刻意不暴露 `id` 覆盖，迁移会静默丢掉这个显式选择              |
+| 列表推导 / return / 生成器表达式                | 4    | 成员是集合表达式的一个元素，不是单条显式 seed（含迁移测试的 `version=3` 成员）        |
+
+特殊字段说明（与上表重叠，不另计数）：3 处显式 `id=` 即上表第三行；1 处 `version=3` 位于 `test_project_role_migration.py` 的列表推导 + `add_all` 中。工厂虽已支持可选 `version=`，此处保留是因为它与推导及批量 add 绑定，**不是**因为工厂未建模版本。
+
+这些保留项是“工厂只表示单条显式成员”的语义边界，**不是本轮未完成的工作**；若将来确实需要批量 factory，属新需求，需与 P7 的 seed 所有权协调。
 
 ## 6. 纯规则测试与事务测试分层
 
@@ -135,13 +141,16 @@ AST 统计：`tests/` 共有 160 处 `ProjectMember(...)` 调用点（P2 报告�
 - 改动后的 `workers/signals.py` 未挂载到任何运行中的 worker，无需刷新，也**没有**在真实 Celery 进程内验证新签名；
 - 信号新代码通过 `tests/test_worker_signals.py` 的独立 engine 直接验证（读取 committed 行），未做真实 worker crash 演习。
 
-### 7.3 未完成 / 后续归属
+### 7.3 后续归属（P6 复核候选，非本轮缺口）
 
-- **[GAP] 通知两套可见性 SQL 未合并**：`_scope_conditions` 与 `_allowed_delivery_indices` 语义同源、形态不同；`_accessible_project_clause` / `_export_capable_project_clause` 与 `project_scope_clause` 的差异是前者不检查账号活跃（替换会收紧非活跃管理者的可见行为），属潜在行为变化，归 P6 评估是否显式统一。
-- **[GAP] 其余内联成员构造**：§5.3 的 64 处 KEEP；如后续需要批量 factory，需与 P7 的 seed 所有权协调。
-- **[GAP] 真实 worker/浏览器验证**：本阶段未运行 E2E 或真实 GPU/模型链路；E2E 归 P7/P8。
+以下两项是需要后续阶段基于真实行为再决定是否统一 / 加固的**行为问题**，与“本轮未完成”区分开：
 
-### 7.4 观察项（证据不足，不声称缺陷）
+- **通知两套可见性 SQL 未合并**：`_scope_conditions`（列表，相关子查询）与 `_allowed_delivery_indices`（发布 / 投递，批量 pair）语义同源、形态不同；`_accessible_project_clause` / `_export_capable_project_clause` 与 `project_scope_clause` 的差异是前者不检查账号活跃，直接替换会收紧非活跃管理者的可见行为。归 P6 评估是否显式统一。
+- **兜底取消的 `mask_repair_rollback`**：见 §7.4，作为行为问题交 P6。
+
+§5.3 的 63 处内联构造是**已解释的语义 KEEP，不列为缺口**。真实 worker / 浏览器验证（E2E、GPU / 模型链路）归 P7 / P8；工厂批量构造如将来有需要，属新需求。
+
+### 7.4 观察项（证据不足，不声称缺陷，归 P6）
 
 兜底取消路径只回填 `mask_repair`，不回填 `mask_repair_rollback`。API 硬取消不包含 `mask_repair_rollback`，回滚的终态由回滚 worker 自身负责；未复现“回滚作业被 revoke 后批次行停留 running”。记录为 P6 复核候选，不在本阶段改语义。
 
@@ -169,8 +178,10 @@ quiet addopts 抑制计数行：以退出码 + 日志中 0 个 `FAILED`/`ERROR` 
 | `aa8b2965a` | `refactor(api): consolidate project authority on project_access`            |
 | `96adcde94` | `refactor(api): extract async job domain terminal reconciliation`           |
 | `bc33713bd` | `test(api): add explicit membership factory and migrate duplicated seeding` |
+| `00e1e0dfe` | `test(api): pin canonical project access predicates`                        |
+| `af3afdfb5` | `docs(research): record repository optimization P4 backend ownership`       |
 
-- 三个提交都可独立 `git revert`；授权收敛是纯导入/委托迁移，回退不影响运行语义。
+- 五个提交（`aa8b2965a`、`96adcde94`、`bc33713bd`、`00e1e0dfe`、`af3afdfb5`）都可独立 `git revert`；本次仅文档的修正提交（成员计数、KEEP 定性与提交清单）同样可单独 revert，且不含代码变更。
 - signals 重构可用 `git revert 96adcde94` 恢复原单文件实现；领域回填函数与骨架拆分不引入新迁移、锁文件或生成类型。
 - 成员 factory 迁移是测试增量；回退对应提交即恢复内联构造，不影响产品行为。
 - 未触碰迁移、锁文件、生成类型、CI 工作流与远端保护。
