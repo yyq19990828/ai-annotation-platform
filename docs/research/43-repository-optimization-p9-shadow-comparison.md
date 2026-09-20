@@ -97,7 +97,7 @@
 
 ## 6.1 候选上的真实失败（阻塞验收，不视为绿灯）
 
-**已记录但归属他人的失败**：`employee-project-roles.spec.ts` dashboard 项目名（授权 P9 在冻结执行结束后修复该单测）、`markdown-authoring.spec.ts` 表格单元图片重试（Markdown 独立工作流）、pointcloud `workbench-pointcloud-tools.spec.ts:379` 与相关清理（清理所有者负责）。以下为 P9 自有失败与验证边界。
+**已记录但归属他人的失败**：`employee-project-roles.spec.ts` dashboard 项目名（授权 P9 在冻结执行结束后修复该单测）、`markdown-authoring.spec.ts` 目标单元格内图片不可见（Markdown 独立工作流；仅记录图片未出现，不推测单元格缺失）、pointcloud `workbench-pointcloud-tools.spec.ts:379` 与相关清理（清理所有者负责）。以下为 P9 自有失败与验证边界。
 
 同候选联合执行发现两处真实失败，均已保留首次证据、未放宽断言、未跳过保护：
 
