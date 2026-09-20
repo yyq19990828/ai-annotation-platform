@@ -24,7 +24,7 @@ last_reviewed: 2026-05-09
 apps/web/src/
 ```
 
-例如修改 `apps/web/src/pages/Workbench/components/ToolBar/index.tsx` 中的某个 tooltip 文字。
+例如修改 `apps/web/src/pages/Workbench/shell/ContextToolbar.tsx` 中的某个 tooltip 文字。
 
 ## Step 2：跑前端测试
 
@@ -49,8 +49,8 @@ pnpm dev           # 启动 Vite dev server（localhost:3000）
 遵守 [提交规范](/dev/reference/conventions)：
 
 ```bash
-git add apps/web/src/pages/Workbench/components/ToolBar/index.tsx
-git commit -m "feat(workbench): 更新 ToolBar tooltip 文案"
+git add apps/web/src/pages/Workbench/shell/ContextToolbar.tsx
+git commit -m "feat(workbench): 更新 ContextToolbar tooltip 文案"
 git push origin your-branch
 ```
 
