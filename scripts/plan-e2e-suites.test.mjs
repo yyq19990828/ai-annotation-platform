@@ -228,7 +228,9 @@ test("shadow diff against the legacy gate is recorded for schedule changes", () 
     "pointcloud",
   ]);
   assert.deepEqual(shadow.removed, []);
-  assert.ok(shadow.warnings.some((warning) => /proposed change for P9/.test(warning)));
+  assert.ok(
+    shadow.warnings.some((warning) => /legacy rollback gate runs extended-only/.test(warning)),
+  );
 });
 
 test("app-code changes can never produce an empty shadow selection", () => {
@@ -540,4 +542,133 @@ test("bounded smoke runs without retries and forbids flaky passes", () => {
     SUITE_CONTRACT.some((entry) => entry.flakyPolicy === "forbid" && entry.suite !== "smoke"),
     false,
   );
+});
+
+test("effective gate and required manifest stay identical in every mode and event", () => {
+  const cwd = mkdtempSync(join(tmpdir(), "e2e-required-ids-"));
+  const script = fileURLToPath(new URL("./plan-e2e-suites.mjs", import.meta.url));
+  const git = (...args) =>
+    execFileSync("git", args, { cwd, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] }).trim();
+  const parse = (stdout) =>
+    Object.fromEntries(
+      stdout
+        .trim()
+        .split("\n")
+        .filter((line) => line.includes("="))
+        .map((line) => [line.slice(0, line.indexOf("=")), line.slice(line.indexOf("=") + 1)]),
+    );
+  const run = (env, argv = []) =>
+    parse(
+      spawnSync(process.execPath, [script, ...argv], {
+        cwd,
+        encoding: "utf8",
+        env: { ...process.env, ...env },
+      }).stdout,
+    );
+  const ids = (value) => JSON.parse(value).include.map(({ suite }) => suite);
+  const requiredIds = (value) => JSON.parse(value).suites.map(({ suite }) => suite);
+
+  try {
+    git("init");
+    git("config", "user.name", "E2E routing test");
+    git("config", "user.email", "test@example.invalid");
+    mkdirSync(join(cwd, "apps/web/src/pages/Workbench/state"), { recursive: true });
+    writeFileSync(
+      join(cwd, "apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx"),
+      "seed\n",
+    );
+    git("add", ".");
+    git("-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "commit", "-m", "seed");
+    const appBase = git("rev-parse", "HEAD");
+    mkdirSync(join(cwd, "apps/web/src/pages/Workbench/state"), { recursive: true });
+    writeFileSync(
+      join(cwd, "apps/web/src/pages/Workbench/state/useWorkbenchShellModel.tsx"),
+      "changed\n",
+    );
+    git("add", ".");
+    git(
+      "-c",
+      "core.hooksPath=/dev/null",
+      "-c",
+      "commit.gpgsign=false",
+      "commit",
+      "-m",
+      "app change",
+    );
+
+    for (const mode of [undefined, "", "  ", "planned", "legacy"]) {
+      const env = { GITHUB_EVENT_NAME: "push" };
+      if (mode !== undefined) env.E2E_SELECTION_MODE = mode;
+      const out = run(env);
+      assert.deepEqual(
+        ids(out.matrix),
+        requiredIds(out.required),
+        `push mode=${JSON.stringify(mode)}`,
+      );
+    }
+
+    // PR app code, both modes, with the empty env value GitHub renders for an
+    // unset repository variable.
+    for (const mode of [undefined, "", "legacy"]) {
+      const env = { GITHUB_EVENT_NAME: "pull_request" };
+      if (mode !== undefined) env.E2E_SELECTION_MODE = mode;
+      const out = run(env, [appBase]);
+      assert.deepEqual(
+        ids(out.matrix),
+        requiredIds(out.required),
+        `PR app mode=${JSON.stringify(mode)}`,
+      );
+    }
+
+    // Manual full and nightly full keep exact ID equality too.
+    for (const event of ["workflow_dispatch", "schedule"]) {
+      const out = run({
+        GITHUB_EVENT_NAME: event,
+        E2E_DISPATCH_SCOPE: "full",
+        E2E_SCHEDULE_SCOPE: "full",
+      });
+      assert.deepEqual(ids(out.matrix), requiredIds(out.required), event);
+    }
+
+    // Docs-only in planned mode is an explicit allowed skip; in legacy
+    // rollback mode the frozen gate still runs its suites and requires them.
+    // The docs-only base is the commit right before the docs change, so the
+    // diff contains documentation only.
+    const docsBase = git("rev-parse", "HEAD");
+    mkdirSync(join(cwd, "docs-site/user-guide"), { recursive: true });
+    writeFileSync(join(cwd, "docs-site/user-guide/index.md"), "# docs\n");
+    git("add", ".");
+    git("-c", "core.hooksPath=/dev/null", "-c", "commit.gpgsign=false", "commit", "-m", "docs");
+    const docsPlanned = run({ GITHUB_EVENT_NAME: "pull_request", E2E_SELECTION_MODE: "" }, [
+      docsBase,
+    ]);
+    assert.deepEqual(ids(docsPlanned.matrix), []);
+    assert.equal(docsPlanned.run_suites, "false");
+    assert.equal(JSON.parse(docsPlanned.required).classification, "docs-only");
+    const docsLegacy = run({ GITHUB_EVENT_NAME: "pull_request", E2E_SELECTION_MODE: "legacy" }, [
+      docsBase,
+    ]);
+    assert.equal(docsLegacy.run_suites, "true");
+    // Docs-only paths do not affect the extended checks in the frozen gate.
+    assert.deepEqual(ids(docsLegacy.matrix), [...functional]);
+    assert.deepEqual(ids(docsLegacy.matrix), requiredIds(docsLegacy.required));
+
+    // Core-flaky policy only applies to suites actually selected.
+    assert.equal(
+      JSON.parse(docsPlanned.required).suites.some(({ flakyPolicy }) => flakyPolicy),
+      false,
+    );
+    const plannedApp = run({ GITHUB_EVENT_NAME: "push", E2E_SELECTION_MODE: "" });
+    assert.equal(
+      JSON.parse(plannedApp.required).suites.find(({ suite }) => suite === "smoke").flakyPolicy,
+      "forbid",
+    );
+    const legacyApp = run({ GITHUB_EVENT_NAME: "push", E2E_SELECTION_MODE: "legacy" });
+    assert.equal(
+      JSON.parse(legacyApp.required).suites.some(({ suite }) => suite === "smoke"),
+      false,
+    );
+  } finally {
+    rmSync(cwd, { recursive: true, force: true });
+  }
 });

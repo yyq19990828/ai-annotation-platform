@@ -8,8 +8,8 @@ on:
   workflow_dispatch:
     inputs:
       # Plan §6.5-5: the manual entry states its scope explicitly instead of
-      # implying one from the event name. The legacy matrix stays extended-only
-      # until P9; the shadow report reflects the requested scope.
+      # implying one from the event name. The planned selection honours it;
+      # the legacy rollback mode keeps its extended-only behavior.
       e2e_scope:
         description: "E2E scope for the manual run (shadow report)"
         required: false
@@ -302,12 +302,13 @@ jobs:
         env:
           E2E_BASE_SHA: ${{ github.event.pull_request.base.sha }}
           E2E_DISPATCH_SCOPE: ${{ inputs.e2e_scope }}
-          # P9 rollback: set the repository variable E2E_SELECTION_MODE=legacy
-          # to restore the frozen pre-P8 selection without a code change.
+          # Documented rollback: set the repository variable
+          # E2E_SELECTION_MODE=legacy to restore the frozen pre-P8 selection
+          # without a code change (empty/unset keeps the planned default).
           E2E_SELECTION_MODE: ${{ vars.E2E_SELECTION_MODE }}
         run: node scripts/plan-e2e-suites.mjs "$E2E_BASE_SHA" >> "$GITHUB_OUTPUT"
-      # Plan §6.7-1: the §6 selection runs as a shadow report only. The matrix
-      # (and therefore the stable Frontend E2E gate) stays legacy until P9.
+      # The planning job records the legacy-vs-planned comparison every run;
+      # the stable `Frontend E2E` name is preserved across the P9 switch.
       - name: Record shadow E2E selection
         env:
           SHADOW: ${{ steps.plan.outputs.shadow }}

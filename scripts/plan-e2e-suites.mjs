@@ -7,8 +7,9 @@ import { pathToFileURL } from "node:url";
  * Two layers live here:
  *
  * 1. The LEGACY gate selection (`planE2ESuites`) that drives the actual
- *    `Frontend E2E` matrix. Its behavior is frozen: P9 owns any gate switch
- *    after comparative shadow execution.
+ *    `Frontend E2E` matrix. Its behavior stays byte-for-byte reproducible for
+ *    the documented `E2E_SELECTION_MODE=legacy` rollback, while the default
+ *    mode runs the planned §6 selection.
  * 2. The SHADOW selection (`selectSuites`/`shadowPlan`) implementing plan §6:
  *    explicit core/specialty/extended scopes with reasons, docs-only
  *    whitelist, fail-closed diff classification (empty diff, unknown paths,
@@ -132,8 +133,8 @@ const smoke = [
 ];
 
 // Full functional matrix: four shards over every functional spec. Runs on
-// push/nightly (§6.2 全量) and as the broadened fallback; the legacy PR gate
-// still runs it until P9 switches.
+// push/nightly (§6.2 全量), in the conservative fallback, and in the legacy
+// rollback mode.
 const functional = [
   ...["one", "two", "three", "four"].map((name, index) => ({
     suite: `default-${name}`,
@@ -467,7 +468,7 @@ export function selectSuites(eventName, paths, options = {}) {
       warnings:
         eventName === "schedule"
           ? [
-              "legacy gate runs extended-only for schedule; the shadow full selection is a proposed change for P9, not applied",
+              "the legacy rollback gate runs extended-only for schedule; the planned nightly selection is full",
             ]
           : [],
     };
@@ -490,8 +491,9 @@ export function selectSuites(eventName, paths, options = {}) {
     };
   }
   if (eventName === "workflow_dispatch") {
-    // Plan §6.7-5: manual entry states its scope explicitly. The legacy gate
-    // stays extended-only until P9; the shadow honours the requested scope.
+    // Plan §6.7-5: manual entry states its scope explicitly. The planned
+    // selection honours the requested scope; the legacy rollback gate keeps
+    // its extended-only behavior.
     const scope = options.dispatchScope ?? "extended";
     if (!["extended", "full"].includes(scope))
       throw new Error(`Invalid manual E2E scope: ${scope} (expected extended or full)`);
@@ -688,8 +690,9 @@ export function shadowPlan(eventName, paths, options = {}) {
   };
 }
 
-// Frozen gate selection derived from the authoritative table's legacyGate
-// membership. Byte-for-byte the pre-P8 outputs; P9 owns any change.
+// Frozen legacy selection derived from the authoritative table's legacyGate
+// membership. Byte-for-byte the pre-P8 outputs, used by the documented
+// E2E_SELECTION_MODE=legacy rollback.
 export function planE2ESuites(eventName, paths) {
   const legacy = SUITE_CONTRACT.filter((suite) => suite.legacyGate);
   const extendedOnly = ["visual", "layout-stress"];
@@ -740,7 +743,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 
   // P9 gate switch with a documented rollback: `E2E_SELECTION_MODE=legacy`
   // restores the frozen pre-P8 selection without a code change.
-  const selectionMode = process.env.E2E_SELECTION_MODE ?? "planned";
+  // GitHub renders an unset repository variable as an empty string, so
+  // absent/empty/whitespace all mean the default planned mode; only a
+  // non-empty unknown value is rejected.
+  const selectionMode = (process.env.E2E_SELECTION_MODE ?? "").trim() || "planned";
   if (!["planned", "legacy"].includes(selectionMode))
     throw new Error(`Invalid E2E selection mode: ${selectionMode}`);
   const legacyGate = planE2ESuites(eventName, paths);
@@ -749,14 +755,28 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const plannedEntries = selection.planned
     .map((suite) => SUITE_CONTRACT.find((entry) => entry.suite === suite))
     .filter(Boolean);
-  const gate = selectionMode === "legacy" ? legacyGate : { include: plannedEntries };
+  const plannedGate = { include: plannedEntries };
+  const gate = selectionMode === "legacy" ? legacyGate : plannedGate;
+  // The required manifest always describes the EFFECTIVE gate: in legacy
+  // rollback mode the new-only smoke/video/pointcloud suites are not executed,
+  // so they must not be required either; a docs-only allowed skip only exists
+  // in planned mode (the legacy gate always runs suites).
+  const requiredSuites =
+    selectionMode === "legacy"
+      ? legacyGate.include.map((entry) => ({ suite: entry.suite, planned: true }))
+      : plannedEntries.map((entry) => ({
+          suite: entry.suite,
+          planned: true,
+          ...(entry.flakyPolicy ? { flakyPolicy: entry.flakyPolicy } : {}),
+        }));
+  const docsOnlySkip = selectionMode !== "legacy" && selection.classification.docsOnly;
   console.log(`matrix=${JSON.stringify(gate)}`);
   // The comparison document always records the frozen legacy set next to the
   // planned set, so every run leaves old/new evidence behind.
   console.log(`legacy=${JSON.stringify(legacyGate)}`);
   console.log(
     `required=${JSON.stringify(
-      selection.classification.docsOnly
+      docsOnlySkip
         ? {
             classification: "docs-only",
             reason:
@@ -766,16 +786,16 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
           }
         : {
             classification: "app-code",
-            reason: "planned selection (plan §6.2/§6.3)",
-            suites: plannedEntries.map((entry) => ({
-              suite: entry.suite,
-              planned: true,
-              ...(entry.flakyPolicy ? { flakyPolicy: entry.flakyPolicy } : {}),
-            })),
+            reason:
+              selectionMode === "legacy"
+                ? "legacy rollback gate (E2E_SELECTION_MODE=legacy)"
+                : "planned selection (plan §6.2/§6.3)",
+            suites: requiredSuites,
           },
     )}`,
   );
   console.log(`run_suites=${gate.include.length > 0}`);
+  console.log(`selection_mode=${selectionMode}`);
   // Shadow report for P9: recorded by the planning job.
   console.log(`shadow=${JSON.stringify(shadow)}`);
   console.log(`ml_cpu=${mlCpu}`);
