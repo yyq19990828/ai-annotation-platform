@@ -81,13 +81,24 @@ plan() {
   if [ "$spec" = "all" ]; then
     requested=("${SUITES[@]}")
   else
-    local normalized="${spec//,/ }"
-    if [ -z "${normalized// /}" ]; then
+    # Normalize every accepted separator (comma, space, tab, CR, LF) to a single
+    # space, then split with `read -a`. `read -a` performs no pathname expansion,
+    # so a literal `*` stays one unknown token instead of globbing the checkout.
+    local normalized="$spec"
+    normalized="${normalized//,/ }"
+    normalized="${normalized//$'\t'/ }"
+    normalized="${normalized//$'\r'/ }"
+    normalized="${normalized//$'\n'/ }"
+    requested=()
+    read -r -a requested <<< "$normalized" || true
+    # Explicit nonempty invariant: the string guard cannot see tab/newline-only
+    # input, so check the parsed array instead of consulting the raw string.
+    if [ "${#requested[@]}" -eq 0 ]; then
       printf 'no suites selected: pass "all" or at least one suite name (got %q)\n' "$spec" >&2
       exit 1
     fi
     local token
-    for token in $normalized; do
+    for token in "${requested[@]}"; do
       local known=0
       local suite
       for suite in "${SUITES[@]}"; do
@@ -100,7 +111,6 @@ plan() {
         printf 'unknown suite %q; expected one of: %s\n' "$token" "${SUITES[*]}" >&2
         exit 1
       fi
-      requested+=("$token")
     done
   fi
   local suite
@@ -187,13 +197,94 @@ run() {
   esac
 }
 
+# selftest: dependency-free regression for the plan() contract. Exercises the
+# separator mixtures, empty/whitespace-only rejection, unknown names, and the
+# wildcard case that must not glob. Exits nonzero on any mismatch.
+selftest() {
+  local failures=0
+  local suite_list="shared_backend_runtime,shared_mask_utils,shared_protocol_v2,yolo,rapidocr,onnxtools,grounded_sam2,sam3"
+
+  _selftest_plan() {
+    local spec="$1"
+    local out
+    if out="$(plan "$spec" 2>/dev/null)"; then
+      printf '%s' "$out"
+      return 0
+    fi
+    printf '%s' "$out"
+    return 1
+  }
+
+  _selftest_ok() {
+    local spec="$1" expected="$2"
+    local out
+    if ! out="$(_selftest_plan "$spec")"; then
+      printf 'FAIL plan(%q): expected success\n' "$spec" >&2
+      failures=$((failures + 1))
+      return
+    fi
+    local -a trues=()
+    local line
+    while IFS= read -r line; do
+      if [ "${line#*=}" = "true" ]; then
+        trues+=("${line%%=*}")
+      fi
+    done <<< "$out"
+    local actual=""
+    if [ "${#trues[@]}" -gt 0 ]; then
+      actual="$(IFS=,; printf '%s' "${trues[*]}")"
+    fi
+    if [ "$actual" != "$expected" ]; then
+      printf 'FAIL plan(%q): expected true=[%s] got [%s]\n' "$spec" "$expected" "$actual" >&2
+      failures=$((failures + 1))
+    fi
+  }
+
+  _selftest_fail() {
+    local spec="$1"
+    local out
+    if out="$(_selftest_plan "$spec")"; then
+      printf 'FAIL plan(%q): expected nonzero exit, got success\n' "$spec" >&2
+      failures=$((failures + 1))
+      return
+    fi
+    if [[ "$out" == *=true* ]]; then
+      printf 'FAIL plan(%q): emitted true flags on failure\n' "$spec" >&2
+      failures=$((failures + 1))
+    fi
+  }
+
+  _selftest_ok "all" "$suite_list"
+  _selftest_ok "yolo,onnxtools" "yolo,onnxtools"
+  _selftest_ok "yolo onnxtools rapidocr" "yolo,rapidocr,onnxtools"
+  _selftest_ok $'yolo\tonnxtools' "yolo,onnxtools"
+  _selftest_ok $'yolo\nonnxtools' "yolo,onnxtools"
+  _selftest_ok $'yolo\n\t sam3,\trapidocr' "yolo,rapidocr,sam3"
+  _selftest_ok "yolo,,onnxtools" "yolo,onnxtools"
+  _selftest_ok "yolo,yolo" "yolo"
+  _selftest_fail ""
+  _selftest_fail $' \t\r\n '
+  _selftest_fail ",,"
+  _selftest_fail "bogus"
+  _selftest_fail "yolo,bogus"
+  _selftest_fail "*"
+
+  if [ "$failures" -eq 0 ]; then
+    printf 'plan selftest: all cases passed\n'
+    return 0
+  fi
+  printf 'plan selftest: %s case(s) failed\n' "$failures" >&2
+  return 1
+}
+
 command="${1:-}"
 case "$command" in
   plan) plan "${2-all}" ;;
   run) run "${2:-}" ;;
   list) printf '%s\n' "${SUITES[@]}" ;;
+  selftest) selftest ;;
   *)
-    printf 'usage: %s {plan "<spec>"|run <suite>|list}\n' "$(basename "$0")" >&2
+    printf 'usage: %s {plan "<spec>"|run <suite>|list|selftest}\n' "$(basename "$0")" >&2
     exit 2
     ;;
 esac

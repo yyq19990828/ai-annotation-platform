@@ -24,7 +24,7 @@ jobs:
 ```
 
 - 合法 suite 名（8 个）：`shared-backend-runtime`、`shared-mask-utils`、`shared-protocol-v2`、`yolo`、`rapidocr`、`onnxtools`、`grounded-sam2`、`sam3`。
-- `suites: all`（或不传）运行全部；**空/纯空白会被拒绝并返回非零**（不会静默空跑），未知名字同样报错退出。
+- `suites: all`（或不传）运行全部；分隔符接受逗号、空格、制表符、回车与换行。**空、纯空白、纯分隔符、未知名字、通配符都返回非零且不输出任何 `true` 标记**（不会静默空跑，也不会把 `*` 当 glob 展开）——判据是解析后的数组非空（`read -a`），而不是对原始字符串做空格裁剪；`read -a` 不做路径名展开，所以字面 `*` 只会作为未知名字报错。
 - 手动全量入口：Actions → “ML CPU tests” → Run workflow（同一 `suites` 输入）。
 - 工作流内部由 `plan` job 解析输入，输出 8 个布尔量；8 个套件 job 各自 `if: needs.plan.outputs.<suite> == 'true'`，彼此独立（无 matrix，因此 `fail-fast` 语义不适用，各 job 显式 `strategy.fail-fast: false` 以保持既有矩阵约定）。
 - 本工作流**只做执行**：触发范围 / 路径过滤 / 与 `ci.yml` 汇总的接线由 P8 GLM 的 caller 负责；根 `scripts/image-reference-utils.test.mjs`（Node）也归 P8 GLM。
@@ -56,6 +56,7 @@ jobs:
 
 ```bash
 bash scripts/run-ml-cpu-tests.sh plan all
+bash scripts/run-ml-cpu-tests.sh selftest                         # plan 契约回归（14 例）
 bash scripts/run-ml-cpu-tests.sh run shared-backend-runtime   # 99 passed
 bash scripts/run-ml-cpu-tests.sh run shared-mask-utils        # 41 passed
 bash scripts/run-ml-cpu-tests.sh run shared-protocol-v2       # 163 passed
@@ -69,6 +70,7 @@ ML_CPU_DRY_RUN=1 bash scripts/run-ml-cpu-tests.sh run sam3           # 命令校
 - **[V]** 上述 6 个套件在本地脚本路径下全部退出 0；日志 `/tmp/opencode/p8ci2-*.log`。
 - **[V]** 失败清理与非零保持：`PYTEST_ADDOPTS="-k __no_such_test__"` 强制失败时退出码 5 原样返回，临时 venv 归零（`/tmp/ml-cpu-test.*` 无残留）。
 - **[V]** `bash -n scripts/run-ml-cpu-tests.sh`、`node scripts/check-workflow-names.mjs --strict`（全部合规）、`Pyyaml` 解析、`uvx --from actionlint-py actionlint .github/workflows/ml-cpu-test.yml`（exit 0）。
+- **[V]** `plan` 契约回归（`selftest`，14 例：`all`、逗号/空格/制表符/换行/混合分隔、双逗号、重复、空、纯空白、纯分隔符、未知、`yolo,bogus`、`*`）全部通过；修复前复现的阻塞用例（仅制表符/换行）现在退出 1 且不输出任何 `true`；`*` 不再被 glob 展开。`uvx --from shellcheck-py shellcheck scripts/run-ml-cpu-tests.sh` exit 0。
 - **[A]** gs2/sam3 的完整依赖安装未在本阶段重跑（其安装命令与 P6 已验收的 `-e ".[dev]"` + CPU torch 完全一致，仅加载路径变化），故以 dry-run 校验命令构造。
 
 ## 5. 边界与限制
