@@ -95,6 +95,15 @@
 
 结论：远端当前没有要求 `Frontend E2E` 的必需检查配置，因此切换门禁内部逻辑不存在“远端保护未同步”的外部阻塞；稳定检查名保留，任何后续需要的分支保护配置由协调方在具备本次对照证据后决定。未做任何远端写操作。
 
+## 6.1 候选上的真实失败（阻塞验收，不视为绿灯）
+
+同候选联合执行发现两处真实失败，均已保留首次证据、未放宽断言、未跳过保护：
+
+1. **visual**：`apps/web/e2e/tests/workbench-layout.spec.ts:397` 在 `seed.owned()` 之后仍断言旧共享显示 id `T-E2E-000001`；owned 任务的显示 id 为命名空间形态。属 P7 迁移遗留的消费方缺陷（与已修复的 pointcloud/lidar 同类），已请求 bounded separate fix（保留 `text-brand` 与文件名断言）。
+2. **pointcloud（领域 worker）**：`workbench-pointcloud-tools.spec.ts:379` 双击多边形失败（retries 1 后仍失败，0 skip）；同次运行的 owned-cleanup 返回 500（residual users=3/projects=2）并在 global teardown 留 3 个用户。由独立诊断者定位根因；若落在 P7 seed/fixture 归属内，将以独立 fix + 回归提交。
+
+上述两项修复前，P9 不得声明“全绿”或“完成”；`Frontend E2E` 的 fail-closed 汇总/审计语义不变（真实失败会照常阻塞）。
+
 ## 7. 保留与限制
 
 - workers 1、重试/超时/覆盖率预算未放宽；核心不依赖重试。
