@@ -650,15 +650,26 @@ test.describe("workbench pointcloud edit (PSR 交互守护)", () => {
     await expect(cx).toHaveValue("1"); // seed 的 center=[1,0,1]
 
     // ① 改 cx → handleField → 250ms 防抖 → PATCH /annotations/:id { geometry }。
-    const patchPromise = page.waitForRequest(
-      (req) => req.method() === "PATCH" && /\/annotations\/[0-9a-f-]+/.test(req.url()),
+    // Await the RESPONSE, not just the request: the geometry PATCH takes the
+    // annotation row lock, so the fixture teardown must not start while it is
+    // still in flight, otherwise the cleanup DELETE FROM tasks deadlocks with it
+    // and the write 500 goes unnoticed.
+    const patchResponsePromise = page.waitForResponse(
+      (res) => res.request().method() === "PATCH" && /\/annotations\/[0-9a-f-]+/.test(res.url()),
       { timeout: 10_000 },
     );
     await cx.fill("3");
-    const patch = await patchPromise;
+    const patchResponse = await patchResponsePromise;
+    expect(patchResponse.ok()).toBe(true);
 
-    const body = patch.postDataJSON() as { geometry?: { center?: number[] } };
+    const body = (await patchResponse.request().postDataJSON()) as {
+      geometry?: { center?: number[] };
+    };
     expect(body.geometry?.center?.[0]).toBeCloseTo(3, 3);
+    const persisted = (await patchResponse.json()) as {
+      geometry?: { center?: number[] };
+    };
+    expect(persisted.geometry?.center?.[0]).toBeCloseTo(3, 3);
 
     // PATCH 成功后无 fatal console error。
     const fatal = consoleErrors.filter(

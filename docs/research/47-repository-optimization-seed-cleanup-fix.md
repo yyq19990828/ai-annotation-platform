@@ -72,8 +72,10 @@
   - 现象：P9 default-3 中 `POST /seed/video-webcodecs`（`h264-issue-context`）客户端 10s 超时，随后 teardown residual `users:3, projects:1`。
   - 证据：该路由在隔离下很快（实测 `generate_fixture` **0.27s**；`put_object` 已在 `asyncio.to_thread`，`_test_seed.py:2388/2443`）；自有共享产物预览 `G2-1` 单跑与 `G2-1|G2-2` 合跑均通过（1 passed / 2 passed），运行后 residual 0；P9 运行窗口（13:31–13:50）PostgreSQL 日志**无任何 ERROR/deadlock/lock 记录**，API 进程也未重启。
   - 结论：**精确不确定性**——未能确定是编码、存储还是进程/主机层面的瞬时停顿；没有证据支持“放弃写入的竞态”或某处同步阻塞，因此**不做**超时/重试或后端改动，留给最终受影响套件复跑判定。
-- **default-4 deadlock 只读分诊 [PG]**：
+- **default-4 deadlock 精确定位与修复（更正先前归属）[PG][V]**：
   - 配对语句（PG 原证 13:48:16）：进程 964615 `SELECT annotations ... FOR UPDATE`（`update_annotation`）↔ 进程 964513 `DELETE FROM tasks WHERE project_id = ANY($1)`（**owned 清理**）。
-  - 判定：这是与 pointcloud 同类的「teardown 清理 vs 仍在飞行的写入」竞态，不是 `update_annotation` 自身锁序的独立缺陷；candidate-decisions 两个用例在最终 JSON 中**通过**（deadlock 受害者是那个未被断言的飞行中写入请求）。
+  - **精确定位（更正先前归属）**：保留的 P9 日志显示该 traceback 紧跟在 `[34/67] ... workbench-pointcloud-edit.spec.ts:562`「点选 box_3d → PSR 面板出现 → 改 cx → 几何 PATCH 落库」之后；该用例只 `waitForRequest` 取请求体、**未 await 响应**，断言后即结束，teardown 清理与该几何 PATCH 的 `SELECT annotations FOR UPDATE` 行锁竞争 → deadlock，写入 500 未被断言。先前把归属记到 candidate-decisions 属误记（该 spec 无 PATCH、两个用例通过），现更正。
+  - 修复（测试侧，已授权）：`waitForRequest` → `waitForResponse`；断言响应 `ok()` 与持久化 `geometry.center[0] ≈ 3`；保留原请求体几何断言与真实 PSR 编辑/双击断言。
+  - 验证：共享产物 `253b54a0` 预览 `--project=pointcloud -g "几何 PATCH 落库"`、`--retries=0`，连续两次 **1 passed**，日志无 deadlock/ASGI 异常/500，运行后 `users=0 / projects=0`。
   - default-4 的 3 个 unexpected 为：`workbench-tool-dock`（浏览器被关闭）、`workbench-topbar`（P9-owned 布局）、`workbench-pointcloud-tools`（已由 `90c80922b`/`8024717c8` 修复的 pointcloud 清理残差）。
-  - 处置：只读报告；若需清零 deadlock，属“保证 teardown 前无飞行写入”的用例侧修复（同 pointcloud 模式），不在本任务 ownership，未改动。
+  - 同文件其余「仅 `waitForRequest`/`page.on('request')` 计数、结束时仍可能留写」的写法（`:670`/`:960`/`:1020`）属同型潜在竞态；本轮未对其取证，故未改动。
