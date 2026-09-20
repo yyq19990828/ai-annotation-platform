@@ -316,11 +316,12 @@ repo-scripts 4 / screenshots-tooling 12 / worktree-runtime 8；
 补录行的 CPU 可运行性证据见 `docs/research/34`（ML/shared）与 35。
 `apps/_shared/protocol_v2` 的 CPU 测试结果见 `docs/research/35`。
 
-## 10. P5/P6/P7 收口后的最新快照（2026-09-20，P6 收口）
+## 10. P5/P6/P7 收口后的最新快照（2026-09-20，P6 收口；历史快照，最新状态见 §11）
 
 > 本节只追加当前快照，不改写 §0–§9 的 P0 / P6 历史记录；历史计数与 P0 时点事实保持可比。
+> 本节是 **P6 收口时点**的历史快照；其“P8 未接受 / P9·P10 未开始”的结论已被 §11（P8 接受与 P10 验证通道之后）取代。
 
-- **接受提交**：P5 `9e34dfafb`（+ [33]，含 `canBatchConvert` / helpers 的有据 KEEP 与 R1/R2 清理）、P6 在 root `11d81d05c`（[34] ML/shared、[35] 剩余稳定域、UsersPage MSW 化 `0e90da462`、§7.2 迁移真实验证 [39]）、P7 `b8b45797e`（+ [31]）。P8 选择器 / 工作流修正**未接受**（[37]/[38] 为阶段产物）；P9/P10 未开始。
+- **接受提交**：P5 `9e34dfafb`（+ [33]，含 `canBatchConvert` / helpers 的有据 KEEP 与 R1/R2 清理）、P6 在 root `11d81d05c`（[34] ML/shared、[35] 剩余稳定域、UsersPage MSW 化 `0e90da462`、§7.2 迁移真实验证 [39]）、P7 `b8b45797e`（+ [31]）。P8 选择器 / 工作流修正**未接受**（[37]/[38] 为阶段产物）；P9/P10 未开始。**（上行是 P6 收口时点事实；后续 P8 修正已于 root `6c47d68de` 接受，含 [36] CI 选择/报告、[37] CPU 接线、[38] 核心 smoke；点云/lidar 消费者回归修复为 `112df2009`（[44]）；当前验收根 `e91ac8dfd`。P9 进行中、P10 pending。见 §11。）**
 - **清单快照**：`docs/research/data/26-repository-test-file-inventory.tsv` 现 **1136 行 = 1132 可执行测试 + 4 测试支撑模块**（新增 `test-support` 层）。发现谓词（只读、确定性）：`git ls-files` 全量 ∩ 文件名匹配 `*.test.ts(x)` / `*.spec.ts(x)` / `*.test.mjs` / `test_*.py` / `test-*.py`；显式排除路径片段 `/vendor/`、`/fixtures/`、`/generated/`、`node_modules`、`/checkpoints/`、`/_fixtures/` 与文件名 `conftest.py`、`__init__.py`。双向比对后补录 8 行、0 缺口：
   - `apps/api/tests/test_conftest_db_url.py`（P2 测试库守卫纯规则 13 例，backend-api / ci-wired）
   - 6 个 P5 Workbench 测试：`state/{maskMutationPolicy,taskNavigation,trackerSeedPrompts,useBatchBackendSelection,useMaskMutationWorkflows}.test.ts` 与 `shell/SelectionCardContent.test.tsx`（frontend-unit / ci-wired）
@@ -328,4 +329,16 @@ repo-scripts 4 / screenshots-tooling 12 / worktree-runtime 8；
 - **分层计数（可加和）**：backend-api 360 / frontend-unit 558 / repo-scripts 5 / test-support 4 / docs-tooling 2 / e2e-browser 67 / frontend-tooling 5 / mask-utils-shared 5 / ml-backend 70 / ml-backend-shared 13 / ml-examples 2 / python-sdk 25 / screenshots-tooling 12 / worktree-runtime 8 = 1136。
 - **接线状态（静态读取）**：ci-wired 1031 / script-wired 15 / not-wired 90。**口径**：`not-wired` 的 89 个 ML/shared 测试经独立 CPU 审计证明**全部 CPU 可运行**（12 个需 CPU torch），执行入口为 `.github/workflows/ml-cpu-test.yml` + `scripts/run-ml-cpu-tests.sh`；PR caller 属 P8，未收口前不声称进入 PR 门禁，也不把它们归为“硬件专属”。
 - **支撑文件口径**：`apps/api/tests/{conftest,factory,_avatar_storage,__init__}.py` 四个测试基建模块单独标记 `test-support`，与可执行测试分离；发现侧显式排除这四类路径，非缺口。
-- **未决（P8/P9/P10）**：选择器 docs-only 白名单、报告区分 not-run/flaky、构建复用与门禁切换；阶段结论见 [37]/[38]，本文件不重复。
+- **未决（P8/P9/P10）**：选择器 docs-only 白名单、报告区分 not-run/flaky、构建复用与门禁切换；阶段结论见 [37]/[38]。**（更新：[37]/[38] 为 P8 阶段产物，P8 修正与 CPU 接线已于 root `6c47d68de` 接受（[36]）；门禁切换属 P9（进行中），P10 pending。见 §11。）**
+
+## 11. P8 接受与 P10 验证通道之后的最新快照（2026-09-20，P10 准备）
+
+> 本节是 P6 收口快照（§10）之后的当前状态；只追加，不改写 §0–§10 的历史记录。P10 完整验收证据矩阵草稿见 [45](./45-repository-optimization-final-acceptance.md)。
+
+- **接受提交（当前验收根 `e91ac8dfd`）**：P0–P8 全部接受；P8 修正在 root `6c47d68de`（CI 选择/报告 [36]、CPU 接线 [37]、核心 smoke [38]、迁移真实验证 [39]）；P10 验证通道 [40]（后端/SDK/ML 契约，`7efcb27a0`/`f90dea73e`）、[41]（前端 coverage/build/docs，`6fb6b13e6`/`b8897df28`）、[42]（渲染器资格，`5e2ad830e`/`ac2eae8d8`/`e91ac8dfd`）；点云/lidar 消费者回归修复 `d807b3482`/`e41e4973c`/`112df2009`（[44]）。
+- **阶段状态**：P0–P8 **完成**；P9 **进行中**（由他处 lane 拥有 `docs/research/43`、`docs-site/dev/testing.md` 与 CI 门禁）；P10 **未开始（pending）**，仅产出草稿证据矩阵 [45]。
+- **清单 delta（确定性发现，本文件在 `e91ac8dfd` 复核）**：发现 **1134 可执行测试 + 4 测试支撑 = 1138**；§10/TSV 记录 1136（1132 + 4）。差异为 P8 新增的 `scripts/audit-e2e-requirements.test.mjs`、`scripts/summarize-e2e-results.test.mjs` 两行尚未回填，且 `status` 列为 P6 静态口径。TSV 不在本轮 ownership；回填属 P10 终验（明细见 [45§5]）。
+- **结构收敛（`9cec9751a`→`e91ac8dfd`，`git show`）**：`useWorkbenchShellModel.tsx` 8919→6646；`…helpers.ts` 480→306；`signals.py` 225→121；`ProjectDataManagerPage.flow.test.tsx` 946→401；`vite.config.ts` 163→141；`conftest.py` 311→317。
+- **覆盖率口径**：阈值 `45/45/45/70` **未变**；前端实测 72.28/79.33/66.92/72.28（[41]），后端 line 73.61 / branch 55.33（[40]）；不存在为绿灯调低阈值。
+- **版本叙事**：计划 §7.1 指定文件命中由 36 → 0（本文件在 `e91ac8dfd` 复核 `git grep`）。
+- **未决**：P9 影子对比与门禁切换、候选远程 CI、P10 终验复跑与最终 docs 构建；见 [45§5]。
