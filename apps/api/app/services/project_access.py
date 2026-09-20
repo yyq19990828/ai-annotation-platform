@@ -102,8 +102,28 @@ def project_role_capabilities(project_role: str) -> frozenset[str]:
     return _PROJECT_ROLE_CAPABILITIES.get(project_role, frozenset())
 
 
-def platform_role_is_manager(platform_role: str) -> bool:
+def platform_role_is_manager(platform_role: str | None) -> bool:
     return platform_role in MANAGER_PLATFORM_ROLES
+
+
+def is_privileged_for_project(user: User, project: Project) -> bool:
+    """Canonical pure predicate for the manager access kind.
+
+    An active super administrator, or the project owner whose *platform* role
+    is administrative.  This is the pure (already-loaded ORM) mirror of
+    :func:`resolve_project_access` returning ``ACCESS_KIND_SUPER_ADMIN`` or
+    ``ACCESS_KIND_OWNER``; schedulers, workers and aggregate reads call it
+    instead of re-deriving the owner/platform-role rule from ``User.role``.
+
+    Ownership alone never grants authority, and a legacy ``annotator`` /
+    ``reviewer`` account value is not an authority source.
+    """
+
+    if not user.is_active:
+        return False
+    if user.role == PlatformRole.SUPER_ADMIN.value:
+        return True
+    return platform_role_is_manager(user.role) and project.owner_id == user.id
 
 
 def membership_role_compatible(platform_role: str, project_role: str) -> bool:

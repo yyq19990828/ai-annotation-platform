@@ -416,7 +416,7 @@ async def _seed_full(engine) -> dict:
 async def _seed_manager_cases(engine) -> dict:
     """Seed active-manager and adversarial effective assignments.
 
-    Mirrors ``scheduler.is_privileged_for_project``: an active super
+    Mirrors ``project_access.is_privileged_for_project``: an active super
     administrator manages every project and an active ``project_admin`` owns
     exactly the project it owns.  Each manager task has no membership row, so
     the pre-fix audit reports it; the adversarial rows prove the exemption is

@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from sqlalchemy import select, func, or_, and_, false
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.db.enums import MANAGER_PLATFORM_ROLES, ProjectRole, UserRole
+from app.db.enums import ProjectRole
 from app.db.models.dataset import DatasetItem
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
@@ -15,6 +15,7 @@ from app.db.models.annotation import Annotation
 from app.db.models.prediction import Prediction
 from app.db.models.project import Project
 from app.db.models.user import User
+from app.services.project_access import is_privileged_for_project
 from app.services.scene import resolve_primary_item_id
 from app.services.task_lock import TaskLockService, assert_task_user_active
 
@@ -24,22 +25,6 @@ _PRIMARY_LIDAR_ROLE = "primary_lidar"
 # 上锁。逐个候选尝试 acquire,失败即跳到下一个,最多看这么多个候选(高竞争下兜底,
 # 全被占则本次返回 None,客户端重试)。
 _NEXT_TASK_CANDIDATE_WINDOW = 20
-
-
-def is_privileged_for_project(user: User, project: Project) -> bool:
-    """Privileged project access for batch/task visibility.
-
-    Requires an active account that is either a super administrator or the
-    project owner *with a legitimate administrative platform role*.  An
-    anomalous non-administrative owner is not privileged; it must use a valid
-    membership.  Never authorizes from a legacy global staff role.
-    """
-
-    if not user.is_active:
-        return False
-    if user.role == UserRole.SUPER_ADMIN.value:
-        return True
-    return user.role in MANAGER_PLATFORM_ROLES and project.owner_id == user.id
 
 
 def visible_batch_statuses_for_project_role(project_role: str | None) -> list[str]:

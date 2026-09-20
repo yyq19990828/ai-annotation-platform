@@ -13,10 +13,10 @@ from app.db.models.dataset import DatasetItem
 from app.db.models.task_batch import TaskBatch
 from app.services.storage import storage_service
 from app.services.scheduler import batch_visibility_clause
+from app.services.project_access import platform_role_is_manager
 from app.services.project_aggregates import (
     DASHBOARD_PLATFORM_ROLES,
     REVIEWER_ROLE,
-    platform_role_is_manager,
     project_scope_clause,
 )
 from app.db.enums import UserRole, TaskStatus
