@@ -1,4 +1,8 @@
-"""Local cancellation-safe LRU ownership used by Grounded-SAM2 pools."""
+"""Cancellation-safe LRU ownership shared by the ML backend pools.
+
+Each consumer passes its own ``logger_name`` so log records keep the emitting
+backend's identity even though the pool implementation is shared.
+"""
 
 from __future__ import annotations
 
@@ -13,7 +17,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Generic, TypeVar
 
-logger = logging.getLogger("grounded-sam2-backend.managed-pool")
+logger = logging.getLogger("aap_backend_runtime.managed-pool")
 UTC = timezone.utc
 
 KeyT = TypeVar("KeyT", bound=Hashable)
@@ -89,6 +93,7 @@ class ManagedLruPool(Generic[KeyT, ResourceT]):
         build_timeout: float = 30.0,
         build_serial_lock: asyncio.Lock | None = None,
         pool_name: str = "resources",
+        logger_name: str | None = None,
     ) -> None:
         if cap <= 0:
             raise ValueError("cap must be positive")
@@ -105,6 +110,7 @@ class ManagedLruPool(Generic[KeyT, ResourceT]):
         self._preflight = preflight
         self._build_timeout = build_timeout
         self._pool_name = pool_name
+        self._logger = logging.getLogger(logger_name) if logger_name else logger
 
         self._entries: OrderedDict[KeyT, _PoolEntry[KeyT, ResourceT]] = OrderedDict()
         self._builders: dict[KeyT, asyncio.Task[_BuildResult]] = {}
@@ -345,7 +351,7 @@ class ManagedLruPool(Generic[KeyT, ResourceT]):
                 cleanup_cancelled = True
             except BaseException as exc:
                 cleanup_error = exc
-                logger.exception(
+                self._logger.exception(
                     "cleanup after failed %s build also failed", self._pool_name
                 )
             _, commit_cancelled = await self._run_task_to_completion(
@@ -504,7 +510,7 @@ class ManagedLruPool(Generic[KeyT, ResourceT]):
             "at": datetime.now(UTC),
             "reason": reason,
         }
-        logger.info("%s evicted %r (reason=%s)", self._pool_name, key, reason)
+        self._logger.info("%s evicted %r (reason=%s)", self._pool_name, key, reason)
 
     def _reserved_build_slots_locked(self) -> int:
         return sum(key not in self._entries for key in self._builders)

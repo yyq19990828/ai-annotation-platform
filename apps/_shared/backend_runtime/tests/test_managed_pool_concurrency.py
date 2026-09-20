@@ -10,7 +10,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from managed_pool import BuildArtifact, ManagedLruPool, ManagedPoolBusyError
+from aap_backend_runtime import BuildArtifact, ManagedLruPool, ManagedPoolBusyError
 
 
 @dataclass
