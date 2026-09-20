@@ -106,6 +106,10 @@
 
 上述两项修复前，P9 不得声明“全绿”或“完成”；`Frontend E2E` 的 fail-closed 汇总/审计语义不变（真实失败会照常阻塞）。
 
+## 6.2 待修复：mask-slice 生命周期夹具的桶所有权守卫（已提交提案）
+
+`apps/web/e2e/fixtures/mask-slice-lifecycle.py` 当前以桶名后缀（`-e2e/_e2e/-test/_test`）判定“独占一次性桶”，但工作树模式的自有桶命名为 `aap-wt-<id>-<mode>-<purpose>`（含 `-e2e-`、不以 `-e2e` 结尾），导致 `mask-slice.spec.ts:682/716` 失败。修复方向：改用**既有的工作树资源所有权机制**（`.worktree/<mode>/resources.json` 的声明桶 + 所有者 + `scripts/worktree_runtime.require_owner` 的标签语义），在无工作树清单时保留旧的 CI 后缀回退；负向校验覆盖共享桶（无所有者标签）、他人所有、未声明桶。保留 GC/版本丢失断言，仅重跑这两个用例。CI 条件差异审计：全仓 e2e 仅 `mask-advanced-operations.spec.ts:334` 一处依赖 `process.env.CI`。
+
 ## 7. 保留与限制
 
 - workers 1、重试/超时/覆盖率预算未放宽；核心不依赖重试。
