@@ -155,7 +155,7 @@ jobs:
         working-directory: docs-site/dev/examples/mock-v2-backend
         run: uv run --extra test pytest -q
 
-  # Python SDK / CLI / TUI 测试（packages/python-sdk, v0.15.2 起）。
+  # Python SDK / CLI / TUI 测试（packages/python-sdk）。
   python-sdk-pytest:
     name: Python SDK tests
     runs-on: ubuntu-latest
@@ -190,7 +190,7 @@ jobs:
         env:
           OPENAPI_URL: ${{ github.workspace }}/apps/api/openapi.snapshot.json
         run: pnpm build
-      # v0.8.8 · bundle size budget 守护：超过 .size-limit.json 阈值即阻断 PR。
+      # bundle size budget 守护：超过 .size-limit.json 阈值即阻断 PR。
       - name: Bundle size check
         working-directory: apps/web
         run: pnpm size

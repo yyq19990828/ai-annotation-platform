@@ -263,7 +263,7 @@ def auth_headers(super_admin) -> dict[str, str]:
     return {"Authorization": f"Bearer {token}"}
 
 
-# v0.23.3 ADR-0050 · 测试辅助: 创建 registry + 其 singleton 服务池 + active 成员。
+# ADR-0050 · 测试辅助: 创建 registry + 其 singleton 服务池 + active 成员。
 # 项目启用关联 / 项目主绑定都基于 pool id (ProjectMLBackendPool.pool_id / Project.ml_backend_pool_id)。
 # 测试不再直接 new ProjectMLBackend(project_id, registry_id); 改用本 helper 得到 pool 再建关联。
 async def create_registry_with_pool(

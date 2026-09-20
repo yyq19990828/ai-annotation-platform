@@ -419,7 +419,7 @@ async def test_ml_backends_tab_renders_and_colors():
 
 
 async def test_ml_backends_dedup_shared_backend_merges_one_row():
-    # v0.19.1 · 同一全局 backend 被多个项目启用 → 各项目作用域端点返回同一 registry id;
+    # 同一全局 backend 被多个项目启用 → 各项目作用域端点返回同一 registry id;
     # 聚合须按 id 去重为一行 (否则 DataTable 同 key add_row 崩溃), 项目列示「N 个项目」。
     proj_a = _project()
     proj_b = Project(
@@ -570,7 +570,7 @@ async def _settle_screen(app, pilot):
     await pilot.pause()
 
 
-# ---- v0.15.10: 下钻子路由 + 动作按钮 ----
+# ---- 下钻子路由 + 动作按钮 ----
 
 
 async def test_open_project_pushes_detail_with_subtabs():
@@ -747,7 +747,7 @@ async def test_job_detail_terminal_has_no_cancel_button():
         assert not app.screen.query("#download")
 
 
-# ---- v0.15.13: 导出对齐 + 闭环下载 + 悬浮框按钮化 ----
+# ---- 导出对齐 + 闭环下载 + 悬浮框按钮化 ----
 
 
 async def test_cancel_confirm_via_button_triggers_cancel():
@@ -797,7 +797,7 @@ async def test_completed_export_job_detail_download_closure():
         assert len(app._client.exports.downloaded) == 1
 
 
-# ---- v0.15.14: 项目详情 批次 / 成员 子 tab ----
+# ---- 项目详情 批次 / 成员 子 tab ----
 
 
 def _batch(project_id) -> Batch:
@@ -882,7 +882,7 @@ async def test_project_detail_degrades_when_batches_endpoint_unavailable():
         assert app.screen.query_one("#pd-members-table", DataTable) is not None
 
 
-# ---- v0.15.15: 看板趋势 + 角色门控绩效 ----
+# ---- 看板趋势 + 角色门控绩效 ----
 
 
 def _person() -> PersonStat:

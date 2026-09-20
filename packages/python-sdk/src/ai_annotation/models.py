@@ -457,7 +457,7 @@ class HealthMeta(_AAPModel):
 class MLBackend(_AAPModel):
     """ML Backend (只读监控)。state: connected / error。
 
-    v0.19.1 · 全局注册表 (ADR-0044): `id` 是全局 registry id, 一物理 backend 全局
+    全局注册表 (ADR-0044): `id` 是全局 registry id, 一物理 backend 全局
     一份; 同一 backend 被多个项目启用时, 各项目作用域端点返回的是**同一 id**。旧版
     per-project 的 backend id 已在 0.19.0 迁移中被 registry id 取代——脚本里硬编码
     的旧 id 需更新。项目作用域端点 (`MLBackends.list/get`) 会回填 `project_id`;
@@ -560,7 +560,7 @@ class ServicePoolRuntimeSnapshot(_AAPModel):
 
 
 class MLBackendStatsSnapshot(_AAPModel):
-    """v0.15.12 · `/ws/ml-backend-stats` 每 1s 推送的单个 backend 实时快照。
+    """/ws/ml-backend-stats 每 1s 推送的单个 backend 实时快照。
 
     `loaded` / `idle_unload_seconds` / `last_request_age_seconds` / `pool` / `video_pool`
     是 REST `/health` 拿不到、仅 WS 推送的池/预热维度。
