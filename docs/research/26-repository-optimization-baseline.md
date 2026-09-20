@@ -359,3 +359,19 @@ repo-scripts 4 / screenshots-tooling 12 / worktree-runtime 8；
 - **接线状态（静态读取）**：**ci-wired 1123 / script-wired 15 / not-wired 0**。
 - **边界**：`ci-wired` 仍为**静态接线**判定（workflow/命令引用），不是执行证据；各 suite 的实际本地执行证据见 [34]/[37]/[40]，远程 CI 未运行（无 push，如实记录）。
 - **决定/理由保留**：既有行的 `decision`（KEEP）与 `reason`（`pending-review` 或具名证据）均未改动；新增行给出具名 P8 理由。
+
+## 13. P9 补录：mask-slice 生命周期守卫回归文件（2026-09-20）
+
+> 追加记录 P9 已授权范围内的清单增量；不改写 §0–§12 的历史快照。P9 阶段状态仍为**进行中**，本节不表示 P9/P10 完成。
+
+| 项目      | 内容                                                                                                                                                                                                                                  |
+| --------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 新增文件  | `apps/api/tests/test_mask_slice_fixture_guard.py`                                                                                                                                                                                     |
+| 层 / 接线 | `backend-api` / `ci-wired`（`.github/workflows/ci.yml` 的 `pytest with coverage` 在 `apps/api` 下无条件 `uv run pytest`，自动收集该文件）                                                                                             |
+| 依赖      | `none (pure guard-function rules; imports the fixture module only)`：纯守卫函数正/负例，不连数据库                                                                                                                                    |
+| 理由      | P9 mask-slice 生命周期夹具的桶所有权守卫回归 **14 例**：接受自有桶；拒绝共享桶、他方/畸形所有者标签、缺失或空清单所有者、跨模式清单、错库、错 MINIO 槽位、他 checkout、缺清单、未知模式，并保留无模式旧 CI 后缀规则与 `aap-wt-*` 拒绝 |
+| 提交      | `ac3222e9e`（并入集成根 `9fd44e513`）                                                                                                                                                                                                 |
+
+- **P9 后清单计数（本补录时点）**：**1139 行 = 1135 可执行 + 4 测试支撑**；分层计数仅 `backend-api` 361（其余不变）；接线状态 **ci-wired 1124 / script-wired 15 / not-wired 0**；`git ls-files` 发现集与 TSV 路径双向比对 **0 缺口**。
+- **口径区分（不把聚焦结果当全量）**：上述 **14 例**是 P9 的**聚焦守卫回归**；P9 相关聚焦结果还包括 `apps/api/tests/test_seed_owned.py` **22 passed**（种子清理竞争修复 [47]，含 3 例新增回归）与 `test_conftest_db_url.py` 13 例（[29]）。它们都**不是**全量后端套件证据：全量后端快照仍是 [40] 的 **4428 collected / 4413 passed / 0 failures / 0 errors / 15 skipped**（`9e34dfafb`），前端全量仍是 [41] 的 **562 文件 / 5626 用例**。本节不声称全量覆盖，也不声称任何性能/耗时/覆盖率收益。
+- **边界**：`ci-wired` 仍为静态接线判定；本节未运行远程 CI，未运行全量后端/前端套件。

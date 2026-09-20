@@ -1128,6 +1128,7 @@ apps/web/e2e/screenshots/flows/flows.spec.ts	screenshots-tooling	playwright (app
 apps/web/e2e/screenshots/regression/regression.spec.ts	screenshots-tooling	playwright (apps/web package.json screenshots:*)	docs media seed + isolated screenshot services	KEEP	pending-review		script-wired
 apps/web/e2e/screenshots/screenshots.spec.ts	screenshots-tooling	playwright (apps/web package.json screenshots:*)	docs media seed + isolated screenshot services	KEEP	pending-review		script-wired
 apps/api/tests/test_conftest_db_url.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	none (pure conftest DB-URL rules; no DB)	KEEP	P2 测试库守卫纯规则回归（13 例）；显式 URL 优先、解析失败报错、不回退硬编码		ci-wired
+apps/api/tests/test_mask_slice_fixture_guard.py	backend-api	pytest apps/api (pnpm dev:worktree --mode test)	none (pure guard-function rules; imports the fixture module only)	KEEP	P9 mask-slice 生命周期夹具的桶所有权守卫正/负例回归（14 例）；拒绝共享/他方/缺失或空所有者/跨模式清单/错库/错槽位/他 checkout、无模式旧 CI 规则与 aap-wt-* 拒绝		ci-wired
 apps/web/src/pages/Workbench/shell/SelectionCardContent.test.tsx	frontend-unit	vitest apps/web	none (MSW + Konva DOM stub)	KEEP	P5 选中浮卡内容分派等价回归		ci-wired
 apps/web/src/pages/Workbench/state/maskMutationPolicy.test.ts	frontend-unit	vitest apps/web	none (MSW + Konva DOM stub)	KEEP	P5 Mask 错误策略纯函数回归（8 例）		ci-wired
 apps/web/src/pages/Workbench/state/taskNavigation.test.ts	frontend-unit	vitest apps/web	none (MSW + Konva DOM stub)	KEEP	P5 任务导航准入回归（15 例，自 helpers 测试迁入）		ci-wired
