@@ -62,8 +62,8 @@ uv run alembic history             # 查看版本历史
 确实无法无损回滚的迁移（如 `0174` 员工角色切换）在迁移文件里声明模块级
 `IRREVERSIBLE = True` 并让 `downgrade()` 抛错。`scripts/alembic_reversible_floor.py`
 只用于**报告**可逆边界：默认打印 floor，`--json` 输出完整策略；它不授权 `stamp`。
-修订图出现多 head、merge、孤儿分支、多个不可逆迁移或基线处不可逆时，脚本会
-fail closed（非零退出），而不是给出一个会漏检的 floor。
+修订图出现多 head、merge、孤儿分支、多个不可逆迁移、基线处不可逆，或在不可逆迁移之上还有
+可逆版本（后缀段验证尚未实现）时，脚本会 fail closed（非零退出），而不是给出一个会漏检的 floor。
 
 本地验证：
 

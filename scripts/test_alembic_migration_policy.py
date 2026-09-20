@@ -23,6 +23,7 @@ from alembic_reversible_floor import (  # noqa: E402
 )
 from validate_migrations import (  # noqa: E402
     ValidationError,
+    check_restored_history,
     create_action,
     derived_database,
     drop_action,
@@ -51,6 +52,8 @@ class ClassifyChainTests(unittest.TestCase):
         self.assertEqual(classify_chain(revisions, "0002").reversible_floor, "0002")
 
     def test_reversible_suffix_above_irreversible_fails_closed(self):
+        # head -> irreversible is a valid segment, but the runner does not
+        # implement suffix validation yet, so it refuses the shape.
         revisions = {
             "0175": rev("0175", "0174"),
             "0174": rev("0174", "0173", irreversible=True),
@@ -215,6 +218,32 @@ class DatabaseOwnershipActionTests(unittest.TestCase):
         self.assertEqual(
             drop_action(True, "someone-else", "owner", created_by_run=True), "refuse"
         )
+
+
+class RestoredHistoryTests(unittest.TestCase):
+    def test_missing_history_row_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            check_restored_history([])
+
+    def test_single_correct_history_row_is_accepted(self):
+        check_restored_history([{"role": "annotator", "project_role": None}])
+
+    def test_wrong_role_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            check_restored_history([{"role": "employee", "project_role": None}])
+
+    def test_converted_project_role_is_rejected(self):
+        with self.assertRaises(ValidationError):
+            check_restored_history([{"role": "annotator", "project_role": "annotator"}])
+
+    def test_duplicate_history_rows_are_rejected(self):
+        with self.assertRaises(ValidationError):
+            check_restored_history(
+                [
+                    {"role": "annotator", "project_role": None},
+                    {"role": "annotator", "project_role": None},
+                ]
+            )
 
 
 if __name__ == "__main__":

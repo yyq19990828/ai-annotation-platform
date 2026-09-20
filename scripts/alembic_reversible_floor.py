@@ -16,10 +16,14 @@ executes the real schema/data rollback.
 The policy is deliberately fail-closed.  A chain with multiple heads, a merge
 revision, an orphan/branch revision, an unknown parent, a cycle, more than one
 irreversible revision, an irreversible revision at the base, or any reversible
-revision *above* the unique irreversible revision raises ``UnsupportedChain``
-instead of guessing a floor that would leave part of the downgrade chain
-unverified.  When every migration is reversible the floor is the current head,
-keeping the round trip identical to a plain ``downgrade base``.
+revision above the unique irreversible revision raises ``UnsupportedChain``.
+
+The last shape is not impossible to validate: ``head -> <irreversible>`` is
+itself a valid reversible segment.  This runner simply does not implement
+post-irreversible suffix validation yet, so it refuses the shape rather than
+silently validating only the prefix below the irreversible revision.  When every
+migration is reversible the floor is the current head, keeping the round trip
+identical to a plain ``downgrade base``.
 
 The frozen stdout contract (a single line with the floor revision) is preserved
 for existing callers; ``--json`` additionally emits the full policy.
@@ -112,8 +116,9 @@ def classify_chain(revisions: dict[str, Revision], head: str) -> ChainPolicy:
             suffix = [r.revision for r in order if r.revision != irreversible[0]]
             raise UnsupportedChain(
                 "reversible revisions sit above irreversible "
-                f"{irreversible[0]!r} ({', '.join(suffix[:5])}...); their downgrade "
-                "cannot be validated without executing the irreversible downgrade"
+                f"{irreversible[0]!r} ({', '.join(suffix[:5])}...); post-irreversible "
+                "suffix validation is not implemented, so this chain shape is "
+                "unsupported"
             )
         parent = _single_parent(order[0])
         if parent is None:

@@ -294,11 +294,12 @@ async def create_owned_database(anchor: Anchor, state: RunState, name: str) -> N
             if action == "recreate":
                 await connection.exec_driver_sql(f'DROP DATABASE "{name}"')
             await connection.exec_driver_sql(f'CREATE DATABASE "{name}"')
+            # Register inside the live connection block, before the fallible
+            # connection close / engine disposal: a dispose, COMMENT or verify
+            # failure must still clean up the freshly created database.
+            state.created.append(name)
     finally:
         await engine.dispose()
-    # Register before any fallible post-step so a COMMENT/verify failure still
-    # gets the partially created database cleaned up.
-    state.created.append(name)
     if _INJECT_CREATE_FAILURE and name.endswith("__mv_fresh"):
         raise ValidationError("injected allocation failure after CREATE")
     engine = _admin_engine(anchor)
@@ -833,6 +834,18 @@ async def phase_forward(anchor: Anchor, state: RunState, backend: DumpBackend) -
     return snapshot
 
 
+def check_restored_history(rows: list) -> None:
+    """Require exactly one untouched pre-conversion historical invitation row."""
+    if len(rows) != 1:
+        raise ValidationError(
+            "restored snapshot historical invitation count is "
+            f"{len(rows)}, expected exactly 1"
+        )
+    row = rows[0]
+    if row["role"] != "annotator" or row["project_role"] is not None:
+        raise ValidationError(f"restored historical invitation changed: {dict(row)}")
+
+
 async def phase_restore(
     anchor: Anchor, state: RunState, snapshot: Path, backend: DumpBackend
 ) -> None:
@@ -879,12 +892,7 @@ async def phase_restore(
         database,
         "SELECT role, project_role FROM user_invitations WHERE email = 'mv-accepted@test.local'",
     )
-    if accepted and (
-        accepted[0]["role"] != "annotator" or accepted[0]["project_role"] is not None
-    ):
-        raise ValidationError(
-            f"restored historical invitation changed: {dict(accepted[0])}"
-        )
+    check_restored_history(list(accepted))
     state.phases.append(f"restore:{database}@{floor}")
 
 

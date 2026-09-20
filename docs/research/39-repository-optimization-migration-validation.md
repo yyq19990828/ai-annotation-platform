@@ -74,8 +74,8 @@ prod、非 postgres 驱动）和 `create_action`/`drop_action` 归属判定（�
 
 ### 2.4 评审加固（f299 之后）
 
-- **修订图边界**：`classify_chain` 显式拒绝「不可逆迁移之上还有可逆版本」的形状（其 downgrade
-  无法在不执行不可逆 downgrade 的前提下验证），不再只验证前缀；单测覆盖。
+- **修订图边界**：`classify_chain` 显式拒绝「不可逆迁移之上还有可逆版本」的形状（`head→不可逆版本`
+  本身是可验证段，但 runner 尚未实现后缀验证），不静默只验证前缀；单测覆盖。
 - **分配即登记**：`create_owned_database` 在 `CREATE DATABASE` 成功后**立即**把库名写入
   `state.created`，再执行 COMMENT 与校验；COMMENT/校验失败时 `finally` 仍会清理这个半成品库。
   `--fail-after create` 注入在 COMMENT 之前失败，实测创建 1 库后 `cleanup_errors=[]`、无残留。
@@ -134,5 +134,6 @@ prod、非 postgres 驱动）和 `create_action`/`drop_action` 归属判定（�
   仍是本地容器内的一次性库。
 - 未改动已发布迁移历史；`IRREVERSIBLE` 策略只对当前单一不可逆（0174）成立，未来新增不可逆迁移
   会命中 fail-closed 分支，需要显式设计新的验证段。
-- `--fail-after` 的失败清理自证只覆盖到 forward 阶段（fresh/reversible/forward 创建的库都被删除）；
-  restore 阶段因先删 forward 库、后用其快照，失败注入未单独枚举，但 `finally` 对所有已创建库统一删除。
+- `--fail-after` 的失败清理自证覆盖 create/fresh/reversible/forward 阶段；restore 阶段并未删除
+  forward 库（转换前快照已写入磁盘独立存在），所有已创建库与 dump 文件都由 run 结束时的 `finally`
+  统一清理，restore 本身未单独枚举失败注入。
