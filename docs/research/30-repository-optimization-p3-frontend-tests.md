@@ -1,6 +1,6 @@
 # 仓库优化 P3：前端测试边界与高 mock 流程清理
 
-> 盘点日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P3 工作包 + §5.2）
+> 盘点日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（P3 工作包 + §5.2）
 > 基线提交：`0144b734c`（P0+P1 已合入，等于本工作树 P3 起点）
 > 输入台账：`docs/research/26-repository-optimization-baseline.md` §4（不变量映射）、`docs/research/28-repository-optimization-p1-contracts.md`（P1 契约固化）
 > 证据图例：**[V]** 本工作树实际执行/逐条核对；**[F]** 产品缺陷修复（附回归与失败前/修复后证据）；**[GAP]** 未执行或留待后续阶段

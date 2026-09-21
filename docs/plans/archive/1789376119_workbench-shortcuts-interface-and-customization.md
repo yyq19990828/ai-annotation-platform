@@ -1,6 +1,6 @@
 # Workbench shortcuts interface and customization
 
-> Status: implemented (both increments); media re-record pending an X11 capture environment.
+> Status: completed and archived. Both increments shipped, and the later workbench media recapture replaced and reviewed the shortcut demonstration.
 > Source baseline: `fb7ce93e`, reviewed on 2026-09-14.
 > The user requested alignment with Settings / Annotation Guide, a Settings-like presentation, clearer content, and an assessment of custom shortcuts. The user subsequently clarified that “domain” was undecided and that avoiding shortcut conflicts was the primary concern.
 > Follow-up: the user proposed digits 1–9 plus 0 for category access and questioned whether letter bindings should be limited. The revised recommendation below reserves ten direct category slots, removes letter-based category selection, and keeps the category count unlimited. This replaces the earlier recommendation to preserve historical category-letter reservations.
@@ -235,4 +235,5 @@ Reuse the existing [Radix Dialog](https://www.radix-ui.com/primitives/docs/compo
 - User/API/developer documentation and the Unreleased changelog describe the current behavior. OpenAPI, generated TypeScript clients, and shortcut documentation were regenerated; documentation codegen checks and the docs build passed.
 - Verification: the full web suite passed (518 files / 5154 tests), including dispatch, persistence, recorder, class-picker, tool-hint, and 3D helper regressions. TypeScript build checking and web lint passed with two existing warnings outside this change. The two preference API suites passed 120 tests in the verified disposable test database. The existing Settings E2E and shortcut E2E passed all three cases in the isolated E2E environment.
 - Desktop browser checks confirmed 1120px dialog width, focused search, browser/review-key rejection, recording cancellation on category changes, `I` task navigation after reload, `X` video frame navigation, and inactive old bindings. Browser errors were empty; test preferences were restored. The existing desktop-only Workbench gate remains in effect at narrow phone widths.
-- Deferred documentation media: the existing shortcut demonstration video/poster were not re-recorded in this repair pass; the capture flow is updated for a later documentation-media refresh.
+- Documentation media: the subsequent workbench media recapture replaced and reviewed `hotkey-cheatsheet.mp4` and its poster; the asset is registered in the maintained media manifest and review registry.
+- Remaining work: none within this plan; later shortcut additions must extend the current command registry, conflict inventory, generated reference, and media workflow as applicable.

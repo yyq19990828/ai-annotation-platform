@@ -1,6 +1,6 @@
 # 仓库优化 P10 验证通道：渲染器资格验收（点云 WebGPU / WebCodecs 精确帧）
 
-> 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P10 渲染验证通道，非 canonical P10 完成）
+> 完成日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（P10 渲染验证通道，非 canonical P10 完成）
 > 分支：`worktree-agent-opt-final-renderer`；验收根 `e41e4973c`（含 P7 命名空间化 pointcloud 消费者修复；渲染器产品输入与前述已测状态一致）
 > 证据图例：**[V]** 实际执行；**[FIXED-EXTERNAL]** 曾因外部回归受阻、外部修复后已复跑通过
 > 边界：零产品源码变更（仅新增本文档）；不 push；不做 P8/P9/台账编辑；未触碰 main 8000 / feedback 8100 / Grafana 3001；未做全局 pkill；未使用全局管理员或 reset 绕过隔离。

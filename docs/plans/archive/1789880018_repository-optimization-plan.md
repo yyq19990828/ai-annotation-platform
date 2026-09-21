@@ -3,7 +3,7 @@
 > 仓库：`yyq19990828/ai-annotation-platform`
 > 审阅日期：2026-09-20（UTC）
 > 审阅基线：`main`，提交 `9cec9751a9f7a5518cfa09af6d1d75a789f28758`，已合入 PR #129「项目级员工角色与审核证据闭环」。
-> 状态：待执行。本文件是改造计划，不是已完成的代码修改报告。
+> 状态：已完成并归档。P0–P10 的实现、验证、台账关闭与清理均已完成；远端 CI 未运行的边界保留在最终验收记录中。
 
 **路径约定：文中所有代码、配置和文档路径均相对仓库根目录。** 标注“拟新增”的路径是建议落点；实施时若已有同职责模块，应合并到原有模块，不再建立第二套实现。执行前核对当前 HEAD 与上述基线的差异。
 
@@ -553,6 +553,14 @@ pnpm dev:worktree -- exec --mode e2e -- \
 **只有上述结果落地、验证完成、台账关闭，才能称为本次优化完成。不能把减少文件行数、删掉一批测试或 CI 偶然变绿当作完成。**
 
 > **P10 收尾（2026-09-21）**：上述 22 项按实际证据勾选；唯一跨项限制是**远端 CI 未运行**（无 push），`scripts/summarize-e2e-results.mjs` 的分类与同构建复用仅在本地探针/单测上验证；严格 WebGPU/WebCodecs 资格由渲染器通道 [42] 单独承担并已接受，不是本清单的缺口。台账与逐项证据见 `docs/research/45-repository-optimization-final-acceptance.md`。
+
+## Outcome
+
+- Landed commits: P0–P10 已集成到本计划的最终验收根 `13d274326`，最终文档与清理提交记录见 `docs/research/45-repository-optimization-final-acceptance.md`。
+- Release milestone: 相关用户可见修复与工程变更已进入 `0.26.0`；本计划不单独定义版本范围。
+- Developer documentation: `docs-site/dev/testing.md`、`docs-site/dev/concepts/repository-map.md` 以及 `docs/research/26-repository-optimization-baseline.md` 至 `docs/research/50-repository-optimization-workbench-root-edge-dock.md`。
+- CHANGELOG: 用户可见修复与 CI / 测试行为变更已记录在根 `CHANGELOG.md` 的 `0.26.0` 段。
+- Remaining work: 无计划内未完成项；远端 CI 因未 push 而未运行，硬件视频解码未测量，这两项是已记录的验证边界，不是隐含完成声明。
 
 ## 附录：本计划的主要核对入口
 

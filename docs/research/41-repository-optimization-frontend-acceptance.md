@@ -1,6 +1,6 @@
 # 仓库优化 前端最终验收：coverage / build / size / typecheck / lint / format / docs
 
-> 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P10 前端验收前置；**不是** P10 收口）
+> 完成日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（P10 前端验收前置；**不是** P10 收口）
 > 工作树：`/home/hehao/桌面/ai-annotation-platform-worktree-agent-opt-p6-ml`（分支 `worktree-agent-opt-final-frontend`）
 > 被测提交：`c62aa8364`（基于已接受的 P6 收口 root `725fc5101`）；settle 前 rebase 到 `f90dea73e`（仅新增 `docs/research/40` 后端证据，产品输入不变）
 > 证据图例：**[V]** 本工作树实测

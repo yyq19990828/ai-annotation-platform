@@ -1,6 +1,6 @@
 # 仓库优化 P7 修复：点云 E2E owned 夹具消费者回归
 
-> 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P7 owned 夹具隔离；本轮修复消费者回归）
+> 完成日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（P7 owned 夹具隔离；本轮修复消费者回归）
 > 工作树/分支：`/home/hehao/桌面/ai-annotation-platform-worktree-agent-opt-p6-ml`（`worktree-agent-opt-p7-pointcloud-fix`，基于 accepted root `b8897df28`）
 > 证据图例：**[V]** 本工作树实测
 

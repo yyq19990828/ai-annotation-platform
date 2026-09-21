@@ -1,6 +1,6 @@
 # 仓库优化 P0 基线：全仓目录分类、测试清单与 CI 实证
 
-> 盘点日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P0 工作包）
+> 盘点日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（P0 工作包）
 > 基线提交：`9cec9751a9f7a5518cfa09af6d1d75a789f28758`（来自分支 `feat/codebase_opt260920`，该提交在基线时点等于 `origin/main`，即 PR #129 合并点）
 > 证据输入：P0-A 初稿 `/tmp/aap-opt-p0-inventory.md`（静态盘点）；P0-B 校准稿 `/tmp/aap-opt-p0-ci.md`（**CI 权威源**）
 > 证据图例：**[V]** 本工作树在 HEAD 逐条复核通过；**[A]** 采纳 P0-A 静态读数（未逐条复跑）；**[R]** 采纳 P0-B 远程 CI 证据（`gh` 只读）；**[GAP]** 未执行或需服务/授权
@@ -253,7 +253,7 @@
 | web 测试文件                   | 643                                 | 口径依赖 glob：src 下 549；apps/web 全树 633 [V]（正文按 549 口径）                                                                                                            |
 | SOUND 声明强度                 | 部分表述近似“已审”                  | 全文降为“清单级盘点 + 热点文件复核”，见第 0 节声明                                                                                                                             |
 
-计划文件入轨说明：未跟踪的 `docs/plans/1789880018_repository-optimization-plan.md` 按协调方授权在本工作树执行 `prettier --write`（仅表格对齐空格），572 行不变；去空白 + 表格分隔行规范化后与原件哈希一致（`b9d3b944…`），措辞与语义零改动；原件检出未触碰。
+计划文件入轨说明：未跟踪的 `docs/plans/archive/1789880018_repository-optimization-plan.md` 按协调方授权在本工作树执行 `prettier --write`（仅表格对齐空格），572 行不变；去空白 + 表格分隔行规范化后与原件哈希一致（`b9d3b944…`），措辞与语义零改动；原件检出未触碰。
 
 ## 9. P6 补录：测试清单缺口修复（2026-09-20，本提交）
 

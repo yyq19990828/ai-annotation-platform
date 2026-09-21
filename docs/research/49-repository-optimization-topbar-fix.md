@@ -1,6 +1,6 @@
 # 仓库优化 P9 修复：工作台顶部栏中等宽度重叠
 
-> 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P9 工作包 / P10 验证通道）
+> 完成日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（P9 工作包 / P10 验证通道）
 > 基线根：`36bd3c7c0`（`feat/codebase_opt260920`，已接受的优化根）· 修复分支：`worktree-agent-opt-p9-topbar-fix`
 > 冻结候选：`dc972be08a42855c836023da178487469aae2fc9`（`Topbar.tsx` 与 `workbench-topbar.spec.ts` 同基线根逐字节一致）
 > 自有一次性环境：`aap_wt_c2820af87ec94679_e2e`（checkout `c2820af87ec94679`）

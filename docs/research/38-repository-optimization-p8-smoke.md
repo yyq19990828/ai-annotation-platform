@@ -1,6 +1,6 @@
 # 仓库优化 P8：核心 smoke 契约（成员收敛与实测证据）
 
-> 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（§6.2 核心 smoke）
+> 完成日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（§6.2 核心 smoke）
 > 依据：`/tmp/aap-opt-p8-membership-audit.md`（M1：现 smoke 成员 `workbench-image-konva-smoke.spec.ts` 带 `@visual`，
 > 在默认 `test:e2e` 下收集 0；M3：§6.2 行为未逐条映射到实测用例）
 > 工作树：`/home/hehao/桌面/ai-annotation-platform-worktree-agent-opt-p6-ml`（分支 `worktree-agent-opt-p8-smoke`，根 `bc220bfd1`）

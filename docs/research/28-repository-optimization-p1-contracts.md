@@ -1,6 +1,6 @@
 # 仓库优化 P1：契约固化、旧角色测试数据修正与信号兜底回归
 
-> 盘点日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P1 工作包）
+> 盘点日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（P1 工作包）
 > 基线提交：`a24fb644e3d301c8a345e6683d5f95612be08343`（P0 台账合入点，等于本工作树 P1 起点）
 > 输入台账：`docs/research/26-repository-optimization-baseline.md` §4（不变量映射）、`docs/research/27-repository-optimization-ledger.md` §1（P1 验收门）
 > 证据图例：**[V]** 本工作树实际执行/逐条核对；**[M]** 负向变异验证（破坏→失败→恢复）；**[GAP]** 未执行或留待后续阶段

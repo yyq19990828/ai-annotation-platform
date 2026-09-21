@@ -1,6 +1,6 @@
 # 仓库优化 P6（剩余稳定域）：seed 修复、页面收尾、provenance 清理与审计
 
-> 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P6 工作包，ML/共享运行时子集见 [34](./34-repository-optimization-p6-ml-runtime.md)）
+> 完成日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（P6 工作包，ML/共享运行时子集见 [34](./34-repository-optimization-p6-ml-runtime.md)）
 > 工作树基线：`3a94e75607393c552f58ccad6256c3a6afea14cb`（ML 子集已并入 root 后的检出点，分支 `worktree-agent-opt-p6-main`）
 > 输入：`/tmp/aap-opt-p6-preaudit.md` rev2、[26](./26-repository-optimization-baseline.md)、[27](./27-repository-optimization-ledger.md)、[28](./28-repository-optimization-p1-contracts.md)、[29](./29-repository-optimization-p2-fixtures.md)、[30](./30-repository-optimization-p3-frontend-tests.md)、[32](./32-repository-optimization-p4-backend-ownership.md)、`/tmp/aap-opt-p4-report.md`
 > 证据图例：**[V]** 本工作树实际执行/逐条核对；**[KEEP]** 明确保留并给出理由；**[GAP]** 未执行或归属后续阶段

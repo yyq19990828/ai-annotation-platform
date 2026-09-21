@@ -1,6 +1,6 @@
 # 仓库优化 P2：后端 fixture 迁移、兼容层删除与测试库守卫
 
-> 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P2 工作包，§5.3）
+> 完成日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（P2 工作包，§5.3）
 > 基线提交：`0144b734c`（P0+P1 已合入点，本工作树起点）
 > 输入：`docs/research/28-repository-optimization-p1-contracts.md` §7（C8 conftest 回退缺口归 P2）
 > 证据图例：**[V]** 本工作树实际执行/逐条核对；**[GAP]** 未执行或留待后续阶段

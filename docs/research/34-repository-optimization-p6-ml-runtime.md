@@ -1,6 +1,6 @@
 # 仓库优化 P6（ML/共享运行时子集）：managed_pool 去重、边界审计与注释 provenance 清理
 
-> 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P6 工作包；只做 ML/共享运行时子集）
+> 完成日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（P6 工作包；只做 ML/共享运行时子集）
 > 工作树基线：`af3afdfb54ff3cede438424b3922ad307e4ccdcb`（分支 `worktree-agent-opt-p6-ml`，由 root `0588129ed` 起的工作树）
 > 输入：`/tmp/aap-opt-p6-preaudit.md` rev2（静态证据，非执行测试）、`docs/research/26`/`27`（基线/台账，只读）
 > 证据图例：**[V]** 本工作树实际执行或逐条核对；**[KEEP]** 明确保留并给出理由；**[LIMIT]** 未执行/留待后续

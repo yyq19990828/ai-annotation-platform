@@ -1,6 +1,6 @@
 # 仓库优化 P7：E2E 用例下沉、fixture 命名空间隔离与请求失败分类收敛
 
-> 盘点日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P7 工作包）
+> 盘点日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（P7 工作包）
 > 基线提交：`0144b734c`（P0+P1 整合点）；工作分支已 rebase 到根工作树当前 HEAD `3a94e7560`，其上含 P2 直连模型 fixture、P3 前端测试边界、P4 后端规则归属
 > 证据图例：**[V]** 本工作树实际执行/逐条核对；**[M]** 运行时探针；**[GAP]** 未执行或留待后续阶段
 

@@ -1,6 +1,6 @@
 # Workbench media recapture after dockable layouts
 
-> Status: first three batches and fifth video-AI batch approved; fourth video-basics batch retained at the user's request. The remaining 19 existing stories and two new layout stories are assigned to parallel workers with primary-thread review. Keeping existing recordings is not a new per-asset review approval.
+> Status: completed and archived. All assigned replacements and new layout stories were reviewed and registered; deliberately retained or unrelated historical media remain outside this plan's scope.
 > Baseline: `af2eb6ab`, 2026-09-07. No release milestone is assigned.
 
 ## Goal and acceptance
@@ -362,3 +362,12 @@ The committed integration `2345bbc4` is the review anchor for exactly these 45 a
 The local `/latest` gallery lists all 21 reviewed stories. HTTP readback matched all 45 file hashes, cache headers prevent stale previews, and MP4 byte-range requests returned 206 correctly. Content review used complete-video sampling and full-resolution key frames/posters; a fresh in-app browser playback session was unavailable. The earlier documentation build remains the build evidence for the affected guide integration.
 
 All three worker-owned API/web/Celery stacks, Redis containers, disposable databases, and their 21 precisely scoped storage buckets were removed after idle checks. Temporary worker worktrees were removed after verifying integration and private source backups. Shared application/model/storage services and the review preview remain available; source branches and the accepted private capture archives are retained.
+
+## Outcome
+
+- Landed commits: the staged batches culminated in integration and review anchor `2345bbc4`; earlier accepted batches remain identified in their completion records above.
+- Release milestone: the shipped user-visible media refresh is recorded in the `0.25.x` changelog history.
+- User documentation: `docs-site/user-guide/workbench/` and the affected workflow guides now reference the current videos, posters, and layout teaching assets.
+- Developer documentation: `docs-site/dev/how-to/update-screenshots.md` and the maintained media manifests/review registry describe the reproducible capture, derivation, and review workflow.
+- CHANGELOG: the media refresh entries are archived in `docs/changelogs/0.25.x.md`.
+- Remaining work: none within this plan. Unrelated stale or review-due assets and any future marketing-master proposals remain governed by their own active plans.

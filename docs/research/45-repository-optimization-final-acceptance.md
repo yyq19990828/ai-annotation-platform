@@ -1,6 +1,6 @@
 # 仓库优化 P10 最终验收记录（台账关闭）
 
-> 完成日期：2026-09-21 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（§3 约束 / §9 记录要求 / §10 完成标准）
+> 完成日期：2026-09-21 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（§3 约束 / §9 记录要求 / §10 完成标准）
 > 不可变基线：`9cec9751a9f7a5518cfa09af6d1d75a789f28758`（计划 §2 审阅基线，= PR #129 合并点）
 > 集成根（最终验收根）：`13d274326ee4f8bb8b80b405c7dc2fd3d15d05fc`；最终报告提交：`8c4276297`（本 P10 分支在其上追加文档收尾）
 > 阶段状态：P0–P9 **完成**；P10 **完成**（本记录关闭计划 §10 与改造台账）
@@ -100,7 +100,7 @@
 ## 4. P10 收尾产生的最终树变更
 
 - 移除三个临时 preview 配置（历史装置，不再随树提供）：`apps/web/playwright.preview.e2e.config.ts`、`apps/web/playwright.preview-visual.config.ts`、`apps/web/playwright.preview-stress.config.ts`。
-- 最终文档与台账：`docs/research/{26,27,43,45,46,47,48,49,50}.md`、`docs/research/README.md`、`docs/plans/1789880018_repository-optimization-plan.md`、`docs-site/dev/testing.md`。
+- 最终文档与台账：`docs/research/{26,27,43,45,46,47,48,49,50}.md`、`docs/research/README.md`、`docs/plans/archive/1789880018_repository-optimization-plan.md`、`docs-site/dev/testing.md`。
 - 未做产品/CI/依赖/版本号变更；未 push；未改普通开发数据库。
 
 ## 5. P10 本地验收检查（实际命令与结果）

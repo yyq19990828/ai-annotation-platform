@@ -1,6 +1,6 @@
 # 仓库优化 P8：ML 后端 CPU 测试 CI 执行
 
-> 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P8 工作包；本子任务只落地 CPU 测试执行，不等同 P8 收口）
+> 完成日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（P8 工作包；本子任务只落地 CPU 测试执行，不等同 P8 收口）
 > 工作树基线：`826fa042d99f105a766d7cf661bc017874b77334`（分支 `worktree-agent-opt-p8-cpu`）
 > 输入：`/tmp/aap-opt-p8-cpu-audit.md`（89 个 not-wired 文件的分类审计）、`docs/research/34`、`docs/research/35`
 > 证据图例：**[V]** 本工作树实际执行；**[A]** 采用审计结论；**[LIMIT]** 未在本阶段执行或归属后续

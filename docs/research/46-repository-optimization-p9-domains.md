@@ -1,6 +1,6 @@
 # 仓库优化 P9 域执行证据：pointcloud 与 video-pipeline（共享构建产物预览）
 
-> 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P9 同候选全域执行的本工作线程）
+> 完成日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（P9 同候选全域执行的本工作线程）
 > 候选：`dc972be08a42855c836023da178487469aae2fc9`（分支 `worktree-agent-opt-p9-domains`，自候选建立，未 reset）
 > 本线程范围：仅 `pointcloud` 与 `video-pipeline` 两个软件域；其余 10 个 suite 由 P9 另一 worker 执行
 > 证据图例：**[V]** 实际执行；**[FAIL]** 实际失败（已保留证据）；**[GAP]** 未执行/边界

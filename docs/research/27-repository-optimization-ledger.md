@@ -1,6 +1,6 @@
 # 仓库优化改造台账（P0–P10）
 
-> 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md` · 基线与证据：`docs/research/26-repository-optimization-baseline.md`
+> 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md` · 基线与证据：`docs/research/26-repository-optimization-baseline.md`
 > 状态日期：2026-09-20。维护约定：每个阶段落地后更新本表，写明实际执行的验收命令与结果；未完成项不得标成完成。
 
 ## 1. 阶段台账

@@ -1,6 +1,6 @@
 # 仓库优化 P8：迁移验证（§7.2）真实回退、前向数据断言与备份恢复
 
-> 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（§7.2 特别复核）
+> 完成日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（§7.2 特别复核）
 > 工作树/分支：`/home/hehao/桌面/ai-annotation-platform-worktree-agent-opt-p6-ml`（分支 `worktree-agent-opt-p8-migrations`，根 `3891c550e`）
 > 输入：`scripts/alembic_reversible_floor.py`、`apps/api/alembic/versions/0173_*.py`/`0174_*.py`、
 > `apps/api/tests/test_project_role_migration.py`、`apps/api/tests/test_migration_0173_project_role_preparation.py`

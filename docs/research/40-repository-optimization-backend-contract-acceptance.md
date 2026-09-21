@@ -1,6 +1,6 @@
 # 仓库优化 P10 验证通道：后端 / SDK / ML 协议契约本地验收
 
-> 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P10 验证通道，非 canonical P10 完成）
+> 完成日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（P10 验证通道，非 canonical P10 完成）
 > 分支：`worktree-agent-opt-final-backend`（自 P5 验收点 `9e34dfafb` 起本通道仅新增本文档提交）
 > 测试时产品输入状态：`9e34dfafb`（P5 验收点，已包含 `0d044d4d` 的迁移脚本修复——`0d044d4d` 是 `9e34dfafb` 的祖先）；本通道零产品源码变更，仅新增本文档（见 §2 复用判定）
 > 证据图例：**[V]** 本工作树实际执行；**[GAP]** 未执行/明确限制

@@ -1,6 +1,6 @@
 # 仓库优化 P8：CI 选择影子化、契约套件接线、构建复用与运行诊断
 
-> 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P8 工作包 + §6）
+> 完成日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（P8 工作包 + §6）
 > 工作树/分支：`/home/hehao/桌面/ai-annotation-platform-worktree-agent-opt-p7`（分支 `feat/worktree-agent-opt-p8`，rebase 到根 HEAD `826fa042d`）
 > 输入：`docs/research/31`（P7 实测收集/跳过数据）、P6 交接（`/tmp/aap-opt-p6-main-report.md`、`docs/research/34`/`35`）、计划 §6 全文
 > 证据图例：**[V]** 本工作树实际执行/逐条核对；**[M]** 运行时探针；**[GAP]** 未执行/留待 P9

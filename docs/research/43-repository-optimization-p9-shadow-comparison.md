@@ -1,6 +1,6 @@
 # 仓库优化 P9：影子对照与 Frontend E2E 门禁切换
 
-> 完成日期：2026-09-20 · 隶属计划：`docs/plans/1789880018_repository-optimization-plan.md`（P9 工作包 + §6.7）
+> 完成日期：2026-09-20 · 隶属计划：`docs/plans/archive/1789880018_repository-optimization-plan.md`（P9 工作包 + §6.7）
 > 首次对照候选（历史）：`dc972be08a42855c836023da178487469aae2fc9`（rebase 到已接受根 `e91ac8dfd`；app 输入与该根逐字节一致）
 > 冻结 raw 候选：`8985054699ac203c1ed2b5ebe68e6d6897bda724`（共享分支 `feat/codebase_opt260920`）
 > 集成根（修正构建）：`13d274326ee4f8bb8b80b405c7dc2fd3d15d05fc`（产品修复 `13115f71f` + doc50 修正；`898..13d274326` 仅这些改动）
