@@ -2,6 +2,7 @@
 audience: [dev]
 type: reference
 status: stable
+last_reviewed: 2026-09-21
 ---
 
 # 仓库地图：模块归属与调用链
