@@ -15,8 +15,8 @@ import pytest
 
 from app.db.models.annotation import Annotation
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
+from tests.factory import create_membership, build_tool_bindings
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -32,13 +32,13 @@ async def _seed(db_session, ann_user):
         type_label="图像-检测",
         type_key="image-det",
         owner_id=ann_user.id,
-        classes=["car"],
+        tool_bindings=build_tool_bindings(["car"]),
     )
     db_session.add(project)
     await db_session.flush()
     # Literal employee: annotator authority comes from this explicit membership.
-    db_session.add(
-        ProjectMember(project_id=project.id, user_id=ann_user.id, role="annotator")
+    await create_membership(
+        db_session, project_id=project.id, user_id=ann_user.id, role="annotator"
     )
     task = Task(
         id=uuid.uuid4(),

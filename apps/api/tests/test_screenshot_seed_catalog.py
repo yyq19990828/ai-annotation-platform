@@ -54,8 +54,8 @@ async def _ready_profile(db):
     for email, role in (
         ("admin", "super_admin"),
         ("pm", "project_admin"),
-        ("anno", "annotator"),
-        ("qa", "reviewer"),
+        ("anno", "employee"),
+        ("qa", "employee"),
     ):
         user = User(
             id=uuid.uuid4(),
@@ -978,8 +978,8 @@ async def test_repair_refuses_unmarked_fixed_id_collision(db_session):
     for email, role in (
         ("admin", "super_admin"),
         ("pm", "project_admin"),
-        ("anno", "annotator"),
-        ("qa", "reviewer"),
+        ("anno", "employee"),
+        ("qa", "employee"),
     ):
         user = User(
             id=uuid.uuid4(),

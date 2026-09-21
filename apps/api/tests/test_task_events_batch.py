@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import pytest
+from tests.factory import create_membership
 
 
 @pytest.mark.asyncio
@@ -13,7 +14,6 @@ async def test_task_events_batch_sync_fallback(httpx_client, annotator, db_sessi
     """task_events_async = False 时走 sync fallback；行应直接落库。"""
     from app.config import settings
     from app.db.models.project import Project
-    from app.db.models.project_member import ProjectMember
     from app.db.models.task import Task
     from app.db.models.task_event import TaskEvent
     from sqlalchemy import select, func
@@ -37,8 +37,8 @@ async def test_task_events_batch_sync_fallback(httpx_client, annotator, db_sessi
     )
     task.assignee_id = user.id
     db_session.add(task)
-    db_session.add(
-        ProjectMember(project_id=project.id, user_id=user.id, role="annotator")
+    await create_membership(
+        db_session, project_id=project.id, user_id=user.id, role="annotator"
     )
     await db_session.flush()
 

@@ -52,7 +52,8 @@ from app.services.data_management.task_metrics import (  # noqa: F401
     pending_tracker_jobs_expr,
 )
 from app.services.project_kind import project_kind
-from app.services.scheduler import is_privileged_for_project, task_visibility_clause
+from app.services.project_access import is_privileged_for_project
+from app.services.scheduler import task_visibility_clause
 from app.services.feedback import unresolved_issue_count_sq
 from app.services.task_discussion import task_comment_count_sq
 

@@ -31,7 +31,6 @@ from app.db.models.dataset import Dataset, DatasetItem
 from app.db.models.audit_log import AuditLog
 from app.db.models.prediction import Prediction, PredictionMeta
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.services.annotation import AnnotationService
 from app.services.exporting.packaging import _rotated_corners_norm
@@ -43,6 +42,7 @@ from app.services.predictions_import import (
 )
 from app.services.raster_mask_storage import build_rle_reference
 from app.utils.raster_mask_rle import encode_coco_rle
+from tests.factory import create_membership
 
 pytestmark = pytest.mark.asyncio
 
@@ -67,7 +67,6 @@ async def _seed_project_with_tasks(
         owner_id=owner_id,
         status="in_progress",
         raster_mask_native_editing_enabled=True,
-        classes=["car", "truck"],
         tool_bindings={
             "bbox": {
                 "enabled": True,
@@ -865,7 +864,7 @@ async def test_import_aap_json_video_prediction_requires_video_context(
 
 
 async def test_prediction_video_mask_content_is_task_scoped_and_frame_resolved(
-    httpx_client_bound: httpx.AsyncClient,
+    httpx_client: httpx.AsyncClient,
     super_admin,
     db_session: AsyncSession,
     monkeypatch: pytest.MonkeyPatch,
@@ -904,15 +903,15 @@ async def test_prediction_video_mask_content_is_task_scoped_and_frame_resolved(
     await db_session.commit()
     headers = {"Authorization": f"Bearer {token}"}
 
-    visible = await httpx_client_bound.get(
+    visible = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/predictions/{prediction.id}/mask-content/0/5",
         headers=headers,
     )
-    outside = await httpx_client_bound.get(
+    outside = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/predictions/{prediction.id}/mask-content/0/8",
         headers=headers,
     )
-    wrong_task = await httpx_client_bound.get(
+    wrong_task = await httpx_client.get(
         f"/api/v1/tasks/{uuid.uuid4()}/predictions/{prediction.id}/mask-content/0/5",
         headers=headers,
     )
@@ -1776,10 +1775,8 @@ async def test_import_aap_json_forbidden_for_annotator(
     _annotator_user, annotator_token = annotator
     # Visible project member with the annotator role: import stays a management
     # capability, so the denial must be 403 rather than an invisible 404.
-    db_session.add(
-        ProjectMember(
-            project_id=project.id, user_id=_annotator_user.id, role="annotator"
-        )
+    await create_membership(
+        db_session, project_id=project.id, user_id=_annotator_user.id, role="annotator"
     )
     await db_session.flush()
     headers = {"Authorization": f"Bearer {annotator_token}"}

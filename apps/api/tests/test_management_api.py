@@ -16,7 +16,7 @@ from app.db.models.project_member import ProjectMember
 from app.db.models.task_batch import TaskBatch
 from app.db.models.user import User
 from app.db.models.user_invitation import UserInvitation
-from tests.factory import create_project, create_user
+from tests.factory import create_membership, create_project, create_user
 
 pytestmark = pytest.mark.asyncio
 
@@ -40,13 +40,12 @@ async def test_management_user_query_stats_export_share_scope_and_filters(
     outside = await create_user(
         db_session, "annotator", "outside@e.test", "Outside User"
     )
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=member.id,
-            role="annotator",
-            assigned_by=manager.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=project.id,
+        user_id=member.id,
+        role="annotator",
+        assigned_by=manager.id,
     )
     await db_session.flush()
 
@@ -245,14 +244,13 @@ async def test_bulk_group_assignment_scope_and_role_impact_preview(
 ):
     manager, _ = project_admin
     project = await create_project(db_session, owner_id=manager.id, name="Group Scope")
-    managed = await create_user(db_session, "annotator", "group@e.test", "Group User")
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=managed.id,
-            role="annotator",
-            assigned_by=manager.id,
-        )
+    managed = await create_user(db_session, "employee", "group@e.test", "Group User")
+    await create_membership(
+        db_session,
+        project_id=project.id,
+        user_id=managed.id,
+        role="annotator",
+        assigned_by=manager.id,
     )
     group = Group(name="Bulk Group")
     db_session.add(group)

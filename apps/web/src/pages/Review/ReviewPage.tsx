@@ -28,6 +28,16 @@ import type { RejectPayload } from "./rejectReasonTypes";
 import { ReviewSidebar } from "./ReviewSidebar";
 import { ReviewBatchCardGrid } from "./ReviewBatchCardGrid";
 import {
+  clearReviewAssignee,
+  clearReviewSelection,
+  readReviewQueueParams,
+  readReviewTaskId,
+  reviewQueueIsUnchanged,
+  reviewQueueScopeKey,
+  selectReviewBatch,
+  setReviewTaskId,
+} from "./reviewUrlState";
+import {
   isInitialQueryPaused,
   isQueryPaused,
   isRefreshQueryPaused,
@@ -191,8 +201,9 @@ export function ReviewPage() {
   // Queue selection is URL-owned so a browser navigation updates the request
   // scope before the next render. Local selection state could briefly combine
   // a new assignee with a retired batch while React effects caught up.
-  const selectedProjectId = searchParams.get("project") ?? "";
-  const selectedBatchId = searchParams.get("batch") ?? "";
+  const queueScope = readReviewQueueParams(searchParams);
+  const selectedProjectId = queueScope.project;
+  const selectedBatchId = queueScope.batch;
 
   // v0.7.1 B-18：批次树数据来自 reviewer dashboard 聚合（已扩展为「reviewing 或 review_tasks>0」）。
   const reviewerStatsQuery = useReviewerStats();
@@ -215,7 +226,7 @@ export function ReviewPage() {
   const projectId = selectedBatch?.project_id || selectedProjectId || undefined;
 
   // v0.12.5 · 绩效页项目下钻带入的 assignee 过滤(后端 tasks 已支持 assignee_id)。
-  const assigneeFilter = searchParams.get("assignee") || "";
+  const assigneeFilter = queueScope.assignee;
   const taskListParams = useMemo(
     () => ({
       status: "review" as const,
@@ -251,18 +262,8 @@ export function ReviewPage() {
   const [checkedIds, setCheckedIds] = useState<Set<string>>(new Set());
   // plan 1789527942 · T2：批次驳回 / 任务退回已迁移 decisionDialog；弹窗期间 URL 作用域可能漂移，
   // 各 async 流程在 await 后重查 queueScopeKeyRef 再提交（快照 + 复查取代原 open state 关闭逻辑）。
-  const queueUrlRef = useRef({
-    project: searchParams.get("project") ?? "",
-    batch: searchParams.get("batch") ?? "",
-    assignee: searchParams.get("assignee") ?? "",
-    authOwnerKey,
-  });
-  const queueScopeKey = [
-    authOwnerKey,
-    searchParams.get("project") ?? "",
-    searchParams.get("batch") ?? "",
-    searchParams.get("assignee") ?? "",
-  ].join("\u001f");
+  const queueUrlRef = useRef({ ...queueScope, authOwnerKey });
+  const queueScopeKey = reviewQueueScopeKey(authOwnerKey, queueScope);
   const queueScopeKeyRef = useRef(queueScopeKey);
   queueScopeKeyRef.current = queueScopeKey;
   const checkedIdsKey = JSON.stringify([...checkedIds].sort());
@@ -273,20 +274,10 @@ export function ReviewPage() {
   // Clear cross-page selections when a URL-owned queue scope changes.
   useEffect(() => {
     const params = new URLSearchParams(queueSearch);
-    const next = {
-      project: params.get("project") ?? "",
-      batch: params.get("batch") ?? "",
-      assignee: params.get("assignee") ?? "",
-      authOwnerKey,
-    };
+    const next = { ...readReviewQueueParams(params), authOwnerKey };
     const previous = queueUrlRef.current;
     queueUrlRef.current = next;
-    if (
-      previous.project !== next.project ||
-      previous.batch !== next.batch ||
-      previous.assignee !== next.assignee ||
-      previous.authOwnerKey !== next.authOwnerKey
-    ) {
+    if (!reviewQueueIsUnchanged(previous, next)) {
       setCheckedIds(new Set());
     }
   }, [authOwnerKey, queueSearch]);
@@ -302,45 +293,33 @@ export function ReviewPage() {
 
   const handleSelectBatch = (b: ReviewingBatchItem | null) => {
     // 合并而非整体重写：保留 assignee 等下钻带入的过滤 param。
-    const next = new URLSearchParams(searchParams);
-    next.delete("project");
-    next.delete("batch");
-    if (b) {
-      next.set("project", b.project_id);
-      next.set("batch", b.batch_id);
-    }
-    setSearchParams(next);
+    setSearchParams(
+      selectReviewBatch(
+        searchParams,
+        b ? { project_id: b.project_id, batch_id: b.batch_id } : null,
+      ),
+    );
     setCheckedIds(new Set());
   };
 
   const clearAssigneeFilter = () => {
-    const next = new URLSearchParams(searchParams);
-    next.delete("assignee");
-    setSearchParams(next);
+    setSearchParams(clearReviewAssignee(searchParams));
     setCheckedIds(new Set());
   };
 
   // 返回卡片网格概览：清掉 batch / project / assignee 三类选择。
   const backToOverview = () => {
-    const next = new URLSearchParams(searchParams);
-    next.delete("project");
-    next.delete("batch");
-    next.delete("assignee");
-    setSearchParams(next);
+    setSearchParams(clearReviewSelection(searchParams));
     setCheckedIds(new Set());
   };
 
-  const openTaskId = searchParams.get("taskId");
+  const openTaskId = readReviewTaskId(searchParams);
   // ESC 关 drawer
   useEffect(() => {
     if (!openTaskId) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
-        setSearchParams((previous) => {
-          const next = new URLSearchParams(previous);
-          next.delete("taskId");
-          return next;
-        });
+        setSearchParams((previous) => setReviewTaskId(previous, null));
       }
     };
     window.addEventListener("keydown", onKey);
@@ -370,11 +349,7 @@ export function ReviewPage() {
         }),
       );
     } else {
-      setSearchParams((previous) => {
-        const next = new URLSearchParams(previous);
-        next.set("taskId", id);
-        return next;
-      });
+      setSearchParams((previous) => setReviewTaskId(previous, id));
     }
   };
   const runBatchReject = (

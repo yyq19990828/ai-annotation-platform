@@ -77,10 +77,14 @@ import { TaskMatchesSheet } from "./data-manager/TaskMatchesSheet";
 import {
   DATA_MANAGER_FILTER_KEYS,
   dataManagerUrlCodec,
-  hasFilterUrlOverrides,
+  dataManagerViewKey,
+  findDataManagerView,
   normalizeDataManagerColumns,
   parseDataManagerUrl,
+  requestedDataManagerViewKey,
   resolveDataManagerSort,
+  resolveDataManagerViewKey,
+  shouldUseDataManagerUrlOverrides,
   type DataManagerLayout,
   type DataManagerSection,
   updateDataManagerUrl,
@@ -463,9 +467,7 @@ function TaskDataManagerPage({
   const createView = useCreateTaskView(id);
   const updateView = useUpdateTaskView(id);
   const deleteView = useDeleteTaskView(id);
-  const [selectedKey, setSelectedKey] = useState<string>(
-    currentUrl.lens === "tasks" && currentUrl.view ? currentUrl.view : "builtin:all",
-  );
+  const [selectedKey, setSelectedKey] = useState<string>(requestedDataManagerViewKey(currentUrl));
   const draftOwner = `tasks:${id}:${user?.id ?? "anonymous"}:${selectedKey}`;
   const mutationOwnerRef = useRef(draftOwner);
   mutationOwnerRef.current = draftOwner;
@@ -564,19 +566,12 @@ function TaskDataManagerPage({
     () => new Map(filterFields.map((field) => [field.key, field.label])),
     [filterFields],
   );
-  const selectedView = useMemo(() => {
-    return (
-      views.find(
-        (view) => (view.id ? `saved:${view.id}` : `builtin:${view.key}`) === selectedKey,
-      ) ?? null
-    );
-  }, [selectedKey, views]);
+  const selectedView = useMemo(() => findDataManagerView(views, selectedKey), [selectedKey, views]);
 
   useEffect(() => {
     if (lastWrittenUrlRef.current === searchParams.toString()) return;
     if (pendingViewKeyRef.current === selectedKey) return;
-    const requestedKey =
-      currentUrl.lens === "tasks" && currentUrl.view ? currentUrl.view : "builtin:all";
+    const requestedKey = requestedDataManagerViewKey(currentUrl);
     if (requestedKey !== selectedKey) {
       urlHydratedRef.current = false;
       setSelectedKey(requestedKey);
@@ -586,8 +581,8 @@ function TaskDataManagerPage({
   useEffect(() => {
     if (!views.length) return;
     if (!selectedView) {
-      const first = views[0];
-      const firstKey = first.id ? `saved:${first.id}` : `builtin:${first.key}`;
+      const firstKey = resolveDataManagerViewKey(selectedKey, views);
+      if (!firstKey) return;
       urlHydratedRef.current = false;
       setSelectedKey(firstKey);
       setSearchParams(
@@ -603,15 +598,12 @@ function TaskDataManagerPage({
         { replace: true },
       );
     }
-  }, [currentUrl, searchParams, selectedView, setSearchParams, views]);
+  }, [currentUrl, searchParams, selectedKey, selectedView, setSearchParams, views]);
 
   useEffect(() => {
     if (!selectedView) return;
     const url = currentUrl;
-    const useUrl =
-      url.lens === "tasks" &&
-      (!url.view || url.view === selectedKey) &&
-      hasFilterUrlOverrides(searchParams);
+    const useUrl = shouldUseDataManagerUrlOverrides(currentUrl, searchParams, selectedKey);
     if (lastWrittenUrlRef.current === searchParams.toString()) {
       lastWrittenUrlRef.current = null;
       if (pendingViewKeyRef.current !== selectedKey) {
@@ -1289,7 +1281,7 @@ function TaskDataManagerPage({
                       </summary>
                       <div className="mt-0.5 flex flex-col gap-0.5">
                         {group.items.map((view) => {
-                          const key = view.id ? `saved:${view.id}` : `builtin:${view.key}`;
+                          const key = dataManagerViewKey(view);
                           const active = key === selectedKey;
                           return (
                             <button
@@ -1375,7 +1367,7 @@ function TaskDataManagerPage({
                     <SelectContent>
                       <SelectGroup>
                         {views.map((view) => {
-                          const key = view.id ? `saved:${view.id}` : `builtin:${view.key}`;
+                          const key = dataManagerViewKey(view);
                           return (
                             <SelectItem key={key} value={key}>
                               {view.name}

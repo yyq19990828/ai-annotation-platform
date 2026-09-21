@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.security import create_access_token
 from app.db.models.project_member import ProjectMember
 from app.db.models.user import User
-from tests.factory import create_project, create_user
+from tests.factory import create_membership, create_project, create_user
 
 pytestmark = pytest.mark.asyncio
 
@@ -29,15 +29,13 @@ def _headers(user: User) -> dict[str, str]:
 async def _add_member(
     db: AsyncSession, *, project_id, user: User, role: str, assigned_by
 ) -> ProjectMember:
-    member = ProjectMember(
+    return await create_membership(
+        db,
         project_id=project_id,
         user_id=user.id,
         role=role,
         assigned_by=assigned_by,
     )
-    db.add(member)
-    await db.flush()
-    return member
 
 
 async def _access(client: httpx.AsyncClient, project_id, user: User) -> httpx.Response:

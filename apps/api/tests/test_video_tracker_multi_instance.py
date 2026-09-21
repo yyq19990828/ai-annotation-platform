@@ -97,7 +97,6 @@ async def _make_video_task(db_session, owner_id):
         type_key="video-track",
         type_label="视频 · 时序追踪",
         owner_id=owner_id,
-        classes=["car"],
         tool_bindings={
             "bbox": {
                 "enabled": True,
@@ -1232,7 +1231,7 @@ async def test_create_tracker_job_multi_source_builds_seeds(db_session, super_ad
 
 
 async def test_track_video_endpoint_multi_source_builds_job(
-    httpx_client_bound, super_admin, db_session, monkeypatch
+    httpx_client, super_admin, db_session, monkeypatch
 ):
     """v0.22.2 · M · track_video 端点透传 source_annotation_ids: 多源建 job (annotation_id
     为 None, prompt.seeds 各源一条)。"""
@@ -1268,7 +1267,7 @@ async def test_track_video_endpoint_multi_source_builds_job(
         lambda name, args=None, queue=None, **kwargs: FakeAsyncResult(),
     )
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/video:track",
         headers={"Authorization": f"Bearer {token}"},
         json={

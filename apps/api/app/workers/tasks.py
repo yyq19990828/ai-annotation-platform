@@ -17,7 +17,7 @@ async def _preannotation_actor_revoked(db, actor, project_uuid) -> bool:
     """Fresh-state authority check for the initiating preannotation actor."""
 
     from app.db.models.project import Project
-    from app.services.scheduler import is_privileged_for_project
+    from app.services.project_access import is_privileged_for_project
 
     await db.refresh(actor)
     fresh_project = await db.get(Project, project_uuid, populate_existing=True)
@@ -615,7 +615,7 @@ async def _run_batch(
     from app.services.ml_backend import MLBackendService
     from app.services.ml_routing.client import RoutedMLBackendClient
     from app.services.prediction import PredictionService
-    from app.services.scheduler import is_privileged_for_project
+    from app.services.project_access import is_privileged_for_project
     from app.services.task_lock import TaskLockService
     from app.services.batch_permissions import allows_bulk_preannotation
 

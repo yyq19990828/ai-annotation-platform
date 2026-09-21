@@ -18,7 +18,7 @@ const user: MeResponse = {
   id: "u1",
   email: "anno@example.com",
   name: "Anno",
-  role: "annotator",
+  role: "employee",
   group_name: null,
   status: "active",
   created_at: "2026-05-10T00:00:00Z",

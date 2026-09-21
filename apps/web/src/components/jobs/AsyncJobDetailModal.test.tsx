@@ -90,7 +90,7 @@ describe("共享后台任务详情", () => {
     localStorage.clear();
     useAuthStore
       .getState()
-      .setAuth("detail-u1-token", { id: "u1", role: "annotator" } as MeResponse);
+      .setAuth("detail-u1-token", { id: "u1", role: "employee" } as MeResponse);
     mocks.get.mockResolvedValue(job);
     mocks.retry.mockResolvedValue({ queued: 1 });
     mocks.dataset.mockResolvedValue({ id: "d1" });
@@ -287,7 +287,7 @@ describe("共享后台任务详情", () => {
     act(() =>
       useAuthStore
         .getState()
-        .setAuth("detail-u2-token", { id: "u2", role: "annotator" } as MeResponse),
+        .setAuth("detail-u2-token", { id: "u2", role: "employee" } as MeResponse),
     );
     await act(async () => resolveRetry({ queued: 1 }));
     expect(onRetryQueued).not.toHaveBeenCalled();

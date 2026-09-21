@@ -1,15 +1,23 @@
 /**
- * v0.8.3 · E2E 共享 fixtures：调用后端 _test_seed router 造数与跳登录。
+ * E2E 共享 fixtures：调用后端 _test_seed router 造数与跳登录。
+ *
+ * 两条造数路径：
+ *   - `seed.reset()`：破坏性重建**共享**固定命名空间（收敛所有 E2E 数据）。
+ *     仅限确属全局操作的套件，属已记录的串行例外。
+ *   - `own("命名空间")`（推荐）：每个测试私有命名空间的标准工作台 fixture，
+ *     不触碰其他命名空间；测试结束后自动精确清理，重试可独立重建。
  *
  * 后端要求（`_test_seed.py`）：
  *   - development + E2E_SEED_ENABLED=true，且数据库名以 _e2e / _test 结尾
- *   - POST /api/v1/__test/seed/reset → truncate + 重建固定 fixture
+ *   - POST /api/v1/__test/seed/reset → 清理 + 重建共享 fixture
+ *   - POST /api/v1/__test/seed/owned {namespace} → 仅建本命名空间 fixture
+ *   - POST /api/v1/__test/seed/owned-cleanup {namespace} → 仅删本命名空间
  *   - POST /api/v1/__test/seed/login {email} → 返回 access_token
  *
  * 用法：
  *   import { test } from "../fixtures/seed";
  *   test("登录后跳默认首页", async ({ page, seed }) => {
- *     const data = await seed.reset();
+ *     const data = await seed.owned("mypage");     // 私有 fixture，测试后自动清理
  *     await seed.loginViaUI(page, data.admin_email, "Test1234", /\/overview/);
  *   });
  */
@@ -20,7 +28,9 @@ import {
   type Route,
   type APIRequestContext,
   type APIResponse,
+  type TestInfo,
 } from "@playwright/test";
+import { createHash } from "node:crypto";
 import { screenshotCatalogPath } from "../screenshots/recording-plan.mjs";
 
 export interface SeedData {
@@ -128,6 +138,27 @@ export interface FilteringSeedManifest {
     job_ids: string[];
     bug_ids: string[];
     audit_ids: string[];
+    /** Namespace-unique display values for global list searches and UI labels. */
+    display_names: Record<
+      | "active"
+      | "inactive"
+      | "project_a"
+      | "project_b"
+      | "dataset_a"
+      | "dataset_b"
+      | "template_private"
+      | "template_public",
+      string
+    >;
+    invitation_emails: Record<"pending" | "accepted" | "expired" | "revoked", string>;
+    search_keys: {
+      users: string;
+      projects: string;
+      templates: string;
+      invitations: string;
+      jobs: string;
+    };
+    audit_scopes: Record<"alpha" | "beta", string>;
   };
 }
 
@@ -299,8 +330,30 @@ export interface SeedPeekData {
 
 const API_BASE = process.env.PLAYWRIGHT_API_BASE ?? "http://127.0.0.1:8010";
 
+/**
+ * Collision-resistant namespace token for one test attempt: a hash of the
+ * spec file plus the full test title. Deterministic across retries (the
+ * owned route rebuilds the same namespace) and unique across tests, suites
+ * and shards, bounded to the backend's `^[a-z0-9]{4,12}$` namespace rule.
+ */
+export function ownedNamespaceFor(testInfo?: TestInfo): string {
+  if (!testInfo) throw new Error("seed.owned() needs a namespace outside a Playwright test");
+  const digest = createHash("sha256")
+    .update(`${testInfo.file}::${testInfo.titlePath.join("::")}`)
+    .digest("base64url")
+    .replace(/[^a-zA-Z0-9]/g, "")
+    .toLowerCase();
+  return digest.slice(0, 12).padStart(4, "0");
+}
+
 export class SeedAPI {
-  constructor(private request: APIRequestContext) {}
+  /** Namespaces built by this test via `owned()`; cleaned up in teardown. */
+  private ownedNamespaces: string[] = [];
+
+  constructor(
+    private request: APIRequestContext,
+    private testInfo?: TestInfo,
+  ) {}
 
   /**
    * 录制时 4K 转码会让测试 API 连接空闲数十秒，Uvicorn 已关闭的 keep-alive socket
@@ -477,9 +530,65 @@ export class SeedAPI {
     return (await res.json()) as SeedData;
   }
 
-  /** Build the multi-project employee-role acceptance fixture (cleanup-safe). */
-  async projectRoles(): Promise<ProjectRolesSeedData> {
+  /**
+   * Resolve (and register for post-test cleanup) this test's namespace token.
+   * Explicit tokens are for helpers that own their lifecycle; everything else
+   * derives the same per-test token the `owned()` fixture uses.
+   */
+  private ownedNamespace(explicit?: string): string {
+    const token = explicit ?? ownedNamespaceFor(this.testInfo);
+    if (!this.ownedNamespaces.includes(token)) this.ownedNamespaces.push(token);
+    return token;
+  }
+
+  /**
+   * Build this test's own namespaced image-workbench fixture without touching
+   * any other namespace. Without an explicit namespace the token derives
+   * deterministically from the spec file and test title, so retries rebuild
+   * the same namespace while every other test owns a different one. The
+   * namespace is registered on this SeedAPI instance (fresh per test) and
+   * `cleanupOwnedFixtures()` removes every registered namespace in the
+   * seed-fixture teardown after the test.
+   */
+  async owned(namespace?: string): Promise<SeedData> {
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/owned`, {
+      data: { namespace: this.ownedNamespace(namespace) },
+      timeout: 60_000,
+    });
+    if (!res.ok()) {
+      throw new Error(`seed/owned failed: ${res.status()} ${await res.text()}`);
+    }
+    return (await res.json()) as SeedData;
+  }
+
+  /** Delete exactly one namespace's fixture; idempotent and neighbour-safe. */
+  async cleanupOwned(namespace: string): Promise<void> {
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/owned-cleanup`, {
+      data: { namespace },
+      timeout: 60_000,
+    });
+    if (!res.ok()) {
+      throw new Error(`seed/owned-cleanup failed: ${res.status()} ${await res.text()}`);
+    }
+  }
+
+  /**
+   * Remove every namespace this instance built, newest first. Called by the
+   * seed fixture teardown after the test body (and its evidence attachments)
+   * finished; a failed cleanup must fail the test, so errors propagate.
+   */
+  async cleanupOwnedFixtures(): Promise<void> {
+    for (const namespace of [...this.ownedNamespaces].reverse()) {
+      await this.cleanupOwned(namespace);
+    }
+    this.ownedNamespaces.length = 0;
+  }
+
+  /** Build the multi-project employee-role acceptance fixture for this test's namespace. */
+  async projectRoles(namespace?: string): Promise<ProjectRolesSeedData> {
+    const token = this.ownedNamespace(namespace);
     const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/project-roles`, {
+      data: { namespace: token },
       timeout: 60_000,
     });
     if (!res.ok()) {
@@ -488,8 +597,11 @@ export class SeedAPI {
     return (await res.json()) as ProjectRolesSeedData;
   }
 
-  async filtering(): Promise<FilteringSeedManifest> {
+  /** Build the filtering fixture inside this test's own owned namespace. */
+  async filtering(namespace?: string): Promise<FilteringSeedManifest> {
+    const token = this.ownedNamespace(namespace);
     const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/filtering`, {
+      data: { namespace: token },
       timeout: 120_000,
     });
     if (!res.ok()) {
@@ -570,8 +682,12 @@ export class SeedAPI {
   }
 
   /** v0.16.x · 造点云 E2E fixture(lidar 项目 + 2 帧 point_cloud task)。需先 reset()。 */
-  async seedLidar(): Promise<SeedLidarData> {
-    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/lidar`);
+  /** Build the namespaced point-cloud fixture (reuses this namespace's users). */
+  async seedLidar(namespace?: string): Promise<SeedLidarData> {
+    const token = this.ownedNamespace(namespace);
+    const res = await this.request.post(`${API_BASE}/api/v1/__test/seed/lidar`, {
+      data: { namespace: token },
+    });
     if (!res.ok()) {
       throw new Error(`seed/lidar failed: ${res.status()} ${await res.text()}`);
     }
@@ -770,7 +886,7 @@ export class SeedAPI {
   /** 直接拿 JWT 注入 localStorage（跳过 UI 登录，加快非 auth spec）。 */
   async injectToken(page: Page, email: string, baseURL?: string): Promise<void> {
     const res = await this.seedLogin(email);
-    if (!res.ok()) throw new Error(`seed/login failed: ${res.status()}`);
+    if (!res.ok()) throw new Error(`seed/login failed: ${res.status()} ${await res.text()}`);
     const body = (await res.json()) as { access_token: string; user: unknown };
     await this.setPetEnabled(email, false, body.access_token);
     const target = baseURL ?? process.env.PLAYWRIGHT_BASE_URL ?? "http://127.0.0.1:3001";
@@ -887,11 +1003,13 @@ type Fixtures = {
 };
 
 export const test = base.extend<Fixtures>({
-  seed: async ({ request }, use) => {
-    const api = new SeedAPI(request);
+  seed: async ({ request }, use, testInfo) => {
+    const api = new SeedAPI(request, testInfo);
     // playwright fixture 的 use 不是 React Hook
     // eslint-disable-next-line react-hooks/rules-of-hooks
     await use(api);
+    // Deterministic per-test cleanup for every owned namespace the test built.
+    await api.cleanupOwnedFixtures();
   },
 });
 

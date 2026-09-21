@@ -458,6 +458,23 @@ test.describe("project-scoped employee roles", () => {
     const data = await seed.projectRoles();
     await submitPeerAnnotation(request, seed, data);
 
+    // The fixture projects carry namespaced names; resolve the exact names from
+    // the API instead of assuming the retired shared-fixture values.
+    const projectName = async (key: "a" | "b" | "c" | "d") => {
+      const response = await request.get(
+        `${API_BASE}/api/v1/projects/${data.projects[key].project_id}`,
+        { headers: auth(await seed.accessToken(data.projects[key].owner_email)) },
+      );
+      expect(response.ok(), await response.text()).toBe(true);
+      return ((await response.json()) as { name: string }).name;
+    };
+    const names = {
+      a: await projectName("a"),
+      b: await projectName("b"),
+      c: await projectName("c"),
+      d: await projectName("d"),
+    };
+
     await seed.injectToken(page, data.employee_email);
     await page.setViewportSize({ width: 1440, height: 900 });
     await page.goto("/dashboard");
@@ -467,23 +484,23 @@ test.describe("project-scoped employee roles", () => {
     // review-only B must not appear, and C is not visible at all.  The project
     // name also shows up inside sub-headers and batch labels, so match the
     // project card text exactly instead of by substring.
-    await expect(page.getByText("E2E Project Roles A", { exact: true })).toBeVisible({
+    await expect(page.getByText(names.a, { exact: true })).toBeVisible({
       timeout: 20_000,
     });
-    await expect(page.getByText("E2E Project Roles D", { exact: true })).toBeVisible();
-    await expect(page.getByText("E2E Project Roles B", { exact: true })).toHaveCount(0);
-    await expect(page.getByText("E2E Project Roles C", { exact: true })).toHaveCount(0);
+    await expect(page.getByText(names.d, { exact: true })).toBeVisible();
+    await expect(page.getByText(names.b, { exact: true })).toHaveCount(0);
+    await expect(page.getByText(names.c, { exact: true })).toHaveCount(0);
 
     // Review pane shows B's pending review work and no annotator project.  The
     // project name also appears inside the priority/batch labels, so match the
     // pending task's project badge exactly instead of using a substring match.
     await page.getByTestId("employee-tab-review").click();
-    await expect(page.getByText("E2E Project Roles B", { exact: true })).toBeVisible({
+    await expect(page.getByText(names.b, { exact: true })).toBeVisible({
       timeout: 20_000,
     });
-    await expect(page.getByText("E2E Project Roles A", { exact: true })).toHaveCount(0);
-    await expect(page.getByText("E2E Project Roles D", { exact: true })).toHaveCount(0);
-    await expect(page.getByText("E2E Project Roles C", { exact: true })).toHaveCount(0);
+    await expect(page.getByText(names.a, { exact: true })).toHaveCount(0);
+    await expect(page.getByText(names.d, { exact: true })).toHaveCount(0);
+    await expect(page.getByText(names.c, { exact: true })).toHaveCount(0);
   });
 
   test("viewer project entry reaches the read-only data manager", async ({ page, seed }) => {

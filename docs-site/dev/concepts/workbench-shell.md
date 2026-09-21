@@ -37,6 +37,20 @@ WorkbenchShell
 
 `WorkbenchShell.tsx` 只负责路由参数、项目与任务数据、React Query mutations、history、离线队列、快捷键注册，以及把这些依赖装配到子模块。
 
+装配 model（`state/useWorkbenchShellModel.tsx`）把可复用的行为规则委托给同目录领域模块，自己只保留「取数 → 权限 → 会话键 → 视图槽位接线」。各业务规则的单一归属：
+
+| 规则                                                                                           | 归属模块                                                                                                                                         |
+| ---------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| 任务切换准入（latest-wins 调度、离开守卫、本地 URL 同步）                                      | `state/taskNavigation.ts`（`LatestTaskNavigationScheduler`、`commitAfterNavigationGuard`、`runWorkbenchLeaveGuards`、`resolveLocalTaskUrlSync`） |
+| 相对/智能任务步进、提交质检闸门                                                                | `state/useWorkbenchTaskFlow.ts`                                                                                                                  |
+| Mask 原子变更错误策略（重试/刷新判定、错误文案、草稿快照契约）                                 | `state/maskMutationPolicy.ts`                                                                                                                    |
+| 原生 Mask 变更工作流（实例原子操作、视频剪贴板、关键帧操作、幂等键、迟到刷新拒绝、破坏性确认） | `state/useMaskMutationWorkflows.ts`                                                                                                              |
+| 视频 Mask 纠错对话框与 `commitVideoMask` 归属守卫                                              | `state/useVideoMaskCorrection.ts`                                                                                                                |
+| PVS 种子采集与传播对话框                                                                       | `state/useTrackerSeedCollection.ts` + 纯模块 `state/trackerSeedPrompts.ts`                                                                       |
+| 批量线 AI 后端选择（手动粘滞/项目默认跟随）                                                    | `state/useBatchBackendSelection.ts`                                                                                                              |
+| 图片/视频创建更新语义                                                                          | `stages/image/useImageAnnotationActions.ts`、`stages/video/useVideoAnnotationActions.ts`                                                         |
+| Mask 编辑会话（阶段机、rebase、单飞 save）                                                     | `state/useMaskEditorSession.ts` / `state/useMaskEditor.ts`                                                                                       |
+
 它不直接渲染 `ImageStage` 或 `VideoKonvaStage`，也不直接拼装某个 Stage 的 annotation payload。图片和视频的创建、更新、改类、撤销相关语义分别下沉到：
 
 - `stages/image/useImageAnnotationActions.ts`
@@ -311,6 +325,26 @@ context 是 `annotate|review × image|video|3d` 的六项闭集，按账号分�
 `maskPrimaryActions` 从现有编辑 phase、revision、区域 / 实例预览、权限和恢复状态派生主次动作，不保存第二份 Mask 状态。
 `useMaskPrimaryActionOwner` 接管按钮和图片 / 视频 Enter、Esc 分派、空结果确认及整个提交入口的单飞保护；准备 RLE、选类和网络保存都属于同一次动作。
 区域应用只修改草稿，实例提交与普通保存仍使用原有持久化 owner；失败或过期预览不能降级为普通保存。低内存造成的像素只读与持久提交权限分开判断。
+
+### 原生 Mask 变更工作流（useMaskMutationWorkflows）
+
+实例原子操作（合并/重叠/拆分/复制/切割）、视频 Mask 剪贴板与关键帧单飞操作统一由 `state/useMaskMutationWorkflows.ts` 持有。每个异步入口回答五个归属问题：
+
+- **owner**：草稿在预览时刻快照 scope 与成员版本（`PendingMaskAtomicDraft.members`），提交与重试只使用快照版本，不读后续 refetch。
+- **cancel**：新预览重置幂等键；预览消失的 effect 丢弃草稿；`transitionInFlightRef` / `commitInFlightRef` 保证提交与刷新单飞，切换不会在写入中途发生。
+- **stale 拒绝**：`refreshMaskInstanceOperation` 每次运行打 token，并在每个 await 之后核对 Mask 会话上下文（task/frame/tool/selection key + generation）；会话已切换则丢弃迟到结果，不把旧 Buffer rebase 到新会话。
+- **草稿保留**：提交/刷新失败保留编辑器 Buffer 与待提交草稿（提示「草稿已保留」），只有显式刷新或取消才丢弃。
+- **清理**：会话切换清理由 `useMaskEditorSession` 负责；预览消失时本模块清空草稿与幂等状态。
+
+纯策略（哪些服务端 reason 只允许刷新、错误文案映射）在 `state/maskMutationPolicy.ts`；几何规划在 `stage/shared/geometry/maskInstanceOperations` 与 `maskMutationDraft`。
+
+### 视频 Mask 纠错（useVideoMaskCorrection）
+
+纠错对话框上下文（annotation/frame/session/segment）在打开时捕获；提交前核对上下文仍与活跃会话一致，否则拒绝保存并要求重开。`commitVideoMask` 的写归属守卫（task/frame/tool/selection/mode/path/锁）防止退役上下文的迟到保存写入新上下文；传播创建委托给 tracker owner，纯模块 `videoMaskCorrectionFlow.ts` 负责保存→传播的时序。
+
+### 任务切换与迟到结果
+
+`selectTask` 是所有切题入口（列表点击、通知、URL、讨论跳转）的唯一准入通道：离开守卫按视频 → Mask 顺序等待，任何阶段发现上下文过期即放弃提交；`resolveLocalTaskUrlSync` 区分外部 URL 导航意图与本地切题尚未写回的旧值，防止旧 URL 把当前任务拉回去。切换后的旧异步结果（标注 refetch、Mask 刷新、tracker 预览）分别由各自领域 hook 的 token/generation 断言拒绝。
 
 空结果确认固定到当前会话 owner、preview ID 和 revision，切换任务、帧、对象或预览后失效。区域预览也属于待处理草稿，切换和普通 Esc 退出复用现有未保存 guard；计算只取消当前运算，保存或刷新期间不销毁会话。
 图片提交在 RLE 合并、选类、上传完成后核对原归属，写入成功后的历史、选择和清理只作用于当前 owner。视频上传后的关键帧写入和成功回调使用同样的归属检查；旧任务的缓存可接纳自己的结果，当前任务的历史和选择不受影响。

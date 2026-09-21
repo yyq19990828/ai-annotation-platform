@@ -18,7 +18,6 @@ from app.db.models.dataset import Dataset, DatasetItem, VideoSegment
 from app.db.models.prediction import Prediction, PredictionMeta
 from app.db.models.ml_backend_pool import MLBackendPoolMember
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_lock import TaskLock
 from app.services.ai_mask_receipt import issue_ai_mask_receipt
@@ -26,6 +25,7 @@ from app.services.raster_mask_storage import build_rle_reference
 from app.services.video_tracks import resolve_track_at_frame
 
 from tests.conftest import create_registry_with_pool
+from tests.factory import create_membership
 
 RLE = {"encoding": "coco_rle", "size": [2, 3], "counts": [1, 2, 3]}
 ALT_RLE = {"encoding": "coco_rle", "size": [2, 3], "counts": [2, 1, 3]}
@@ -230,7 +230,7 @@ def _headers(token: str, **extra: str) -> dict[str, str]:
 
 @pytest.mark.parametrize("media_type", ["image", "video"])
 async def test_exemplar_both_accept_uses_original_mask_index(
-    httpx_client_bound,
+    httpx_client,
     db_session,
     super_admin,
     monkeypatch,
@@ -286,7 +286,7 @@ async def test_exemplar_both_accept_uses_original_mask_index(
     body = bodies[1]
     body["candidate"]["receipt"] = response["accept_receipts"][raw[3]["candidate_id"]]
     body["prompt_summary"] = response["prompt_summary"]
-    accepted = await httpx_client_bound.post(
+    accepted = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,
         headers=_headers(token),
@@ -302,7 +302,7 @@ async def test_exemplar_both_accept_uses_original_mask_index(
 
 
 async def test_image_accept_is_atomic_and_replays_exact_result(
-    httpx_client_bound,
+    httpx_client,
     db_session,
     super_admin,
     monkeypatch,
@@ -313,7 +313,7 @@ async def test_image_accept_is_atomic_and_replays_exact_result(
     monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
     body = _body(task, backend, pool, key="accept-image-exactly-once")
 
-    first = await httpx_client_bound.post(
+    first = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,
         headers=_headers(token),
@@ -329,14 +329,14 @@ async def test_image_accept_is_atomic_and_replays_exact_result(
     assert payload["prediction"]["source"] == "interactive_accept"
     assert first.headers["etag"] == 'W/"1"'
 
-    pending = await httpx_client_bound.get(
+    pending = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/predictions",
         headers=_headers(token),
     )
     assert pending.status_code == 200, pending.text
     assert pending.json() == []
 
-    legacy_accept = await httpx_client_bound.post(
+    legacy_accept = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/predictions/{payload['prediction']['id']}/accept",
         headers=_headers(token),
     )
@@ -350,7 +350,7 @@ async def test_image_accept_is_atomic_and_replays_exact_result(
     ).scalar_one()
     assert annotation_count == 1
 
-    replay = await httpx_client_bound.post(
+    replay = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,
         headers=_headers(token),
@@ -361,12 +361,12 @@ async def test_image_accept_is_atomic_and_replays_exact_result(
     assert replay_payload["annotation"]["id"] == payload["annotation"]["id"]
     assert replay_payload["prediction"]["id"] == payload["prediction"]["id"]
 
-    deleted = await httpx_client_bound.delete(
+    deleted = await httpx_client.delete(
         f"/api/v1/tasks/{task.id}/annotations/{payload['annotation']['id']}",
         headers=_headers(token),
     )
     assert deleted.status_code == 204, deleted.text
-    pending_after_delete = await httpx_client_bound.get(
+    pending_after_delete = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/predictions",
         headers=_headers(token),
     )
@@ -403,7 +403,7 @@ async def test_image_accept_is_atomic_and_replays_exact_result(
     await db_session.flush()
     assert replay_only_key not in await cleanup._referenced_raster_mask_keys(db_session)
 
-    expired = await httpx_client_bound.post(
+    expired = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,
         headers=_headers(token),
@@ -413,7 +413,7 @@ async def test_image_accept_is_atomic_and_replays_exact_result(
 
 
 async def test_same_idempotency_key_with_changed_semantics_conflicts(
-    httpx_client_bound,
+    httpx_client,
     db_session,
     super_admin,
     monkeypatch,
@@ -424,14 +424,14 @@ async def test_same_idempotency_key_with_changed_semantics_conflicts(
     monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
     key = "accept-image-semantic-conflict"
     first_body = _body(task, backend, pool, key=key)
-    first = await httpx_client_bound.post(
+    first = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=first_body,
         headers=_headers(token),
     )
     assert first.status_code == 200, first.text
     changed = {**first_body, "class_name": "other"}
-    second = await httpx_client_bound.post(
+    second = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=changed,
         headers=_headers(token),
@@ -441,7 +441,7 @@ async def test_same_idempotency_key_with_changed_semantics_conflicts(
 
 
 async def test_image_refine_requires_and_checks_if_match(
-    httpx_client_bound,
+    httpx_client,
     db_session,
     super_admin,
     monkeypatch,
@@ -465,7 +465,7 @@ async def test_image_refine_requires_and_checks_if_match(
     monkeypatch.setattr(settings, "raster_mask_create_enabled", True)
     body = _body(task, backend, pool, rle=ALT_RLE, source=source)
 
-    missing = await httpx_client_bound.post(
+    missing = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,
         headers=_headers(token),
@@ -473,7 +473,7 @@ async def test_image_refine_requires_and_checks_if_match(
     assert missing.status_code == 428
     assert missing.json()["detail"]["reason"] == "if_match_required"
 
-    stale = await httpx_client_bound.post(
+    stale = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,
         headers=_headers(token, **{"If-Match": 'W/"2"'}),
@@ -481,7 +481,7 @@ async def test_image_refine_requires_and_checks_if_match(
     assert stale.status_code == 400
     assert stale.json()["detail"]["reason"] == "source_version_mismatch"
 
-    accepted = await httpx_client_bound.post(
+    accepted = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,
         headers=_headers(token, **{"If-Match": 'W/"1"'}),
@@ -495,7 +495,7 @@ async def test_image_refine_requires_and_checks_if_match(
 
 
 async def test_mask_prompt_receipt_cannot_be_accepted_as_create_or_after_digest_drift(
-    httpx_client_bound,
+    httpx_client,
     db_session,
     super_admin,
     monkeypatch,
@@ -521,7 +521,7 @@ async def test_mask_prompt_receipt_cannot_be_accepted_as_create_or_after_digest_
 
     as_create = deepcopy(body)
     as_create["target"] = {"mode": "create", "frame_index": None}
-    rejected = await httpx_client_bound.post(
+    rejected = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=as_create,
         headers=_headers(token),
@@ -534,7 +534,7 @@ async def test_mask_prompt_receipt_cannot_be_accepted_as_create_or_after_digest_
         "mask": build_rle_reference(ALT_RLE),
     }
     await db_session.flush()
-    drifted = await httpx_client_bound.post(
+    drifted = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,
         headers=_headers(token, **{"If-Match": 'W/"1"'}),
@@ -545,7 +545,7 @@ async def test_mask_prompt_receipt_cannot_be_accepted_as_create_or_after_digest_
 
 
 async def test_video_accept_updates_only_current_keyframe_and_outside(
-    httpx_client_bound,
+    httpx_client,
     db_session,
     super_admin,
     accept_storage_mocks,
@@ -598,7 +598,7 @@ async def test_video_accept_updates_only_current_keyframe_and_outside(
         source=source,
     )
 
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,
         headers=_headers(token, **{"If-Match": 'W/"1"'}),
@@ -624,7 +624,7 @@ async def test_video_accept_updates_only_current_keyframe_and_outside(
 
 
 async def test_video_accept_create_builds_one_current_frame_keyframe(
-    httpx_client_bound,
+    httpx_client,
     db_session,
     super_admin,
     accept_storage_mocks,
@@ -633,7 +633,7 @@ async def test_video_accept_create_builds_one_current_frame_keyframe(
     task, backend, pool = await _seed(db_session, owner_id=user.id, media_type="video")
     body = _body(task, backend, pool, frame_index=7)
 
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,
         headers=_headers(token),
@@ -652,7 +652,7 @@ async def test_video_accept_create_builds_one_current_frame_keyframe(
 
 
 async def test_video_accept_persists_claimed_collaboration_segment(
-    httpx_client_bound,
+    httpx_client,
     db_session,
     super_admin,
     accept_storage_mocks,
@@ -677,7 +677,7 @@ async def test_video_accept_persists_claimed_collaboration_segment(
     body = _body(task, backend, pool, frame_index=7)
     body["video_segment_id"] = str(segment.id)
 
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,
         headers=_headers(token),
@@ -688,7 +688,7 @@ async def test_video_accept_persists_claimed_collaboration_segment(
 
 
 async def test_video_candidate_receipt_is_bound_to_the_requested_frame(
-    httpx_client_bound,
+    httpx_client,
     db_session,
     super_admin,
     accept_storage_mocks,
@@ -702,7 +702,7 @@ async def test_video_candidate_receipt_is_bound_to_the_requested_frame(
     body = _body(task, backend, pool, frame_index=7)
     body["target"]["frame_index"] = 8
 
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,
         headers=_headers(token),
@@ -714,7 +714,7 @@ async def test_video_candidate_receipt_is_bound_to_the_requested_frame(
 
 
 async def test_task_status_is_rechecked_after_route_preflight(
-    httpx_client_bound,
+    httpx_client,
     db_session,
     super_admin,
     monkeypatch,
@@ -735,7 +735,7 @@ async def test_task_status_is_rechecked_after_route_preflight(
 
     monkeypatch.setattr(route_module, "accept_ai_mask_candidate", drift_then_accept)
 
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,
         headers=_headers(token),
@@ -751,7 +751,7 @@ async def test_task_status_is_rechecked_after_route_preflight(
 
 
 async def test_signed_historical_route_survives_instance_removal(
-    httpx_client_bound,
+    httpx_client,
     db_session,
     super_admin,
     accept_storage_mocks,
@@ -767,7 +767,7 @@ async def test_signed_historical_route_survives_instance_removal(
     await db_session.delete(backend)
     await db_session.flush()
 
-    response = await httpx_client_bound.post(
+    response = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,
         headers=_headers(token),
@@ -782,7 +782,7 @@ async def test_signed_historical_route_survives_instance_removal(
 
 
 async def test_idempotent_replay_rechecks_actor_ownership(
-    httpx_client_bound,
+    httpx_client,
     db_session,
     super_admin,
     annotator,
@@ -792,7 +792,7 @@ async def test_idempotent_replay_rechecks_actor_ownership(
     other, other_token = annotator
     task, backend, pool = await _seed(db_session, owner_id=admin.id)
     body = _body(task, backend, pool, key="accept-replay-owner-check")
-    first = await httpx_client_bound.post(
+    first = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,
         headers=_headers(admin_token),
@@ -803,13 +803,13 @@ async def test_idempotent_replay_rechecks_actor_ownership(
     # Literal employee owner: ownership alone is not management. An explicit
     # annotator membership plus the task assignment make the replayed task
     # visible so the request reaches the idempotency owner check.
-    db_session.add(
-        ProjectMember(project_id=project.id, user_id=other.id, role="annotator")
+    await create_membership(
+        db_session, project_id=project.id, user_id=other.id, role="annotator"
     )
     task.assignee_id = other.id
     await db_session.flush()
 
-    replay = await httpx_client_bound.post(
+    replay = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,
         headers=_headers(other_token),
@@ -820,7 +820,7 @@ async def test_idempotent_replay_rechecks_actor_ownership(
 
 
 async def test_failure_after_prediction_flush_leaves_no_partial_decision(
-    httpx_client_bound,
+    httpx_client,
     db_session,
     super_admin,
     monkeypatch,
@@ -838,7 +838,7 @@ async def test_failure_after_prediction_flush_leaves_no_partial_decision(
         fail_annotation_create,
     )
     with pytest.raises(RuntimeError, match="injected annotation failure"):
-        await httpx_client_bound.post(
+        await httpx_client.post(
             f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
             json=body,
             headers=_headers(token),
@@ -853,7 +853,7 @@ async def test_failure_after_prediction_flush_leaves_no_partial_decision(
 
 
 async def test_write_gate_and_other_user_task_lock_fail_before_storage(
-    httpx_client_bound,
+    httpx_client,
     db_session,
     super_admin,
     annotator,
@@ -867,7 +867,7 @@ async def test_write_gate_and_other_user_task_lock_fail_before_storage(
     store = accept_storage_mocks[0]
     monkeypatch.setattr(settings, "raster_mask_create_enabled", False)
 
-    gated = await httpx_client_bound.post(
+    gated = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json=body,
         headers=_headers(token),
@@ -886,7 +886,7 @@ async def test_write_gate_and_other_user_task_lock_fail_before_storage(
         )
     )
     await db_session.flush()
-    locked = await httpx_client_bound.post(
+    locked = await httpx_client.post(
         f"/api/v1/tasks/{task.id}/ai-mask-candidates/accept",
         json={**body, "idempotency_key": "accept-task-lock-conflict"},
         headers=_headers(token),

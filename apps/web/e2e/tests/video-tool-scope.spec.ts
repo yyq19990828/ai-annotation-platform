@@ -98,7 +98,7 @@ async function annotations(request: APIRequestContext, fixture: ScopeCase) {
 
 const test = base.extend<{ scopeCase: ScopeCase }>({
   scopeCase: async ({ page, request, seed }, provideFixture, testInfo) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     const { task_id: taskId } = await seed.videoTask(data.project_id);
     const token = await seed.accessToken(data.admin_email);
     await seed.configureRasterMask(data.project_id, true);

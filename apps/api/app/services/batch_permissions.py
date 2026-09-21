@@ -11,10 +11,11 @@ from __future__ import annotations
 from fastapi import HTTPException
 from sqlalchemy import and_, or_
 
-from app.db.enums import BatchStatus, MANAGER_PLATFORM_ROLES, ProjectRole, UserRole
+from app.db.enums import BatchStatus, ProjectRole
 from app.db.models.project import Project
 from app.db.models.task_batch import TaskBatch
 from app.db.models.user import User
+from app.services.project_access import is_privileged_for_project
 
 # v0.7.3：owner-only 逆向迁移白名单。命中时必须传 reason（1-500 字），写入 audit_log.detail_json.reason。
 REVERSE_TRANSITIONS: set[tuple[str, str]] = {
@@ -62,13 +63,16 @@ def bulk_preannotation_eligible_condition():
 # 'reviewer' = super_admin / project_admin(owner) / reviewer
 # 'annotator_assigned' = 标注员且 user_id == batch.annotator_id（v0.7.2 单值语义）
 def _is_owner(user: User, project: Project) -> bool:
-    """Privileged owner: active, administrative platform role, and owner."""
+    """Privileged owner for the batch state machine.
 
-    if not user.is_active:
-        return False
-    if user.role == UserRole.SUPER_ADMIN:
-        return True
-    return user.role in MANAGER_PLATFORM_ROLES and project.owner_id == user.id
+    Kept as the batch-domain name (re-exported through ``services/batch.py``
+    alongside ``_is_reviewer`` / ``_is_annotator_assigned`` and covered by the
+    batch permission tests) but delegates to the canonical
+    :func:`project_access.is_privileged_for_project` so the state machine and
+    the request resolver can never drift on the owner/platform-role rule.
+    """
+
+    return is_privileged_for_project(user, project)
 
 
 def _is_reviewer(user: User, project: Project, project_role: str | None = None) -> bool:

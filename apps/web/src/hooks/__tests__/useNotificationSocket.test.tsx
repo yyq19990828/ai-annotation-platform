@@ -141,7 +141,7 @@ beforeEach(() => {
   });
   useAuthStore.setState({
     token: "old-token",
-    user: { id: "u1", role: "annotator" } as never,
+    user: { id: "u1", role: "employee" } as never,
   });
   Object.defineProperty(document, "visibilityState", {
     value: "visible",
@@ -262,7 +262,7 @@ describe("useNotificationSocket", () => {
     // 会话被替换（登出+新登录）后 refresh 才返回
     useAuthStore.setState({
       token: "session-b-token",
-      user: { id: "u2", role: "annotator" } as never,
+      user: { id: "u2", role: "employee" } as never,
     });
     await act(async () => {
       resolveRefresh({ access_token: "stale-token" });
@@ -569,7 +569,7 @@ describe("useNotificationSocket", () => {
     act(() => {
       useAuthStore.setState({
         token: "token-b",
-        user: { id: "u2", role: "annotator" } as never,
+        user: { id: "u2", role: "employee" } as never,
       });
     });
     expect(MockWebSocket.instances[0].closedManually).toBe(true);

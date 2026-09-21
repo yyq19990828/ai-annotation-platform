@@ -60,11 +60,24 @@ Mask 设置统一通过 `fixtures/mask-toolbar.ts` 打开：等待胶囊展开�
 ## 数据准备
 
 避免每个 spec 重复造数据：`e2e/fixtures/seed.ts` 通过
-`/api/v1/__test/seed/*` 创建固定 fixture。这组路由需要同时满足：
+`/api/v1/__test/seed/*` 创建 fixture。这组路由需要同时满足：
 
 - `E2E_SEED_ENABLED=true`；
 - 当前数据库名以 `_e2e` 或 `_test` 结尾；
 - `production` 环境永不挂载路由。
+
+**默认使用私有命名空间 fixture**：`await seed.owned()` 按 spec 文件 + 测试标题
+确定性派生命名空间（`^[a-z0-9]{4,12}$`，重试稳定、跨测试唯一），由 `/seed/owned`
+只创建该命名空间的标准工作台 fixture，测试结束后 seed fixture teardown 调用
+`/seed/owned-cleanup` 精确清理（含存储对象与 mock backend 注册项）；清理失败会让
+测试失败。`/seed/lidar`、`/seed/project-roles`、`/seed/filtering` 的命名空间参数
+同样只触碰各自命名空间；filtering manifest 暴露 `display_names`、`invitation_emails`、
+`search_keys`、`audit_scopes`，spec 必须用 manifest 值做全局列表搜索/文案/导出断言。
+
+`seed.reset()` 只保留给确属全局操作的套件：它破坏性重建共享命名空间并会收敛所有
+E2E 数据（含 owned 命名空间），是已记录的串行例外；不要再在普通用例中调用。需要
+跨命名空间存活/清理证据时，可用 `fixtures/storage-object-probe.py` 经真实存储客户端
+读取对象字节。
 
 正常结束时 `globalTeardown` 会调用 `/api/v1/__test/seed/cleanup` 清除固定 E2E
 数据。这只是卫生性兜底：强制中断或进程被终止时 teardown 可能来不及执行，
@@ -99,7 +112,7 @@ PLAYWRIGHT_AI_REQUEST_WORKER=1 pnpm test:e2e \
 
 ## WebCodecs 精确帧 E2E
 
-视频 Issue 的 180 帧夹具按测试 API 的 `VIDEO_CHUNK_SIZE_FRAMES` 生成完整真实分片，默认三块，每块 60 帧。测试开始前核对正式 manifest 与分片范围、就绪状态；不能依赖未启动的媒体 worker 补齐缺失分片。像素身份仍从实际编码视频验证。两个 Issue 套件共用 `helpers/video-request-errors.ts`，只允许明确端点的 `net::ERR_ABORTED` 生命周期取消（心跳、会话统计、帧预览及分片元数据/样本）；标注、Issue 写入失败、其他网络错误与 HTTP 错误仍须报告。`pnpm --filter @anno/web test scripts/video-request-errors.test.ts` 验证这些边界，CI 的前端单元测试同步执行。
+视频 Issue 的 180 帧夹具按测试 API 的 `VIDEO_CHUNK_SIZE_FRAMES` 生成完整真实分片，默认三块，每块 60 帧。测试开始前核对正式 manifest 与分片范围、就绪状态；不能依赖未启动的媒体 worker 补齐缺失分片。像素身份仍从实际编码视频验证。请求失败分类集中在 `helpers/request-errors.ts`：每条允许项都是「方法 + 精确路径 + 原因」的有类型规则，图片与视频套件按共享规则组组合；只允许明确端点的 `net::ERR_ABORTED` 生命周期取消（心跳、会话统计、bootstrap/任务上下文读、帧预览及分片元数据/样本），标注与 Issue 写入失败、其他网络错误与 HTTP 错误仍须报告。`pnpm --filter @anno/web test scripts/video-request-errors.test.ts` 同时验证这些边界的允许侧与禁止侧，CI 的前端单元测试同步执行。
 
 刷新前的布局保存等待必须匹配当前交互产生的 workspace 快照，并等响应接收完成。初始化、切换预设和激活讨论面板会分别发送偏好 PATCH，首条成功响应不能代表后续保存完成。任务级 Issue 用例延迟最终讨论布局响应，验证刷新不会抢先取消偏好写入；偏好 PATCH 的取消仍按错误处理。
 

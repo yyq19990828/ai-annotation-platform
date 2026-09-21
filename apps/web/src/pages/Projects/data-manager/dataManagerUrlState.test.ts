@@ -1,11 +1,18 @@
 import { describe, expect, it } from "vitest";
 
+import { createTaskView } from "@/test/dataManagerApi";
+
 import {
+  dataManagerViewKey,
+  findDataManagerView,
   hasFilterUrlOverrides,
   normalizeDataManagerColumns,
   parseDataManagerUrl,
   parseDataManagerUrlWithIssues,
+  requestedDataManagerViewKey,
   resolveDataManagerSort,
+  resolveDataManagerViewKey,
+  shouldUseDataManagerUrlOverrides,
   updateDataManagerUrl,
 } from "./dataManagerUrlState";
 
@@ -121,5 +128,64 @@ describe("Data Manager URL state", () => {
         "track.track_id",
       ),
     ).toEqual(viewSort);
+  });
+
+  it("drops a saved sort whose field no longer exists in the schema", () => {
+    expect(
+      resolveDataManagerSort(
+        null,
+        [{ field: "removed.sort", direction: "desc" }],
+        ["task.created_at", "unresolved_issue_count"],
+        "task.created_at",
+      ),
+    ).toEqual([{ field: "task.created_at", direction: "asc" }]);
+  });
+
+  it("keys saved and builtin views by their stable identifier", () => {
+    expect(dataManagerViewKey({ id: "v1", key: null })).toBe("saved:v1");
+    expect(dataManagerViewKey({ id: null, key: "all" })).toBe("builtin:all");
+  });
+
+  it("resolves the requested task view and falls back to the builtin all view", () => {
+    expect(requestedDataManagerViewKey({ lens: "tasks", view: "saved:v1" })).toBe("saved:v1");
+    expect(requestedDataManagerViewKey({ lens: "tasks", view: null })).toBe("builtin:all");
+    expect(requestedDataManagerViewKey({ lens: "objects", view: "saved:v1" })).toBe("builtin:all");
+  });
+
+  it("selects the saved view or falls back to the first one when the URL names a missing view", () => {
+    const views = [
+      createTaskView({ key: "all", builtin: true, name: "全部任务" }),
+      createTaskView({ id: "v1", name: "组合视图" }),
+    ];
+    expect(findDataManagerView(views, "saved:v1")?.id).toBe("v1");
+    expect(findDataManagerView(views, "saved:gone")).toBeNull();
+    expect(resolveDataManagerViewKey("saved:gone", views)).toBe("builtin:all");
+    expect(resolveDataManagerViewKey("saved:v1", views)).toBe("saved:v1");
+    expect(resolveDataManagerViewKey("saved:v1", [])).toBeNull();
+  });
+
+  it("lets URL overrides outrank a saved view only for its own task lens", () => {
+    const overrides =
+      "lens=tasks&view=saved:v1&layout=gallery&sort=%7B%22v%22%3A1%2C%22value%22%3A%5B%5D%7D";
+    expect(
+      shouldUseDataManagerUrlOverrides({ lens: "tasks", view: "saved:v1" }, overrides, "saved:v1"),
+    ).toBe(true);
+    expect(
+      shouldUseDataManagerUrlOverrides({ lens: "tasks", view: "saved:v1" }, overrides, "saved:v2"),
+    ).toBe(false);
+    expect(
+      shouldUseDataManagerUrlOverrides(
+        { lens: "objects", view: "saved:v1" },
+        overrides,
+        "saved:v1",
+      ),
+    ).toBe(false);
+    expect(
+      shouldUseDataManagerUrlOverrides(
+        { lens: "tasks", view: "saved:v1" },
+        "lens=tasks&view=saved:v1",
+        "saved:v1",
+      ),
+    ).toBe(false);
   });
 });

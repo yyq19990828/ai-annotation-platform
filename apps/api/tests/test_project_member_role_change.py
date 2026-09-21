@@ -19,7 +19,12 @@ from app.services.project_membership import (
     preview_role_change,
     remove_member,
 )
-from tests.factory import create_project, create_task, create_user
+from tests.factory import (
+    create_membership,
+    create_project,
+    create_task,
+    create_user,
+)
 
 pytestmark = pytest.mark.asyncio
 
@@ -32,15 +37,13 @@ def _headers(user: User) -> dict[str, str]:
 async def _add_member(
     db: AsyncSession, *, project_id, user: User, role: str, assigned_by
 ) -> ProjectMember:
-    member = ProjectMember(
+    return await create_membership(
+        db,
         project_id=project_id,
         user_id=user.id,
         role=role,
         assigned_by=assigned_by,
     )
-    db.add(member)
-    await db.flush()
-    return member
 
 
 async def _preview(

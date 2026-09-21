@@ -55,8 +55,8 @@ from app.db.models.user import User
 from app.services.audit import AuditAction, AuditService
 from app.services.project_access import (
     assert_membership_role_compatible,
+    is_privileged_for_project,
     membership_role_compatible,
-    platform_role_is_manager,
 )
 from app.services.scheduler import (
     effective_task_assignee_expr,
@@ -1144,9 +1144,7 @@ async def _assert_actor_can_manage(*, actor: User | None, project: Project) -> N
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED, detail="账号已停用"
         )
-    if actor.role == PlatformRole.SUPER_ADMIN.value:
-        return
-    if project.owner_id == actor.id and platform_role_is_manager(actor.role):
+    if is_privileged_for_project(actor, project):
         return
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,

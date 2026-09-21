@@ -8,6 +8,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 from sqlalchemy import func, select
+from tests.factory import create_membership
 
 
 def _project(owner_id: uuid.UUID, display_id: str):
@@ -435,7 +436,6 @@ async def test_buffered_chunks_survive_submit_and_skip(
     """Real submission preserves a work start even when assignment is inherited."""
 
     from app.config import settings
-    from app.db.models.project_member import ProjectMember
     from app.db.models.task_event import TaskEvent
     from app.db.models.task_batch import TaskBatch
     from app.db.models.task_lock import TaskLock
@@ -448,8 +448,8 @@ async def test_buffered_chunks_survive_submit_and_skip(
     started = datetime.now(timezone.utc) - timedelta(minutes=70)
     db_session.add(project)
     await db_session.flush()
-    db_session.add(
-        ProjectMember(project_id=project.id, user_id=user.id, role="annotator")
+    await create_membership(
+        db_session, project_id=project.id, user_id=user.id, role="annotator"
     )
     batch = None
     if assignment == "unbatched":

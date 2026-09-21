@@ -5,7 +5,7 @@ project-scoped employee model.  It never reads ``User.role`` as project
 authority: the project role always comes from ``project_members`` and a
 missing/unknown membership fails closed.  Management is a super administrator
 or the project owner whose *platform* role is administrative, matching
-:func:`app.services.scheduler.is_privileged_for_project` and
+:func:`app.services.project_access.is_privileged_for_project` and
 :class:`app.services.project_access.ProjectAccess`.
 
 Every helper returns a SQL predicate so one query can restrict a whole page of
@@ -19,7 +19,6 @@ from __future__ import annotations
 from sqlalchemy import Select, false, or_, select
 
 from app.db.enums import (
-    MANAGER_PLATFORM_ROLES,
     PLATFORM_ROLES,
     PROJECT_ROLES,
     PlatformRole,
@@ -29,6 +28,7 @@ from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.user import User
+from app.services.project_access import platform_role_is_manager
 
 #: Platform roles allowed to open the personal annotator/reviewer dashboards.
 #: Legacy ``annotator`` / ``reviewer`` account values are intentionally absent;
@@ -42,12 +42,6 @@ DASHBOARD_PLATFORM_ROLES = (
 ANNOTATOR_ROLE = ProjectRole.ANNOTATOR.value
 REVIEWER_ROLE = ProjectRole.REVIEWER.value
 VIEWER_ROLE = ProjectRole.VIEWER.value
-
-
-def platform_role_is_manager(platform_role: str | None) -> bool:
-    """Whether a *platform* role can hold management authority with ownership."""
-
-    return platform_role in MANAGER_PLATFORM_ROLES
 
 
 def _valid_membership_conditions():

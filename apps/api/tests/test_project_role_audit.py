@@ -37,7 +37,7 @@ from scripts.audit_project_roles import (
     collect_report,
     read_only_audit_session,
 )
-from tests.factory import create_project, create_task, create_user
+from tests.factory import create_membership, create_project, create_task, create_user
 
 _API_ROOT = Path(__file__).resolve().parents[1]
 _MIGRATION_0173_PATH = (
@@ -416,7 +416,7 @@ async def _seed_full(engine) -> dict:
 async def _seed_manager_cases(engine) -> dict:
     """Seed active-manager and adversarial effective assignments.
 
-    Mirrors ``scheduler.is_privileged_for_project``: an active super
+    Mirrors ``project_access.is_privileged_for_project``: an active super
     administrator manages every project and an active ``project_admin`` owns
     exactly the project it owns.  Each manager task has no membership row, so
     the pre-fix audit reports it; the adversarial rows prove the exemption is
@@ -914,13 +914,12 @@ def test_audit_runs_before_0173_migration(test_db_url, apply_migrations) -> None
                     state["users"].append(owner.id)
                     project = await create_project(db, owner_id=owner.id)
                     state["project"] = project.id
-                    db.add(
-                        ProjectMember(
-                            project_id=project.id,
-                            user_id=owner.id,
-                            role="viewer",
-                            assigned_by=owner.id,
-                        )
+                    await create_membership(
+                        db,
+                        project_id=project.id,
+                        user_id=owner.id,
+                        role="viewer",
+                        assigned_by=owner.id,
                     )
                     task = await create_task(db, project_id=project.id, status="review")
                     task.review_round_id = uuid.uuid4()

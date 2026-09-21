@@ -48,7 +48,7 @@ from app.services.raster_mask_storage import (
     load_coco_rle,
     prepare_mask_payload_for_write,
 )
-from app.services.scheduler import is_privileged_for_project
+from app.services.project_access import is_privileged_for_project
 from app.services.video_collaboration import (
     assert_task_lock_for_legacy_video,
     collaboration_config,

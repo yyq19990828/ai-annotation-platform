@@ -13,9 +13,14 @@ from app.db.models.annotation import Annotation
 from app.db.models.annotation_feedback import AnnotationFeedback
 from app.db.models.notification import Notification
 from app.db.models.notification_preference import NotificationPreference
-from app.db.models.project_member import ProjectMember
 from app.services.notification import NotificationService
-from tests.factory import create_batch, create_project, create_task, create_user
+from tests.factory import (
+    create_batch,
+    create_membership,
+    create_project,
+    create_task,
+    create_user,
+)
 
 
 def _headers(user, token: str | None = None) -> dict[str, str]:
@@ -24,15 +29,13 @@ def _headers(user, token: str | None = None) -> dict[str, str]:
 
 
 async def _add_member(db, project_id, user, role: str | None = None, assigned_by=None):
-    db.add(
-        ProjectMember(
-            project_id=project_id,
-            user_id=user.id,
-            role=role or user.role,
-            assigned_by=assigned_by,
-        )
+    await create_membership(
+        db,
+        project_id=project_id,
+        user_id=user.id,
+        role=role or user.role,
+        assigned_by=assigned_by,
     )
-    await db.flush()
 
 
 async def _seed_task_scope(db, owner, assignee):

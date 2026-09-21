@@ -35,7 +35,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   api.getPreferences.mockResolvedValue({ items: [] });
   api.updatePreference.mockResolvedValue({ ok: true });
-  useAuthStore.getState().setAuth("t1", { id: "u1", role: "annotator" } as MeResponse);
+  useAuthStore.getState().setAuth("t1", { id: "u1", role: "employee" } as MeResponse);
 });
 
 describe("useNotificationPreferences", () => {
@@ -115,7 +115,7 @@ describe("useNotificationPreferences", () => {
     result.current.mutate({ type: "task.rejected", owner: "u1", in_app: false });
     // 保存期间账号被替换
     act(() => {
-      useAuthStore.getState().setAuth("t2", { id: "u2", role: "annotator" } as MeResponse);
+      useAuthStore.getState().setAuth("t2", { id: "u2", role: "employee" } as MeResponse);
     });
     await act(async () => {
       resolveSave({ ok: true });

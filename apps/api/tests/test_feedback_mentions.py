@@ -13,7 +13,13 @@ from app.db.models.notification import Notification
 from app.db.models.notification_preference import NotificationPreference
 from app.db.models.project_member import ProjectMember
 from app.schemas.annotation_feedback import AnnotationFeedbackCreate
-from tests.factory import create_batch, create_project, create_task, create_user
+from tests.factory import (
+    create_membership,
+    create_batch,
+    create_project,
+    create_task,
+    create_user,
+)
 
 
 def _headers(user, token: str | None = None) -> dict[str, str]:
@@ -46,13 +52,12 @@ async def test_native_task_comment_mentions_round_trip_and_notify_once(
     task.file_type = file_type
     batch.annotator_id = recipient.id
     task.batch_id = batch.id
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=recipient.id,
-            role="annotator",
-            assigned_by=actor.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=project.id,
+        user_id=recipient.id,
+        role="annotator",
+        assigned_by=actor.id,
     )
     await db_session.flush()
 

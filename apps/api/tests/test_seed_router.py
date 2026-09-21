@@ -600,7 +600,7 @@ async def test_smart_scribble_masks_use_vehicle_silhouettes():
         assert bounding_area * 0.45 < len(foreground) < bounding_area * 0.85
 
 
-async def test_seed_reset_preserves_dev_data(httpx_client_bound, db_session):
+async def test_seed_reset_preserves_dev_data(httpx_client, db_session):
     """v0.8.7+ · D 方案核心断言：reset 不动非 fixture 的开发数据。
 
     造一个 dev 用户 + dev 项目，跑 reset，断言它们仍然存在；同时 fixture
@@ -636,7 +636,7 @@ async def test_seed_reset_preserves_dev_data(httpx_client_bound, db_session):
     await db_session.commit()
 
     # 跑 reset
-    res = await httpx_client_bound.post("/api/v1/__test/seed/reset")
+    res = await httpx_client.post("/api/v1/__test/seed/reset")
     assert res.status_code == 200, res.text
 
     # dev 数据应保留

@@ -119,14 +119,14 @@ def _mock_celery(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_workbench_scope_allows_in_progress_draft_with_own_lock(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     owner, token = super_admin
     proj, backend, _, task = await _seed(db_session, owner.id)
     _own_lock(db_session, task.id, owner.id)
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -156,7 +156,7 @@ async def test_workbench_scope_allows_in_progress_draft_with_own_lock(
 
 @pytest.mark.asyncio
 async def test_workbench_scope_rejects_another_members_lock(
-    httpx_client_bound, super_admin, annotator, db_session, _mock_celery
+    httpx_client, super_admin, annotator, db_session, _mock_celery
 ):
     owner, token = super_admin
     other, _ = annotator
@@ -164,7 +164,7 @@ async def test_workbench_scope_rejects_another_members_lock(
     _own_lock(db_session, task.id, other.id)
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -181,12 +181,12 @@ async def test_workbench_scope_rejects_another_members_lock(
 
 @pytest.mark.asyncio
 async def test_workbench_scope_rejects_admin_locked_batch(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     owner, token = super_admin
     proj, backend, _, task = await _seed(db_session, owner.id, admin_locked=True)
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -203,12 +203,12 @@ async def test_workbench_scope_rejects_admin_locked_batch(
 
 @pytest.mark.asyncio
 async def test_workbench_scope_rejects_terminal_task(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     owner, token = super_admin
     proj, backend, _, task = await _seed(db_session, owner.id, task_status="completed")
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -225,12 +225,12 @@ async def test_workbench_scope_rejects_terminal_task(
 
 @pytest.mark.asyncio
 async def test_workbench_scope_rejects_multiple_tasks(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     owner, token = super_admin
     proj, backend, _, task = await _seed(db_session, owner.id)
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -246,12 +246,12 @@ async def test_workbench_scope_rejects_multiple_tasks(
 
 @pytest.mark.asyncio
 async def test_bulk_scope_still_requires_pending(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     owner, token = super_admin
     proj, backend, _, task = await _seed(db_session, owner.id)
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -267,13 +267,13 @@ async def test_bulk_scope_still_requires_pending(
 
 @pytest.mark.asyncio
 async def test_workbench_scope_rejects_batch_id(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     """review #121 · 工作台单题不接受 batch_id, 避免落入批量 active 校验。"""
     owner, token = super_admin
     proj, backend, batch, task = await _seed(db_session, owner.id)
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -292,13 +292,13 @@ async def test_workbench_scope_rejects_batch_id(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("status", ["uploading", "review", "completed"])
 async def test_workbench_scope_rejects_non_editable_status(
-    status, httpx_client_bound, super_admin, db_session, _mock_celery
+    status, httpx_client, super_admin, db_session, _mock_celery
 ):
     """review #121 · 白名单放行 pending/in_progress/rejected, 其余状态 (含 uploading) 拒绝。"""
     owner, token = super_admin
     proj, backend, _, task = await _seed(db_session, owner.id, task_status=status)
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -314,7 +314,7 @@ async def test_workbench_scope_rejects_non_editable_status(
 
 @pytest.mark.asyncio
 async def test_workbench_scope_rejects_foreign_lock_hidden_behind_own_lock(
-    httpx_client_bound, super_admin, annotator, db_session, _mock_celery
+    httpx_client, super_admin, annotator, db_session, _mock_celery
 ):
     """review #121 · 同 task 多行残留锁时, 他人锁不能被本人更新的一行掩盖。"""
     owner, token = super_admin
@@ -331,7 +331,7 @@ async def test_workbench_scope_rejects_foreign_lock_hidden_behind_own_lock(
     )
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={

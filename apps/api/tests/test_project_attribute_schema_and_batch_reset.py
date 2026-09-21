@@ -1,7 +1,7 @@
-"""v0.7.6 测试集合。
+"""Project attribute_schema 创建契约与批次 reset 状态机。
 
-S1 · ProjectCreate 接受 attribute_schema
-S2 · POST /batches/{id}/reset 终极重置到 draft
+S1 · ProjectCreate 接受 attribute_schema（含缺省与非法输入）
+S2 · POST /batches/{id}/reset 终极重置到 draft（起始状态矩阵、鉴权与 reason 校验）
 """
 
 from __future__ import annotations
@@ -14,11 +14,11 @@ from sqlalchemy import delete, select, text
 from app.db.models.annotation import Annotation
 from app.db.models.audit_log import AuditLog
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.db.models.task_lock import TaskLock
 from app.services.display_id import next_display_id
+from tests.factory import create_membership, build_tool_bindings
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -45,17 +45,12 @@ async def _seed_batch_with_locked_tasks(
         type_label="图像-检测",
         type_key="image-det",
         owner_id=owner_id,
-        classes=["car"],
+        tool_bindings=build_tool_bindings(["car"]),
     )
     db.add(p)
     await db.flush()
-    db.add(
-        ProjectMember(
-            project_id=pid,
-            user_id=annotator_id,
-            role="annotator",
-            assigned_by=owner_id,
-        )
+    await create_membership(
+        db, project_id=pid, user_id=annotator_id, role="annotator", assigned_by=owner_id
     )
     batch = TaskBatch(
         id=uuid.uuid4(),
@@ -200,7 +195,7 @@ async def test_create_project_rejects_invalid_attribute_schema(
     ["active", "annotating", "reviewing", "approved", "rejected", "archived"],
 )
 async def test_reset_to_draft_from_any_status(
-    httpx_client_bound, db_session, super_admin, annotator, from_status
+    httpx_client, db_session, super_admin, annotator, from_status
 ):
     """6 个起始状态 → draft 全部成功，task 全回 pending，annotation 保留，task_locks 清空。"""
     owner, owner_token = super_admin
@@ -215,7 +210,7 @@ async def test_reset_to_draft_from_any_status(
     )
     await db_session.commit()
 
-    res = await httpx_client_bound.post(
+    res = await httpx_client.post(
         f"/api/v1/projects/{p.id}/batches/{batch.id}/reset",
         json={"reason": f"测试 {from_status} 重置到 draft"},
         headers=_bearer(owner_token),
@@ -274,7 +269,7 @@ async def test_reset_to_draft_from_any_status(
 
 @pytest.mark.asyncio
 async def test_reset_to_draft_requires_reason(
-    httpx_client_bound, db_session, super_admin, annotator
+    httpx_client, db_session, super_admin, annotator
 ):
     owner, owner_token = super_admin
     user, _ = annotator
@@ -289,7 +284,7 @@ async def test_reset_to_draft_requires_reason(
     await db_session.commit()
 
     # 空 reason 应被 422 拦截
-    r1 = await httpx_client_bound.post(
+    r1 = await httpx_client.post(
         f"/api/v1/projects/{p.id}/batches/{batch.id}/reset",
         json={"reason": ""},
         headers=_bearer(owner_token),
@@ -297,7 +292,7 @@ async def test_reset_to_draft_requires_reason(
     assert r1.status_code == 422
 
     # 短 reason（< 10 字）应被 422 拦截
-    r2 = await httpx_client_bound.post(
+    r2 = await httpx_client.post(
         f"/api/v1/projects/{p.id}/batches/{batch.id}/reset",
         json={"reason": "短"},
         headers=_bearer(owner_token),
@@ -307,7 +302,7 @@ async def test_reset_to_draft_requires_reason(
 
 @pytest.mark.asyncio
 async def test_reset_to_draft_owner_only(
-    httpx_client_bound, db_session, super_admin, annotator, reviewer
+    httpx_client, db_session, super_admin, annotator, reviewer
 ):
     """非 owner（普通 reviewer / annotator）调用 → 403。"""
     owner, _ = super_admin
@@ -322,15 +317,17 @@ async def test_reset_to_draft_owner_only(
         task_status="pending",
     )
     # Both accounts are visible project members with non-management work roles.
-    db_session.add(
-        ProjectMember(
-            project_id=p.id, user_id=rev.id, role="reviewer", assigned_by=owner.id
-        )
+    await create_membership(
+        db_session,
+        project_id=p.id,
+        user_id=rev.id,
+        role="reviewer",
+        assigned_by=owner.id,
     )
     await db_session.commit()
 
     for token in (anno_token, rev_token):
-        res = await httpx_client_bound.post(
+        res = await httpx_client.post(
             f"/api/v1/projects/{p.id}/batches/{batch.id}/reset",
             json={"reason": "非 owner 不应能重置"},
             headers=_bearer(token),
@@ -393,7 +390,7 @@ async def test_persist_audit_entry_task_writes_row(test_engine):
 
 @pytest.mark.asyncio
 async def test_annotations_keyset_pagination(
-    httpx_client_bound, db_session, super_admin, annotator
+    httpx_client, db_session, super_admin, annotator
 ):
     """种 5 条 annotation；以 limit=2 三页拉取，校验 cursor 末页 None + 顺序为 created_at desc。"""
     from datetime import datetime, timezone, timedelta
@@ -448,7 +445,7 @@ async def test_annotations_keyset_pagination(
     await db_session.commit()
 
     # 第一页
-    r1 = await httpx_client_bound.get(
+    r1 = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/annotations/page?limit=2",
         headers=_bearer(owner_token),
     )
@@ -458,7 +455,7 @@ async def test_annotations_keyset_pagination(
     assert body1["next_cursor"] is not None
 
     # 第二页
-    r2 = await httpx_client_bound.get(
+    r2 = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/annotations/page?limit=2&cursor={body1['next_cursor']}",
         headers=_bearer(owner_token),
     )
@@ -467,7 +464,7 @@ async def test_annotations_keyset_pagination(
     assert body2["next_cursor"] is not None
 
     # 第三页（最后 1 条 + 末页 cursor）
-    r3 = await httpx_client_bound.get(
+    r3 = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/annotations/page?limit=2&cursor={body2['next_cursor']}",
         headers=_bearer(owner_token),
     )
@@ -486,7 +483,7 @@ async def test_annotations_keyset_pagination(
 
 @pytest.mark.asyncio
 async def test_annotations_page_invalid_cursor(
-    httpx_client_bound, db_session, super_admin, annotator
+    httpx_client, db_session, super_admin, annotator
 ):
     owner, owner_token = super_admin
     user, _ = annotator
@@ -503,7 +500,7 @@ async def test_annotations_page_invalid_cursor(
     ).scalar_one()
     await db_session.commit()
 
-    res = await httpx_client_bound.get(
+    res = await httpx_client.get(
         f"/api/v1/tasks/{task.id}/annotations/page?cursor=garbage",
         headers=_bearer(owner_token),
     )
@@ -515,7 +512,7 @@ async def test_annotations_page_invalid_cursor(
 
 @pytest.mark.asyncio
 async def test_reset_to_draft_cascades_predictions(
-    httpx_client_bound, db_session, super_admin, annotator
+    httpx_client, db_session, super_admin, annotator
 ):
     """v0.9.12 B-15: reset_to_draft 必须清光本 batch 关联的 predictions / failed_predictions /
     prediction_jobs / prediction_metas. 否则 /ai-pre 仍会渲染该 batch 已就绪卡片."""
@@ -587,7 +584,7 @@ async def test_reset_to_draft_cascades_predictions(
     await db_session.commit()
 
     # 重置
-    res = await httpx_client_bound.post(
+    res = await httpx_client.post(
         f"/api/v1/projects/{p.id}/batches/{batch.id}/reset",
         json={"reason": "B-15 级联清理回归测试"},
         headers=_bearer(owner_token),

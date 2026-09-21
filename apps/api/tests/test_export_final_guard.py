@@ -16,7 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.db.models.async_job import AsyncJob
 from app.db.models.project_member import ProjectMember
 from app.workers.export import _reauthorize_export_final_write
-from tests.factory import create_project, create_task, create_user
+from tests.factory import create_membership, create_project, create_task, create_user
 
 
 async def _employee(db: AsyncSession) -> object:
@@ -29,13 +29,12 @@ async def _reviewer_job(
     db: AsyncSession, *, owner, employee, payload: dict
 ) -> AsyncJob:
     project = await create_project(db, owner_id=owner.id, name="Export Guard")
-    db.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=employee.id,
-            role="reviewer",
-            assigned_by=owner.id,
-        )
+    await create_membership(
+        db,
+        project_id=project.id,
+        user_id=employee.id,
+        role="reviewer",
+        assigned_by=owner.id,
     )
     job = AsyncJob(
         kind="export",

@@ -39,10 +39,8 @@ from app.db.models.notification_preference import NotificationPreference
 from app.db.models.project import Project
 from app.db.models.project_member import ProjectMember
 from app.db.models.user import User
-from app.services.project_aggregates import (
-    platform_role_is_manager,
-    valid_membership_conditions,
-)
+from app.services.project_access import platform_role_is_manager
+from app.services.project_aggregates import valid_membership_conditions
 
 
 log = logging.getLogger(__name__)
@@ -521,6 +519,13 @@ class NotificationService:
         other account sees explicit global rows plus rows whose actual project is
         one they manage or hold a valid membership in.  Export rows additionally
         require the reviewer/manager export capability.
+
+        The membership SQL contract comes from
+        :func:`app.services.project_aggregates.valid_membership_conditions` and
+        the management predicate from
+        :func:`app.services.project_access.platform_role_is_manager`; this
+        helper only adapts them to the correlated text expression of the
+        notification row.
         """
 
         if user.role == PlatformRole.SUPER_ADMIN.value:

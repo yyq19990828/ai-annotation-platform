@@ -11,7 +11,6 @@ from app.db.models.annotation import Annotation
 from app.db.models.async_job import AsyncJobStatus
 from app.db.models.mask_qc import MaskQCIssue, MaskQCRun
 from app.db.models.project import Project
-from app.db.models.project_member import ProjectMember
 from app.db.models.task import Task
 from app.db.models.task_batch import TaskBatch
 from app.schemas.mask_qc import MaskQCConfig, MaskQCRunRequest
@@ -28,6 +27,7 @@ from app.services.raster_mask_storage import build_rle_reference
 from app.utils.raster_mask_rle import encode_coco_rle
 from app.workers.mask_qc import _execute_scan
 from app.workers.cleanup import _referenced_raster_mask_keys
+from tests.factory import create_membership
 
 
 def _bearer(token: str) -> dict[str, str]:
@@ -388,13 +388,12 @@ async def test_mask_qc_project_issue_list_hides_invisible_tasks_from_reviewer(
     project, visible_task, annotation, _rle_payload = await _seed_mask(
         db_session, owner_id=owner.id
     )
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=review_user.id,
-            role="reviewer",
-            assigned_by=owner.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=project.id,
+        user_id=review_user.id,
+        role="reviewer",
+        assigned_by=owner.id,
     )
     batch = TaskBatch(
         project_id=project.id,
@@ -549,13 +548,12 @@ async def test_non_privileged_reviewer_must_claim_before_approve(
     project, task, _annotation, _rle_payload = await _seed_mask(
         db_session, owner_id=owner.id, status="review"
     )
-    db_session.add(
-        ProjectMember(
-            project_id=project.id,
-            user_id=review_user.id,
-            role="reviewer",
-            assigned_by=owner.id,
-        )
+    await create_membership(
+        db_session,
+        project_id=project.id,
+        user_id=review_user.id,
+        role="reviewer",
+        assigned_by=owner.id,
     )
     batch = TaskBatch(
         project_id=project.id,

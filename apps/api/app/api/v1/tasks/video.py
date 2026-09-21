@@ -48,9 +48,7 @@ from app.schemas.video_tracker_job import (
 )
 from app.services.audit import AuditAction, AuditService
 from app.services.task_dataset_link import get_linked_items
-from app.services.scheduler import (
-    is_privileged_for_project,
-)
+from app.services.project_access import is_privileged_for_project
 from app.services.storage import storage_service
 from app.services.video_frame_service import (
     build_context_from_task,

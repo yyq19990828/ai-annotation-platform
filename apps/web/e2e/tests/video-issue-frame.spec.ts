@@ -1,4 +1,9 @@
-import { isVideoLifecycleCancellation } from "../helpers/video-request-errors";
+import {
+  isExpectedRequestAbort,
+  videoWorkbenchAborts,
+  type AbortAllowRule,
+  type RequestErrorSignal,
+} from "../helpers/request-errors";
 import type {
   APIRequestContext,
   APIResponse,
@@ -26,14 +31,6 @@ interface Issue {
   anchor_position: { x: number; y: number; frame?: number } | null;
   body: string;
 }
-interface EvidenceError {
-  kind: "page" | "console" | "http" | "request";
-  message: string;
-  method?: string;
-  path?: string;
-  status?: number;
-  body?: string;
-}
 interface IssueCase {
   data: SeedData;
   taskId: string;
@@ -54,13 +51,21 @@ const pathOf = (url: string) => new URL(url).pathname;
 const isFixtureMedia = (url: URL, fixture: string) =>
   url.pathname.endsWith(`/e2e/video/webcodecs/${fixture}/source.mp4`);
 
-function expectedRequestAbort(error: EvidenceError, fixture: IssueCase) {
-  if (isVideoLifecycleCancellation(error)) return true;
-  if (error.kind !== "request" || error.message !== "net::ERR_ABORTED" || !error.path) return false;
-  if (error.method === "DELETE")
-    return fixture.mediaLatency && /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/lock$/.test(error.path);
-  if (error.method !== "GET") return false;
-  return fixture.mediaLatency && isFixtureMedia(new URL(error.path, API_BASE), fixture.fixtureName);
+/** Fixture-specific cancellations beyond the shared workbench policy. */
+function fixtureAbortRules(fixture: IssueCase): AbortAllowRule[] {
+  if (!fixture.mediaLatency) return [];
+  return [
+    {
+      method: "DELETE",
+      path: /^\/api\/v1\/tasks\/[0-9a-f-]{36}\/lock$/,
+      reason: "navigation may cancel the lock release while media is still decoding",
+    },
+    {
+      method: "GET",
+      path: new RegExp(`/e2e/video/webcodecs/${fixture.fixtureName}/source\\.mp4$`),
+      reason: "retiring the task aborts in-flight fixture media fetches",
+    },
+  ];
 }
 
 async function json<T>(response: APIResponse): Promise<T> {
@@ -99,7 +104,7 @@ async function graphicsEvidence(browser: Browser, page: Page) {
 const test = base.extend<{ issueCase: IssueCase; videoFixture: string }>({
   videoFixture: [MAIN_FIXTURE, { option: true }],
   issueCase: async ({ page, request, seed, browser, videoFixture }, provideFixture, testInfo) => {
-    const data = await seed.reset();
+    const data = await seed.owned();
     const video = await seed.videoWebCodecs(data.project_id, { fixture: videoFixture });
     const token = await seed.accessToken(data.admin_email);
     await json(
@@ -149,7 +154,7 @@ const test = base.extend<{ issueCase: IssueCase; videoFixture: string }>({
       mediaLatency: false,
       releaseMedia: [],
     };
-    const errors: EvidenceError[] = [];
+    const errors: RequestErrorSignal[] = [];
     const pending: Promise<void>[] = [];
     const relevant = (url: string) =>
       pathOf(url).startsWith("/api/v1/") || isFixtureMedia(new URL(url), videoFixture);
@@ -176,7 +181,7 @@ const test = base.extend<{ issueCase: IssueCase; videoFixture: string }>({
       // Read the body immediately: Playwright Response handles can expire on reload.
       pending.push(
         (async () => {
-          const entry: EvidenceError = {
+          const entry: RequestErrorSignal = {
             kind: "http",
             method: response.request().method(),
             path: pathOf(response.url()),
@@ -201,7 +206,8 @@ const test = base.extend<{ issueCase: IssueCase; videoFixture: string }>({
       await provideFixture(fixture);
       await Promise.all(pending);
       // Feedback/annotation writes are never allowlisted. Navigation may cancel lock cleanup.
-      const expectedAborts = errors.filter((error) => expectedRequestAbort(error, fixture));
+      const rules = [...videoWorkbenchAborts, ...fixtureAbortRules(fixture)];
+      const expectedAborts = errors.filter((error) => isExpectedRequestAbort(error, rules));
       const unexpected = errors.filter((error) => !expectedAborts.includes(error));
       fixture.evidence.push({ expectedFaults: expectedAborts, unexpectedErrors: unexpected });
       expect(unexpected).toEqual([]);
@@ -255,7 +261,7 @@ const test = base.extend<{ issueCase: IssueCase; videoFixture: string }>({
           await page.unrouteAll({ behavior: "ignoreErrors" });
           if (!page.isClosed()) await page.goto("about:blank");
         } finally {
-          await seed.reset();
+          await seed.owned();
         }
       }
     }

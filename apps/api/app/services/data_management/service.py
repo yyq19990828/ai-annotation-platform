@@ -65,7 +65,7 @@ from app.schemas.data_manager import (
 )
 from app.services.project_kind import project_kind
 from app.services.prediction import to_internal_shape
-from app.services.scheduler import is_privileged_for_project
+from app.services.project_access import is_privileged_for_project
 from app.services.feedback import unresolved_issue_count_sq
 from app.services.data_management.views import (
     compile_filter,

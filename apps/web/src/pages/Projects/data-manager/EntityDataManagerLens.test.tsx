@@ -14,7 +14,7 @@ const state = vi.hoisted(() => ({
 }));
 
 vi.mock("@/hooks/usePermissions", () => ({
-  usePermissions: () => ({ role: "annotator" }),
+  usePermissions: () => ({ role: "employee" }),
 }));
 
 vi.mock("@/stores/authStore", () => ({

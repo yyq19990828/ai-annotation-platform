@@ -33,7 +33,7 @@ def _bearer(token: str) -> dict[str, str]:
 
 @pytest.mark.asyncio
 async def test_explicit_preannotation_retries_reuse_job_and_reject_changed_scope(
-    httpx_client_bound, super_admin, db_session, monkeypatch
+    httpx_client, super_admin, db_session, monkeypatch
 ):
     from app.workers.tasks import batch_predict
 
@@ -48,7 +48,7 @@ async def test_explicit_preannotation_retries_reuse_job_and_reject_changed_scope
     headers = {**_bearer(token), "Idempotency-Key": f"predict-{uuid.uuid4()}"}
     body = {"ml_backend_id": str(backend.id), "task_ids": [str(tasks[0].id)]}
     endpoint = f"/api/v1/projects/{project.id}/preannotate"
-    first = await httpx_client_bound.post(endpoint, headers=headers, json=body)
+    first = await httpx_client.post(endpoint, headers=headers, json=body)
     assert first.status_code == 200, first.text
     job_id = uuid.UUID(first.json()["job_id"])
     job = await db_session.get(AsyncJob, job_id)
@@ -56,15 +56,15 @@ async def test_explicit_preannotation_retries_reuse_job_and_reject_changed_scope
     assert dispatch.call_args.kwargs["args"][2] == [str(tasks[0].id)]
     assert dispatch.call_args.kwargs["kwargs"]["async_job_id"] == str(job_id)
     assert dispatch.call_args.kwargs["task_id"] == str(job_id)
-    retried = await httpx_client_bound.post(endpoint, headers=headers, json=body)
+    retried = await httpx_client.post(endpoint, headers=headers, json=body)
     assert retried.json()["job_id"] == str(job_id)
     assert dispatch.call_count == 2
     job.status = "running"
     await db_session.commit()
-    running = await httpx_client_bound.post(endpoint, headers=headers, json=body)
+    running = await httpx_client.post(endpoint, headers=headers, json=body)
     assert running.json()["job_id"] == str(job_id)
     assert dispatch.call_count == 2
-    conflict = await httpx_client_bound.post(
+    conflict = await httpx_client.post(
         endpoint, headers=headers, json={**body, "task_ids": [str(tasks[1].id)]}
     )
     assert conflict.status_code == 409
@@ -72,7 +72,7 @@ async def test_explicit_preannotation_retries_reuse_job_and_reject_changed_scope
 
 @pytest.mark.asyncio
 async def test_explicit_preannotation_rechecks_task_and_batch_scope_before_dispatch(
-    httpx_client_bound, super_admin, db_session, monkeypatch
+    httpx_client, super_admin, db_session, monkeypatch
 ):
     from app.workers.tasks import batch_predict
 
@@ -86,28 +86,26 @@ async def test_explicit_preannotation_rechecks_task_and_batch_scope_before_dispa
     monkeypatch.setattr(batch_predict, "apply_async", dispatch)
     endpoint = f"/api/v1/projects/{project.id}/preannotate"
     body = {"ml_backend_id": str(backend.id), "task_ids": [str(tasks[0].id)]}
-    foreign = await httpx_client_bound.post(
+    foreign = await httpx_client.post(
         endpoint,
         headers=_bearer(token),
         json={**body, "task_ids": [str(foreign_tasks[0].id)]},
     )
     assert foreign.status_code == 422
     for ids in ([], [str(uuid.uuid4()) for _ in range(201)]):
-        invalid_selection = await httpx_client_bound.post(
+        invalid_selection = await httpx_client.post(
             endpoint, headers=_bearer(token), json={**body, "task_ids": ids}
         )
         assert invalid_selection.status_code == 422, invalid_selection.text
     for state in ["review", "completed"]:
         tasks[0].status = state
         await db_session.commit()
-        response = await httpx_client_bound.post(
-            endpoint, headers=_bearer(token), json=body
-        )
+        response = await httpx_client.post(endpoint, headers=_bearer(token), json=body)
         assert response.status_code == 409, response.text
     tasks[0].status = "pending"
     batch.admin_locked = True
     await db_session.commit()
-    locked = await httpx_client_bound.post(endpoint, headers=_bearer(token), json=body)
+    locked = await httpx_client.post(endpoint, headers=_bearer(token), json=body)
     assert locked.status_code == 409, locked.text
     dispatch.assert_not_called()
 
@@ -188,11 +186,11 @@ def _mock_celery(monkeypatch):
 
 @pytest.mark.asyncio
 async def test_predict_mode_defaults_skip_predicted(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     owner, token = super_admin
     proj, backend, batch, _ = await _seed(db_session, owner.id)
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={"ml_backend_id": str(backend.id), "batch_id": str(batch.id)},
@@ -203,11 +201,11 @@ async def test_predict_mode_defaults_skip_predicted(
 
 @pytest.mark.asyncio
 async def test_predict_mode_overwrite_forwarded(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     owner, token = super_admin
     proj, backend, batch, _ = await _seed(db_session, owner.id)
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={
@@ -222,7 +220,7 @@ async def test_predict_mode_overwrite_forwarded(
 
 @pytest.mark.asyncio
 async def test_skip_hint_excludes_predicted(
-    httpx_client_bound, super_admin, db_session, _mock_celery
+    httpx_client, super_admin, db_session, _mock_celery
 ):
     owner, token = super_admin
     proj, backend, batch, tasks = await _seed(db_session, owner.id)
@@ -230,7 +228,7 @@ async def test_skip_hint_excludes_predicted(
     tasks[0].total_predictions = 1
     await db_session.commit()
 
-    resp = await httpx_client_bound.post(
+    resp = await httpx_client.post(
         f"/api/v1/projects/{proj.id}/preannotate",
         headers=_bearer(token),
         json={"ml_backend_id": str(backend.id), "batch_id": str(batch.id)},

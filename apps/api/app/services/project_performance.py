@@ -244,7 +244,7 @@ async def resolve_performance_access(
     # whose current platform role is administrative.  Ownership alone or a
     # foreign-project platform administrator is not enough; the account role is
     # never used as a project grant.
-    from app.services.scheduler import is_privileged_for_project
+    from app.services.project_access import is_privileged_for_project
 
     if is_privileged_for_project(user, project):
         return project
