@@ -38,6 +38,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- 修复 MinIO 原 Quay 镜像停止分发造成的 CI 与本地 Compose 启动失败，改用保留相同 digest 的 IBM 镜像；E2E 准备失败时保留明确的失败状态，避免结果审计只显示缺失目录。
+
 ## [0.26.0] - 2026-09-21
 
 ### Added
