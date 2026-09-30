@@ -71,11 +71,14 @@ async function annotations(
   fixture: ReviewCase,
   taskId = fixture.taskId,
 ) {
-  return json<Annotation[]>(
+  const rows = await json<Annotation[]>(
     await request.get(`${API_BASE}/api/v1/tasks/${taskId}/annotations`, {
       headers: auth(fixture.token),
     }),
   );
+  // Seeded rows share created_at values, so the API can reorder equal-time rows.
+  // Compare complete annotation state by stable identity, not database tie order.
+  return rows.sort((left, right) => left.id.localeCompare(right.id));
 }
 
 async function preview(request: APIRequestContext, fixture: ReviewCase, jobId: string) {
